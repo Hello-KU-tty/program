@@ -213,7 +213,9 @@ export class PanelRenderer {
 
     const send = this.el("button", "send-button") as HTMLButtonElement;
     send.type = "button";
-    send.textContent = "Send";
+    send.textContent = "\u2191";
+    send.setAttribute("aria-label", "Send message");
+    send.title = "Send message";
     send.addEventListener("click", () => this.attemptSubmit(tab, textarea));
     this.sendButtons.set(tab, send);
     composer.appendChild(send);

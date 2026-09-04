@@ -440,7 +440,7 @@ export function buildWebviewHtml(
 
     .message-input {
       grid-area: input;
-      resize: vertical;
+      resize: none;
       box-sizing: border-box;
       width: 100%;
       font-family: inherit;
@@ -465,16 +465,23 @@ export function buildWebviewHtml(
 
     .send-button {
       grid-area: send;
+      align-self: end;
       appearance: none;
       cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      height: 30px;
+      padding: 0;
+      line-height: 1;
       font-family: inherit;
-      font-size: inherit;
-      font-weight: 600;
+      font-size: 16px;
+      font-weight: 700;
       color: var(--vscode-button-foreground, var(--accent-contrast));
       background: var(--accent);
       border: 1px solid transparent;
-      border-radius: var(--radius-md);
-      padding: var(--sp-2) var(--sp-4);
+      border-radius: 50%;
       transition: background var(--transition), opacity var(--transition), filter var(--transition);
     }
     .send-button:hover:not(:disabled) {
