@@ -1,0 +1,6 @@
+node_modules/
+dist/
+*.vsix
+.vscode-test/
+# Kiro spec task-execution metadata (local run state)
+.kiro/specs/**/tasks.meta.json

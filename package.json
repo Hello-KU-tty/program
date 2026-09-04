@@ -1,0 +1,58 @@
+{
+  "name": "builder-helper-agent-panel",
+  "displayName": "Builder & Helper Agent Panel",
+  "description": "Kiro IDE extension contributing a right-side Agent Panel with Builder and Helper tabs.",
+  "version": "0.0.1",
+  "private": true,
+  "publisher": "vibe-helper",
+  "engines": {
+    "vscode": "^1.90.0",
+    "node": ">=18.0.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onView:builderHelperAgentPanel.view",
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "builderHelperAgentPanel",
+          "title": "Agent Panel",
+          "icon": "media/agent-panel.svg"
+        }
+      ]
+    },
+    "views": {
+      "builderHelperAgentPanel": [
+        {
+          "type": "webview",
+          "id": "builderHelperAgentPanel.view",
+          "name": "Builder & Helper"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc -p ./ --noEmit",
+    "test": "vitest --run",
+    "vscode:prepublish": "node esbuild.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.90.0",
+    "esbuild": "^0.21.5",
+    "fast-check": "^3.19.0",
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.0"
+  },
+  "allowScripts": {
+    "esbuild@0.21.5": true
+  }
+}
