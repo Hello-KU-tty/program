@@ -194,6 +194,9 @@ export class PanelRenderer {
       // and clear any stale notice as the user edits.
       this.callbacks.onDraftChanged(tab, text);
       this.updateIndicator(tab, text, null);
+      // Live "ready to send" affordance: light the send arrow while there is
+      // valid sendable text, dim it otherwise.
+      this.updateSendAffordance(tab);
     });
     textarea.addEventListener("keydown", (event: KeyboardEvent) => {
       // Enter submits; Shift+Enter inserts a newline.
@@ -221,6 +224,8 @@ export class PanelRenderer {
     composer.appendChild(send);
 
     panel.appendChild(composer);
+    // Initial "can send" evaluation so the fresh empty state renders dim.
+    this.updateSendAffordance(tab);
     return panel;
   }
 
@@ -443,6 +448,39 @@ export class PanelRenderer {
     if (textarea) {
       textarea.readOnly = !enabled;
     }
+    // Lock changes re-evaluate the send affordance: locking makes canSend
+    // false (dim); unlocking with valid text re-lights it.
+    this.updateSendAffordance(tab);
+  }
+
+  /**
+   * Toggles the "ready to send" visual affordance on the tab's send button
+   * without touching its real `disabled` property or the message protocol.
+   *
+   * The arrow "lights up" (accent-colored, subtly emphasized via the additive
+   * `can-send` class) only when the input holds valid sendable text: there is
+   * non-whitespace content, it is within {@link MAX_MESSAGE_LENGTH}, and the
+   * tab is not locked (mirroring {@link attemptSubmit}'s no-op guards). When
+   * none of those hold, the button reads as "not ready" (dim).
+   *
+   * `disabled` remains driven solely by the lock state in
+   * {@link updateLockState}; this only flips the additive `can-send` class and
+   * an `aria-disabled` hint, so click behavior and the disabled-is-lock-only
+   * contract are unaffected.
+   */
+  private updateSendAffordance(tab: TabId): void {
+    const send = this.sendButtons.get(tab);
+    const textarea = this.inputs.get(tab);
+    if (!send || !textarea) {
+      return;
+    }
+    const value = textarea.value;
+    const canSend =
+      value.trim().length > 0 &&
+      value.length <= MAX_MESSAGE_LENGTH &&
+      !send.disabled;
+    send.classList.toggle("can-send", canSend);
+    send.setAttribute("aria-disabled", canSend ? "false" : "true");
   }
 
   /**
@@ -455,6 +493,9 @@ export class PanelRenderer {
       textarea.value = vm.draft;
       this.updateIndicator(tab, vm.draft, null);
     }
+    // A hydrate that restores a non-empty draft should light the button; an
+    // empty draft dims it.
+    this.updateSendAffordance(tab);
   }
 
   /**
@@ -521,6 +562,8 @@ export class PanelRenderer {
     // next render.
     textarea.value = "";
     this.updateIndicator(tab, "", null);
+    // Optimistic clear dims the send arrow immediately.
+    this.updateSendAffordance(tab);
   }
 
   /**

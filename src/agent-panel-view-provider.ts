@@ -467,7 +467,9 @@ export function buildWebviewHtml(
       grid-area: send;
       align-self: end;
       appearance: none;
-      cursor: pointer;
+      /* Not "ready to send" by default: dim/inactive look. The lit state is
+         opted into via the additive .can-send class (see below). */
+      cursor: default;
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -478,11 +480,20 @@ export function buildWebviewHtml(
       font-family: inherit;
       font-size: 16px;
       font-weight: 700;
-      color: var(--vscode-button-foreground, var(--accent-contrast));
-      background: var(--accent);
+      /* Muted foreground + muted surface so the arrow reads as "not ready". */
+      color: var(--vscode-descriptionForeground, var(--vscode-foreground));
+      background: color-mix(in srgb, var(--vscode-foreground) 12%, var(--vscode-editor-background));
       border: 1px solid transparent;
       border-radius: 50%;
-      transition: background var(--transition), opacity var(--transition), filter var(--transition);
+      transition: background var(--transition), opacity var(--transition), filter var(--transition), box-shadow var(--transition), transform var(--transition), color var(--transition);
+    }
+    /* "Ready to send": accent-colored, emphasized, interactive. */
+    .send-button.can-send {
+      cursor: pointer;
+      color: var(--vscode-button-foreground, var(--accent-contrast));
+      background: var(--accent);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);
+      transform: scale(1.04);
     }
     .send-button:hover:not(:disabled) {
       filter: brightness(1.08);
@@ -491,9 +502,16 @@ export function buildWebviewHtml(
       outline: 2px solid var(--vscode-focusBorder, var(--accent));
       outline-offset: 2px;
     }
+    /* Locked state takes precedence and clearly dims. Because canSend is false
+       while locked, .can-send is never present here, so the button is not lit. */
     .send-button:disabled {
       opacity: 0.45;
       cursor: not-allowed;
+      box-shadow: none;
+      transform: none;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .send-button, .send-button.can-send { transform: none; }
     }
 
     /* Length / notice caption. */
