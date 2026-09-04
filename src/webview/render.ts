@@ -166,6 +166,8 @@ export class PanelRenderer {
     const panel = this.el("div", "tab-panel");
     panel.setAttribute("role", "tabpanel");
     panel.dataset.tab = tab;
+    // Additive CSS hook mirroring data-tab, used to scope per-agent accents.
+    panel.dataset.agent = tab;
 
     // Scrollable conversation view (Req 1.5 order preserved by array order).
     const conversation = this.el("div", "conversation");
@@ -225,6 +227,10 @@ export class PanelRenderer {
   // --------------------------------------------------------------------------
 
   private updateActiveTab(activeTab: TabId, model: PanelViewModel): void {
+    // Additive CSS hooks: reflect the active tab on the root so the whole panel
+    // can re-theme its accent color when switching between Builder and Helper.
+    this.root.dataset.agent = activeTab;
+    this.root.dataset.active = activeTab;
     for (const tab of TABS) {
       const isActive = tab === activeTab;
       const panel = this.panels.get(tab);
@@ -319,6 +325,17 @@ export class PanelRenderer {
     const el = this.el("div", `entry entry-agent entry-${entry.state}`);
     el.dataset.entryId = entry.id;
     el.dataset.state = entry.state;
+
+    // Additive identity header: a small avatar/role chip so agent bubbles read
+    // as the current agent. Purely cosmetic; not queried by tests.
+    const roleHeader = this.el("div", "entry-role");
+    const avatar = this.el("span", "entry-avatar");
+    avatar.textContent = tab === "builder" ? "🛠" : "💬";
+    const roleName = this.el("span", "entry-role-name");
+    roleName.textContent = TAB_LABELS[tab];
+    roleHeader.appendChild(avatar);
+    roleHeader.appendChild(roleName);
+    el.appendChild(roleHeader);
 
     // Message text: the concatenation of chunks in receipt order (Req 3.6).
     const body = this.el("div", "entry-body");

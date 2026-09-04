@@ -13,12 +13,13 @@
     "Other"
   ],
   "activationEvents": [
-    "onView:builderHelperAgentPanel.view"
+    "onView:builderHelperAgentPanel.view",
+    "onStartupFinished"
   ],
   "main": "./dist/extension.js",
   "contributes": {
     "viewsContainers": {
-      "secondarySideBar": [
+      "activitybar": [
         {
           "id": "builderHelperAgentPanel",
           "title": "Agent Panel",

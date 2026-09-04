@@ -97,6 +97,14 @@ export interface PanelControllerOptions {
   clock?: Clock;
   /** Optional callback invoked for every emitted notice. */
   onNotice?: NoticeSink;
+  /**
+   * Optional callback invoked whenever the controller mutates observable
+   * conversation/lock state (stream events applied, turn started/completed/failed,
+   * timeouts/stalls, render-failure notices). Lets the host push a fresh
+   * projection to the webview for asynchronous updates that no inbound intent
+   * triggered.
+   */
+  onChange?: () => void;
 }
 
 /**
@@ -195,6 +203,12 @@ export class PanelController {
   private readonly noticeSink?: NoticeSink;
 
   /**
+   * Optional external callback invoked after the controller mutates observable
+   * state, so the host can push a fresh projection to the webview.
+   */
+  private readonly onChange?: () => void;
+
+  /**
    * All notices emitted so far, in order (error / unavailable / length_limit).
    * Exposed so tests and a later webview-forwarding task can inspect them; the
    * list is append-only and never rewrites conversation history (Req 6.5).
@@ -216,6 +230,15 @@ export class PanelController {
   ) {
     this.clock = options.clock ?? new SystemClock();
     this.noticeSink = options.onNotice;
+    this.onChange = options.onChange;
+  }
+
+  /**
+   * Notify the host that observable controller state changed so it can push a
+   * fresh projection to the webview. No-op when no `onChange` was provided.
+   */
+  private notifyChange(): void {
+    this.onChange?.();
   }
 
   /**
@@ -444,6 +467,8 @@ export class PanelController {
       "error",
       "The agent did not start responding in time. Your message was kept so you can resend it.",
     );
+    // State changed (draft restored, lock released): let the host re-render.
+    this.notifyChange();
   }
 
   /**
@@ -469,6 +494,8 @@ export class PanelController {
       "error",
       "The agent stopped responding. The partial reply was kept.",
     );
+    // State changed (response failed, lock released): let the host re-render.
+    this.notifyChange();
   }
 
   /**
@@ -497,6 +524,8 @@ export class PanelController {
       "error",
       message ?? "Failed to render the conversation. Your history is preserved.",
     );
+    // Notice emitted (no conversation entries mutated): keep the view fresh.
+    this.notifyChange();
     // Snapshot after emitting the notice: entries are untouched by emitNotice,
     // so this reflects the fully-preserved conversation state (Req 1.7, 6.5).
     return this.getTabSnapshot(tab);
@@ -548,7 +577,7 @@ export class PanelController {
         // The turn has started: cancel the start-timeout and begin the stall
         // watchdog, which every subsequent event will reset (Req 6.1 → 3.7).
         this.resetStallWatchdog(tab, record);
-        return;
+        break;
       }
 
       case "message_chunk": {
@@ -558,7 +587,7 @@ export class PanelController {
         }
         // A new event arrived: reset the stall watchdog (Req 3.7).
         this.resetStallWatchdog(tab, record);
-        return;
+        break;
       }
 
       case "work_item": {
@@ -570,7 +599,7 @@ export class PanelController {
         }
         // A new event arrived: reset the stall watchdog (Req 3.7).
         this.resetStallWatchdog(tab, record);
-        return;
+        break;
       }
 
       case "work_item_result": {
@@ -588,7 +617,7 @@ export class PanelController {
         // status (or a live-entry accessor), mark `event.itemId` as
         // failed/succeeded on `record.responseId` using the pure helper in
         // core/work-item.ts (markWorkItemFailed).
-        return;
+        break;
       }
 
       case "completed": {
@@ -601,7 +630,7 @@ export class PanelController {
         }
         this.clearTimer(record);
         this.inFlight[tab] = null;
-        return;
+        break;
       }
 
       case "failed": {
@@ -621,17 +650,24 @@ export class PanelController {
           event.error.message ||
             "The agent response failed. Any partial reply was kept.",
         );
-        return;
+        break;
       }
 
       default: {
         // Exhaustiveness guard: if a new event kind is added, TypeScript flags
-        // this as an error so the lifecycle wiring is kept in sync.
+        // this as an error so the lifecycle wiring is kept in sync. Unrecognized
+        // events mutate nothing, so return without notifying the host.
         const _exhaustive: never = event;
         void _exhaustive;
         return;
       }
     }
+
+    // A recognized event was applied and mutated conversation/lock state above;
+    // notify the host exactly once so asynchronous/streamed updates render
+    // immediately (no tab switch or new inbound intent required). No-op when no
+    // `onChange` was provided.
+    this.notifyChange();
   }
 
 }
