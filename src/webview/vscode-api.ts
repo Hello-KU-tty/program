@@ -16,14 +16,20 @@
  */
 
 import type { WebviewToHost } from "./messages";
+import type { WebviewToHostFlow } from "./flow/flow-messages";
 
 /**
  * The subset of the VS Code webview API this panel uses. Only `postMessage` is
- * required: the webview posts {@link WebviewToHost} intents and receives
- * host messages via the global `message` event (see client-messaging.ts).
+ * required: the webview posts {@link WebviewToHost} intents (and, additively,
+ * {@link WebviewToHostFlow} flow intents — Req 12, 13) and receives host
+ * messages via the global `message` event (see client-messaging.ts).
+ *
+ * The parameter is the union of both intent unions so the additive flow shell
+ * can post over the same channel without a second API handle. VS Code's real
+ * `postMessage` accepts `any`, so accepting the wider union is safe.
  */
 export interface VsCodeApi {
-  postMessage(message: WebviewToHost): void;
+  postMessage(message: WebviewToHost | WebviewToHostFlow): void;
 }
 
 /**

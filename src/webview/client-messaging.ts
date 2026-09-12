@@ -16,6 +16,24 @@
  * Keeping this separate from rendering means the view model / render layer can
  * be unit-tested by feeding it {@link HostToWebview} messages directly, without
  * a live VS Code API.
+ *
+ * ## Additive flow transport (Req 12, 13)
+ *
+ * The Discovery -> Spec flow shares this single transport without widening the
+ * Build_Surface unions. Two parallel, symmetric paths are provided:
+ *
+ * - {@link WebviewClient.postFlow}: posts a typed {@link WebviewToHostFlow}
+ *   intent, mirroring {@link WebviewClient.post}.
+ * - {@link WebviewClient.onHostFlowMessage}: subscribes to validated
+ *   {@link HostToWebviewFlow} messages, validated via
+ *   {@link parseHostToWebviewFlow}.
+ *
+ * A single global `message` listener (attached by {@link WebviewClient.start})
+ * fans each incoming payload out to BOTH validators: Build messages match
+ * {@link parseHostToWebview} and flow messages match
+ * {@link parseHostToWebviewFlow}; a payload that matches neither is dropped.
+ * This keeps the flow branch inert until a `hydrateFlow` arrives — no flow
+ * listener fires and the Build_Surface path is untouched.
  */
 
 import {
@@ -23,10 +41,18 @@ import {
   type HostToWebview,
   type WebviewToHost,
 } from "./messages";
+import {
+  parseHostToWebviewFlow,
+  type HostToWebviewFlow,
+  type WebviewToHostFlow,
+} from "./flow/flow-messages";
 import { getVsCodeApi, type VsCodeApi } from "./vscode-api";
 
 /** Listener invoked with each validated host message. */
 export type HostMessageListener = (message: HostToWebview) => void;
+
+/** Listener invoked with each validated flow host message (Req 12, 13). */
+export type HostFlowMessageListener = (message: HostToWebviewFlow) => void;
 
 /**
  * Wraps the VS Code webview API and the global `message` event into a small,
@@ -35,6 +61,7 @@ export type HostMessageListener = (message: HostToWebview) => void;
 export class WebviewClient {
   private readonly api: VsCodeApi;
   private readonly listeners = new Set<HostMessageListener>();
+  private readonly flowListeners = new Set<HostFlowMessageListener>();
 
   /**
    * @param api VS Code API handle; defaults to the acquired singleton. Injected
@@ -50,6 +77,16 @@ export class WebviewClient {
   }
 
   /**
+   * Posts a {@link WebviewToHostFlow} flow intent to the host. Mirrors
+   * {@link post} but for the additive Discovery -> Spec flow union, so flow
+   * intents travel the same `postMessage` transport without widening the
+   * Build_Surface union (Req 12, 13).
+   */
+  postFlow(message: WebviewToHostFlow): void {
+    this.api.postMessage(message);
+  }
+
+  /**
    * Subscribes to validated host messages. Returns an unsubscribe function.
    * The first subscription attaches the single global `message` listener; it
    * stays attached for the lifetime of the webview (unsubscribing individual
@@ -59,6 +96,21 @@ export class WebviewClient {
     this.listeners.add(listener);
     return () => {
       this.listeners.delete(listener);
+    };
+  }
+
+  /**
+   * Subscribes to validated {@link HostToWebviewFlow} messages. Returns an
+   * unsubscribe function. Symmetric with {@link onHostMessage}: the same global
+   * `message` listener (attached by {@link start}) fans each payload through
+   * {@link parseHostToWebviewFlow} and notifies flow subscribers on a match.
+   * Build messages never reach flow listeners (and vice versa) because each
+   * validator rejects the other union's discriminators.
+   */
+  onHostFlowMessage(listener: HostFlowMessageListener): () => void {
+    this.flowListeners.add(listener);
+    return () => {
+      this.flowListeners.delete(listener);
     };
   }
 
@@ -83,11 +135,19 @@ export class WebviewClient {
    */
   dispatch(raw: unknown): void {
     const message = parseHostToWebview(raw);
-    if (message === null) {
+    if (message !== null) {
+      for (const listener of this.listeners) {
+        listener(message);
+      }
       return;
     }
-    for (const listener of this.listeners) {
-      listener(message);
+    // Not a Build_Surface message: try the additive flow union. A payload that
+    // matches neither validator is dropped (untrusted-input contract).
+    const flowMessage = parseHostToWebviewFlow(raw);
+    if (flowMessage !== null) {
+      for (const listener of this.flowListeners) {
+        listener(flowMessage);
+      }
     }
   }
 }

@@ -53,6 +53,13 @@ import { SystemClock } from "./core/clock";
 import { WebviewDispatcher } from "./webview/dispatcher";
 import { parseWebviewToHost, type HostToWebview } from "./webview/messages";
 import { createAgentAdapter } from "./adapter/adapter-factory";
+import { FlowController } from "./core/flow/flow-controller";
+import { FlowDispatcher } from "./webview/flow/flow-dispatcher";
+import { createFlowPorts } from "./adapter/flow/flow-port-factory";
+import {
+  parseWebviewToHostFlow,
+  type HostToWebviewFlow,
+} from "./webview/flow/flow-messages";
 
 /** The webview view id contributed in package.json (`contributes.views`). */
 export const AGENT_PANEL_VIEW_ID = "builderHelperAgentPanel.view";
@@ -63,7 +70,11 @@ export const AGENT_PANEL_VIEW_ID = "builderHelperAgentPanel.view";
  * webview, independent of the VS Code runtime.
  */
 export interface MessagingWebview {
-  postMessage(message: HostToWebview): unknown;
+  // Widened to accept flow messages too (Req 12, 13): the additive
+  // Discovery -> Spec flow posts {@link HostToWebviewFlow} over the same
+  // channel. VS Code's real `postMessage` accepts `any`, so accepting the union
+  // is safe and keeps flow hydration type-checking without a second transport.
+  postMessage(message: HostToWebview | HostToWebviewFlow): unknown;
   onDidReceiveMessage(listener: (message: unknown) => unknown): vscode.Disposable;
 }
 
@@ -82,13 +93,32 @@ export interface MessagingWebview {
  * - Pushes an initial {@link WebviewDispatcher.hydrateAll} so the webview renders
  *   from host state immediately on wire-up (Req 1.5).
  *
+ * ## Additive Discovery -> Spec flow host side (Req 12, 13)
+ *
+ * This helper ALSO constructs the flow host side additively: a
+ * {@link FlowController} (with {@link createFlowPorts}) paired with a
+ * {@link FlowDispatcher} via the same forward-reference closure pattern the
+ * Build_Surface dispatcher uses. The inbound listener routes each payload by
+ * discriminator — Build intents ({@link parseWebviewToHost}) are handled exactly
+ * as before, while flow intents ({@link parseWebviewToHostFlow}) are applied via
+ * {@link FlowDispatcher.handle} (the controller's `onChange` re-hydrates the
+ * flow automatically). An initial {@link FlowDispatcher.hydrateFlow} pushes the
+ * first flow snapshot so the webview's flow store can decide the surface.
+ *
+ * This is purely additive: no Build (`HostToWebview`) message or
+ * {@link PanelController} state changes — only extra `hydrateFlow`/`flowNotice`
+ * messages are posted — so existing Builder/Helper behavior is unchanged.
+ *
  * @returns the wired {@link PanelController} and {@link WebviewDispatcher} plus
- *   the inbound-message {@link vscode.Disposable}.
+ *   the inbound-message {@link vscode.Disposable}, and the additive
+ *   {@link FlowController} / {@link FlowDispatcher} pair.
  */
 export function wireWebviewMessaging(webview: MessagingWebview): {
   controller: PanelController;
   dispatcher: WebviewDispatcher;
   messageSubscription: vscode.Disposable;
+  flowController: FlowController;
+  flowDispatcher: FlowDispatcher;
 } {
   // The dispatcher and controller reference each other: the controller's
   // onNotice must forward to the dispatcher, but the dispatcher needs the
@@ -110,23 +140,51 @@ export function wireWebviewMessaging(webview: MessagingWebview): {
     webview.postMessage(message);
   });
 
+  // Additive flow host side (Req 12, 13). Same forward-reference closure the
+  // FlowDispatcher docs prescribe: the controller's onNotice/onChange are set at
+  // construction, so they forward to `flowDispatcher` (assigned right below).
+  // `onChange` triggers a full flow re-hydrate, so async/non-intent-driven
+  // mutations (e.g. a timer-driven mock round settling) push a fresh snapshot.
+  let flowDispatcher: FlowDispatcher;
+  const flowController = new FlowController(createFlowPorts(), {
+    clock: new SystemClock(),
+    onNotice: (n) => flowDispatcher.forwardNotice(n),
+    onChange: () => flowDispatcher.hydrateFlow(),
+  });
+  flowDispatcher = new FlowDispatcher(flowController, (message) => {
+    webview.postMessage(message);
+  });
+
   const messageSubscription = webview.onDidReceiveMessage((raw) => {
+    // Route by discriminator. Build_Surface intents are handled exactly as
+    // before; anything else is tried against the additive flow union.
     const intent = parseWebviewToHost(raw);
-    if (intent === null) {
-      // Untrusted/malformed payload from the webview: drop it defensively.
+    if (intent !== null) {
+      // `handle` is async (submit awaits the adapter); chain the interim
+      // full-refresh so the conversation reflects any state the intent mutated.
+      void dispatcher.handle(intent).then(() => {
+        dispatcher.hydrateAll();
+      });
       return;
     }
-    // `handle` is async (submit awaits the adapter); chain the interim
-    // full-refresh so the conversation reflects any state the intent mutated.
-    void dispatcher.handle(intent).then(() => {
-      dispatcher.hydrateAll();
-    });
+    const flowIntent = parseWebviewToHostFlow(raw);
+    if (flowIntent !== null) {
+      // FlowDispatcher.handle applies the intent to the FlowController, whose
+      // onChange (wired above) triggers flowDispatcher.hydrateFlow(), so the
+      // webview re-hydrates automatically — no manual re-hydrate needed here.
+      void flowDispatcher.handle(flowIntent);
+      return;
+    }
+    // Untrusted/malformed payload from the webview: drop it defensively.
   });
 
   // Render immediately from host state (first paint / re-wire after disposal).
   dispatcher.hydrateAll();
+  // Push the initial flow snapshot so the webview's flow store hydrates and
+  // `selectShellSurface` can decide the top-level surface (Req 12, 13).
+  flowDispatcher.hydrateFlow();
 
-  return { controller, dispatcher, messageSubscription };
+  return { controller, dispatcher, messageSubscription, flowController, flowDispatcher };
 }
 
 /**
@@ -623,6 +681,612 @@ export function buildWebviewHtml(
       padding: var(--sp-2);
     }
     .work-item-detail[hidden] { display: none; }
+
+    /* =====================================================================
+       Discovery -> Spec flow (task 14.1)
+       Class hooks emitted by src/webview/flow/flow-render.ts. Reuses the
+       existing design tokens (--sp-*, --radius-*, --accent, --accent-soft,
+       --transition), the VS Code theme vars, and the bhap-pulse animation.
+       Chat-like, card-based, rounded, theme-adaptive.
+       ===================================================================== */
+
+    /* ---- Shared flow scaffolding ---- */
+    .flow-start,
+    .flow-workspace,
+    .flow-spec {
+      display: flex;
+      flex-direction: column;
+      flex: 1 1 auto;
+      min-height: 0;
+      gap: var(--sp-3);
+      padding: var(--sp-2) var(--sp-1);
+      overflow-y: auto;
+    }
+    .flow-start[hidden],
+    .flow-workspace[hidden],
+    .flow-spec[hidden] { display: none; }
+
+    .flow-start-heading,
+    .flow-workspace-heading,
+    .flow-spec-heading {
+      margin: 0;
+      font-size: 1.2em;
+      font-weight: 700;
+      color: var(--vscode-foreground);
+      letter-spacing: 0.01em;
+    }
+
+    .flow-start-intro {
+      margin: 0;
+      color: var(--vscode-descriptionForeground);
+      line-height: 1.5;
+    }
+
+    /* Agent_Run_Banner — subtle pulsing status banner reusing bhap-pulse. */
+    .flow-agent-banner {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      gap: var(--sp-2);
+      font-size: 0.9em;
+      color: var(--accent);
+      background: var(--accent-soft, color-mix(in srgb, var(--accent) 16%, transparent));
+      border: 1px solid color-mix(in srgb, var(--accent) 38%, transparent);
+      border-radius: var(--radius-md);
+      padding: var(--sp-2) var(--sp-3);
+      animation: bhap-pulse 1.4s ease-in-out infinite;
+    }
+    .flow-agent-banner[hidden] { display: none; }
+    @media (prefers-reduced-motion: reduce) {
+      .flow-agent-banner { animation: none; opacity: 0.85; }
+    }
+
+    /* ---- Discovery Start form ---- */
+    .flow-field {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-1);
+    }
+    .flow-field-label {
+      font-size: 0.85em;
+      font-weight: 600;
+      color: var(--vscode-descriptionForeground);
+      letter-spacing: 0.02em;
+    }
+
+    .flow-goal-input,
+    .flow-optional-input,
+    .flow-level-select {
+      box-sizing: border-box;
+      width: 100%;
+      font-family: inherit;
+      font-size: inherit;
+      line-height: 1.4;
+      color: var(--vscode-input-foreground);
+      background: var(--vscode-input-background);
+      border: 1px solid var(--vscode-panel-border, color-mix(in srgb, var(--vscode-foreground) 20%, transparent));
+      border-radius: var(--radius-md);
+      padding: var(--sp-2) var(--sp-3);
+      transition: border-color var(--transition), box-shadow var(--transition);
+    }
+    .flow-goal-input { resize: vertical; min-height: 60px; }
+    .flow-goal-input:focus,
+    .flow-optional-input:focus,
+    .flow-level-select:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent);
+    }
+    .flow-goal-input:disabled,
+    .flow-optional-input:disabled,
+    .flow-level-select:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .flow-length-indicator {
+      font-size: 0.8em;
+      color: var(--vscode-errorForeground, #f14c4c);
+      padding: 0 var(--sp-1);
+    }
+    .flow-length-indicator[hidden] { display: none; }
+
+    /* Accent-filled primary submit button. */
+    .flow-start-submit {
+      align-self: flex-start;
+      appearance: none;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: inherit;
+      font-weight: 700;
+      color: var(--vscode-button-foreground, var(--accent-contrast));
+      background: var(--accent);
+      border: 1px solid transparent;
+      border-radius: var(--radius-md);
+      padding: var(--sp-2) var(--sp-5);
+      transition: filter var(--transition), opacity var(--transition), box-shadow var(--transition);
+    }
+    .flow-start-submit:hover:not(:disabled) { filter: brightness(1.08); }
+    .flow-start-submit:focus-visible {
+      outline: 2px solid var(--vscode-focusBorder, var(--accent));
+      outline-offset: 2px;
+    }
+    .flow-start-submit:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    /* ---- Discovery Workspace ---- */
+    .flow-rounds {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-4);
+    }
+    .flow-round {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-2);
+    }
+    .flow-round-header {
+      font-size: 0.75em;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--accent);
+      background: color-mix(in srgb, var(--accent) 14%, transparent);
+      border-radius: var(--radius-pill);
+      padding: 2px var(--sp-2);
+      align-self: flex-start;
+    }
+    .flow-round-rationale {
+      margin: 0;
+      color: var(--vscode-descriptionForeground);
+      line-height: 1.5;
+    }
+
+    /* Candidate card — surface, border, radius, subtle hover lift. */
+    .flow-candidate-card {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-1);
+      border: 1px solid var(--vscode-panel-border, color-mix(in srgb, var(--vscode-foreground) 14%, transparent));
+      border-radius: var(--radius-lg);
+      background: color-mix(in srgb, var(--vscode-foreground) 4%, var(--vscode-editor-background));
+      padding: var(--sp-3);
+      transition: border-color var(--transition), background var(--transition);
+    }
+    .flow-candidate-card:hover {
+      border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+      background: var(--vscode-list-hoverBackground, color-mix(in srgb, var(--vscode-foreground) 7%, var(--vscode-editor-background)));
+    }
+    .flow-candidate-title {
+      margin: 0;
+      font-size: 1.02em;
+      font-weight: 700;
+      color: var(--vscode-foreground);
+      overflow-wrap: anywhere;
+    }
+    .flow-candidate-summary {
+      margin: 0;
+      line-height: 1.5;
+      color: var(--vscode-foreground);
+    }
+    .flow-candidate-appeal,
+    .flow-candidate-interaction {
+      margin: 0;
+      font-size: 0.9em;
+      line-height: 1.45;
+      color: var(--vscode-descriptionForeground);
+    }
+
+    .flow-candidate-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--sp-1);
+      margin-top: var(--sp-1);
+    }
+    /* Small pill chip using the accent-soft surface. */
+    .flow-tag {
+      display: inline-flex;
+      align-items: center;
+      font-size: 0.72em;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      color: var(--accent);
+      background: var(--accent-soft, color-mix(in srgb, var(--accent) 16%, transparent));
+      border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+      border-radius: var(--radius-pill);
+      padding: 1px var(--sp-2);
+    }
+
+    .flow-candidate-controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--sp-2);
+      margin-top: var(--sp-2);
+    }
+
+    /* Neutral outlined basket toggle. */
+    .flow-basket-toggle {
+      appearance: none;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.85em;
+      font-weight: 600;
+      color: var(--vscode-foreground);
+      background: transparent;
+      border: 1px solid var(--vscode-panel-border, color-mix(in srgb, var(--vscode-foreground) 24%, transparent));
+      border-radius: var(--radius-pill);
+      padding: var(--sp-1) var(--sp-3);
+      transition: background var(--transition), border-color var(--transition);
+    }
+    .flow-basket-toggle:hover:not(:disabled) {
+      background: var(--vscode-list-hoverBackground, color-mix(in srgb, var(--vscode-foreground) 8%, transparent));
+    }
+    .flow-basket-toggle[aria-pressed="true"] {
+      color: var(--accent);
+      border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+      background: var(--accent-soft, color-mix(in srgb, var(--accent) 16%, transparent));
+    }
+    .flow-basket-toggle:focus-visible {
+      outline: 2px solid var(--vscode-focusBorder, var(--accent));
+      outline-offset: 1px;
+    }
+
+    /* Accent select-to-proceed button. */
+    .flow-select-button {
+      appearance: none;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.85em;
+      font-weight: 700;
+      color: var(--vscode-button-foreground, var(--accent-contrast));
+      background: var(--accent);
+      border: 1px solid transparent;
+      border-radius: var(--radius-pill);
+      padding: var(--sp-1) var(--sp-3);
+      transition: filter var(--transition), opacity var(--transition);
+    }
+    .flow-select-button:hover:not(:disabled) { filter: brightness(1.08); }
+    .flow-select-button:focus-visible {
+      outline: 2px solid var(--vscode-focusBorder, var(--accent));
+      outline-offset: 2px;
+    }
+
+    /* Enriched nested block with a left accent border. */
+    .flow-enriched {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-2);
+      margin-top: var(--sp-2);
+      padding: var(--sp-2) var(--sp-3);
+      border-left: 3px solid var(--accent);
+      border-radius: var(--radius-sm);
+      background: var(--vscode-textCodeBlock-background, color-mix(in srgb, var(--vscode-foreground) 6%, var(--vscode-editor-background)));
+    }
+    .flow-enriched-label {
+      font-size: 0.78em;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--vscode-descriptionForeground);
+    }
+    .flow-enriched-scope {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-1);
+    }
+
+    /* Refinement_Composer. */
+    .flow-composer {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-2);
+      margin-top: var(--sp-2);
+      border-top: 1px solid var(--vscode-panel-border, color-mix(in srgb, var(--vscode-foreground) 14%, transparent));
+      padding-top: var(--sp-3);
+    }
+    .flow-composer-input {
+      box-sizing: border-box;
+      width: 100%;
+      resize: vertical;
+      min-height: 56px;
+      font-family: inherit;
+      font-size: inherit;
+      line-height: 1.4;
+      color: var(--vscode-input-foreground);
+      background: var(--vscode-input-background);
+      border: 1px solid var(--vscode-panel-border, color-mix(in srgb, var(--vscode-foreground) 20%, transparent));
+      border-radius: var(--radius-md);
+      padding: var(--sp-2) var(--sp-3);
+      transition: border-color var(--transition), box-shadow var(--transition);
+    }
+    .flow-composer-input:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent);
+    }
+    .flow-composer-input:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    /* Composer guard/hint message — error/hint color. */
+    .flow-composer-message {
+      font-size: 0.82em;
+      line-height: 1.4;
+      color: var(--vscode-errorForeground, #f14c4c);
+      padding: 0 var(--sp-1);
+    }
+    .flow-composer-message[hidden] { display: none; }
+
+    .flow-composer-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--sp-2);
+    }
+    .flow-composer-action {
+      appearance: none;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.85em;
+      font-weight: 600;
+      color: var(--vscode-foreground);
+      background: color-mix(in srgb, var(--vscode-foreground) 8%, var(--vscode-editor-background));
+      border: 1px solid var(--vscode-panel-border, color-mix(in srgb, var(--vscode-foreground) 20%, transparent));
+      border-radius: var(--radius-md);
+      padding: var(--sp-2) var(--sp-3);
+      transition: background var(--transition), border-color var(--transition), filter var(--transition);
+    }
+    .flow-composer-action:hover:not(:disabled) {
+      border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+      background: var(--vscode-list-hoverBackground, color-mix(in srgb, var(--vscode-foreground) 12%, transparent));
+    }
+    .flow-composer-action:focus-visible {
+      outline: 2px solid var(--vscode-focusBorder, var(--accent));
+      outline-offset: 1px;
+    }
+
+    /* ---- Spec Review ---- */
+    .flow-spec-content {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-4);
+    }
+
+    /* Prominent, larger product-purpose one-liner. */
+    .flow-spec-purpose {
+      margin: 0;
+      font-size: 1.15em;
+      font-weight: 700;
+      line-height: 1.45;
+      color: var(--vscode-foreground);
+      border-left: 3px solid var(--accent);
+      padding-left: var(--sp-3);
+    }
+
+    .flow-spec-fact {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--sp-2);
+      margin: 0;
+      line-height: 1.5;
+    }
+    .flow-spec-fact-label {
+      font-weight: 700;
+      color: var(--vscode-descriptionForeground);
+    }
+    .flow-spec-fact-value { color: var(--vscode-foreground); }
+
+    .flow-spec-chips-section,
+    .flow-spec-list-section {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-1);
+    }
+    .flow-spec-section-label {
+      font-size: 0.85em;
+      font-weight: 700;
+      color: var(--vscode-descriptionForeground);
+      letter-spacing: 0.02em;
+    }
+    .flow-spec-section-heading {
+      margin: 0 0 var(--sp-1);
+      font-size: 1em;
+      font-weight: 700;
+      color: var(--vscode-foreground);
+    }
+
+    .flow-spec-list {
+      margin: 0;
+      padding-left: var(--sp-5);
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-1);
+    }
+    .flow-spec-list-item {
+      line-height: 1.5;
+      color: var(--vscode-foreground);
+    }
+
+    .flow-spec-scope,
+    .flow-spec-decisions,
+    .flow-spec-constraints {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-2);
+    }
+
+    .flow-spec-scope-group {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-1);
+      border-left: 3px solid var(--vscode-panel-border, color-mix(in srgb, var(--vscode-foreground) 20%, transparent));
+      border-radius: var(--radius-sm);
+      background: color-mix(in srgb, var(--vscode-foreground) 4%, var(--vscode-editor-background));
+      padding: var(--sp-2) var(--sp-3);
+    }
+    /* Distinct left-border accent colors per scope category (optional). */
+    .flow-spec-scope-group[data-category="LEARNER_FOCUS"] {
+      border-left-color: var(--vscode-charts-blue, #4f8cff);
+    }
+    .flow-spec-scope-group[data-category="AGENT_SUPPORT"] {
+      border-left-color: var(--vscode-charts-purple, #a78bfa);
+    }
+    .flow-spec-scope-group[data-category="EXCLUDED"] {
+      border-left-color: var(--vscode-descriptionForeground, #8a8a8a);
+    }
+    .flow-spec-scope-title {
+      margin: 0;
+      font-size: 0.92em;
+      font-weight: 700;
+      color: var(--vscode-foreground);
+    }
+    .flow-spec-scope-entry {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-1);
+    }
+    .flow-spec-scope-entry-title {
+      font-weight: 600;
+      color: var(--vscode-foreground);
+    }
+    .flow-spec-scope-entry-rationale {
+      margin: 0;
+      font-size: 0.9em;
+      line-height: 1.45;
+      color: var(--vscode-descriptionForeground);
+    }
+
+    /* Expected-decision card. */
+    .flow-decision {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-1);
+      border: 1px solid var(--vscode-panel-border, color-mix(in srgb, var(--vscode-foreground) 14%, transparent));
+      border-radius: var(--radius-md);
+      background: color-mix(in srgb, var(--vscode-foreground) 4%, var(--vscode-editor-background));
+      padding: var(--sp-3);
+    }
+    .flow-decision-category {
+      align-self: flex-start;
+      font-size: 0.7em;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--accent);
+      background: color-mix(in srgb, var(--accent) 16%, transparent);
+      border-radius: var(--radius-pill);
+      padding: 2px var(--sp-2);
+    }
+    .flow-decision-description {
+      margin: 0;
+      line-height: 1.5;
+      color: var(--vscode-foreground);
+    }
+    .flow-decision-why {
+      margin: 0;
+      font-size: 0.9em;
+      line-height: 1.45;
+      color: var(--vscode-descriptionForeground);
+    }
+
+    /* Spec refine + confirm composer. */
+    .flow-spec-composer {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-2);
+      margin-top: var(--sp-2);
+      border-top: 1px solid var(--vscode-panel-border, color-mix(in srgb, var(--vscode-foreground) 14%, transparent));
+      padding-top: var(--sp-3);
+    }
+    .flow-spec-refine-input {
+      box-sizing: border-box;
+      width: 100%;
+      resize: vertical;
+      min-height: 56px;
+      font-family: inherit;
+      font-size: inherit;
+      line-height: 1.4;
+      color: var(--vscode-input-foreground);
+      background: var(--vscode-input-background);
+      border: 1px solid var(--vscode-panel-border, color-mix(in srgb, var(--vscode-foreground) 20%, transparent));
+      border-radius: var(--radius-md);
+      padding: var(--sp-2) var(--sp-3);
+      transition: border-color var(--transition), box-shadow var(--transition);
+    }
+    .flow-spec-refine-input:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent);
+    }
+    .flow-spec-refine-input:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    /* Neutral outlined refine button. */
+    .flow-spec-refine-button {
+      align-self: flex-start;
+      appearance: none;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: inherit;
+      font-weight: 600;
+      color: var(--vscode-foreground);
+      background: color-mix(in srgb, var(--vscode-foreground) 8%, var(--vscode-editor-background));
+      border: 1px solid var(--vscode-panel-border, color-mix(in srgb, var(--vscode-foreground) 20%, transparent));
+      border-radius: var(--radius-md);
+      padding: var(--sp-2) var(--sp-4);
+      transition: background var(--transition), border-color var(--transition), filter var(--transition);
+    }
+    .flow-spec-refine-button:hover:not(:disabled) {
+      border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+      background: var(--vscode-list-hoverBackground, color-mix(in srgb, var(--vscode-foreground) 12%, transparent));
+    }
+    .flow-spec-refine-button:focus-visible {
+      outline: 2px solid var(--vscode-focusBorder, var(--accent));
+      outline-offset: 2px;
+    }
+
+    /* Prominent accent confirm ("이걸로 시작") button. */
+    .flow-spec-confirm {
+      align-self: flex-start;
+      appearance: none;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: inherit;
+      font-weight: 700;
+      color: var(--vscode-button-foreground, var(--accent-contrast));
+      background: var(--accent);
+      border: 1px solid transparent;
+      border-radius: var(--radius-md);
+      padding: var(--sp-2) var(--sp-5);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 24%, transparent);
+      transition: filter var(--transition), opacity var(--transition), box-shadow var(--transition);
+    }
+    .flow-spec-confirm:hover:not(:disabled) { filter: brightness(1.08); }
+    .flow-spec-confirm:focus-visible {
+      outline: 2px solid var(--vscode-focusBorder, var(--accent));
+      outline-offset: 2px;
+    }
+
+    .flow-spec-loading {
+      margin: 0;
+      color: var(--vscode-descriptionForeground);
+      animation: bhap-pulse 1.4s ease-in-out infinite;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .flow-spec-loading { animation: none; opacity: 0.75; }
+    }
+
+    /* Consistent disabled treatment for all flow buttons (mirrors
+       .send-button:disabled): dim + not-allowed cursor. */
+    .flow-start-submit:disabled,
+    .flow-basket-toggle:disabled,
+    .flow-select-button:disabled,
+    .flow-composer-action:disabled,
+    .flow-spec-refine-button:disabled,
+    .flow-spec-confirm:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+      box-shadow: none;
+      filter: none;
+    }
   </style>
 </head>
 <body>
@@ -669,16 +1333,18 @@ export class AgentPanelViewProvider implements vscode.WebviewViewProvider {
 
     // Wire the message channel to a fresh controller/dispatcher for this view
     // instance. The initial hydrateAll() inside the helper performs first paint.
-    const { dispatcher, messageSubscription } = wireWebviewMessaging(
+    const { dispatcher, flowDispatcher, messageSubscription } = wireWebviewMessaging(
       webviewView.webview,
     );
     webviewView.onDidDispose(() => messageSubscription.dispose());
 
     // On re-reveal after being hidden/disposed, push a fresh full hydrate so the
-    // projection is restored from authoritative host state (Req 1.5).
+    // projection is restored from authoritative host state (Req 1.5), and a
+    // fresh flow hydrate so the flow shell re-hydrates too (Req 13.2).
     webviewView.onDidChangeVisibility(() => {
       if (webviewView.visible) {
         dispatcher.hydrateAll();
+        flowDispatcher.hydrateFlow();
       }
     });
   }
