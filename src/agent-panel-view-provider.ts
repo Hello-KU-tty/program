@@ -265,6 +265,25 @@ export function buildWebviewHtml(
     }
 
     /* ---------------------------------------------------------------------
+       Top-level surface wrappers. main.ts renders the Build_Surface into
+       '.build-shell' and the Discovery -> Spec flow into '.flow-shell', both
+       siblings under #app, and toggles their 'hidden' attribute to switch
+       surfaces. They must fill the flex column and MUST fully collapse when
+       hidden so the inactive surface can never overlap the active one.
+       --------------------------------------------------------------------- */
+    .build-shell,
+    .flow-shell {
+      display: flex;
+      flex-direction: column;
+      flex: 1 1 auto;
+      min-height: 0;
+    }
+    .build-shell[hidden],
+    .flow-shell[hidden] {
+      display: none;
+    }
+
+    /* ---------------------------------------------------------------------
        Root panel: full-height flex column. The active accent is scoped by the
        root's data-agent (set by render.ts) so switching tabs re-themes.
        --------------------------------------------------------------------- */
@@ -699,7 +718,9 @@ export function buildWebviewHtml(
       flex: 1 1 auto;
       min-height: 0;
       gap: var(--sp-3);
-      padding: var(--sp-2) var(--sp-1);
+      /* A touch more horizontal breathing room so flow content doesn't hug the
+         panel's left/right edges (vertical padding unchanged). */
+      padding: var(--sp-2) var(--sp-3);
       overflow-y: auto;
     }
     .flow-start[hidden],
