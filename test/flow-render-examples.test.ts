@@ -93,6 +93,9 @@ function workspaceSnapshot(overrides: Partial<FlowSnapshot> = {}): FlowSnapshot 
     discoveryInProgress: false,
     specInProgress: false,
     notice: null,
+    flowSupport: { mode: "mock", experimental: false },
+    history: [],
+    historyLoading: false,
     ...overrides,
   };
 }
@@ -151,6 +154,9 @@ function specSnapshot(overrides: Partial<LearningSpecRevision> = {}): FlowSnapsh
     discoveryInProgress: false,
     specInProgress: false,
     notice: null,
+    flowSupport: { mode: "mock", experimental: false },
+    history: [],
+    historyLoading: false,
   };
 }
 

@@ -55,7 +55,11 @@ import { parseWebviewToHost, type HostToWebview } from "./webview/messages";
 import { createAgentAdapter } from "./adapter/adapter-factory";
 import { FlowController } from "./core/flow/flow-controller";
 import { FlowDispatcher } from "./webview/flow/flow-dispatcher";
-import { createFlowPorts } from "./adapter/flow/flow-port-factory";
+import {
+  createFlowPorts,
+  createFlowPortsAsync,
+  isNativeFlowSupported,
+} from "./adapter/flow/flow-port-factory";
 import {
   parseWebviewToHostFlow,
   type HostToWebviewFlow,
@@ -113,7 +117,10 @@ export interface MessagingWebview {
  *   the inbound-message {@link vscode.Disposable}, and the additive
  *   {@link FlowController} / {@link FlowDispatcher} pair.
  */
-export function wireWebviewMessaging(webview: MessagingWebview): {
+export function wireWebviewMessaging(
+  webview: MessagingWebview,
+  options: { connectionFile?: string } = {},
+): {
   controller: PanelController;
   dispatcher: WebviewDispatcher;
   messageSubscription: vscode.Disposable;
@@ -154,6 +161,39 @@ export function wireWebviewMessaging(webview: MessagingWebview): {
   flowDispatcher = new FlowDispatcher(flowController, (message) => {
     webview.postMessage(message);
   });
+
+  // Async gated port construction / native-support verdict (guide §10-1, §9).
+  //
+  // The controller above is built synchronously with the sync Mock ports so
+  // first paint and inbound routing work with zero delay and identical behavior
+  // to before. The REAL gated factory is async, so we kick it off here and swap
+  // the controller's ports + record the fail-closed native-support verdict once
+  // it resolves. On Windows / unsupported pins this resolves near-instantly
+  // WITHOUT attempting any connection (it fails closed to Mock), so the swap is
+  // effectively immediate and non-networked in tests and on unsupported builds.
+  //
+  // SECURITY (guide §9): `options.connectionFile` is a HOST-ONLY absolute file
+  // path. It is passed into the factory (which reads it inside the host-side
+  // LocalCoreClient) but is NEVER forwarded to the controller snapshot or any
+  // webview message — only the derived `{ mode, experimental, reason? }` verdict
+  // crosses. `isNativeFlowSupported().experimental` supplies the experimental
+  // flag for the `macOS exact pin · experimental` label.
+  const experimental = isNativeFlowSupported().experimental;
+  void createFlowPortsAsync({ connectionFile: options.connectionFile }).then(
+    (result) => {
+      // Swap to the chosen (real/live or fail-closed Mock) ports and record the
+      // non-sensitive verdict. applyPortResult invokes the controller's onChange
+      // (wired above to flowDispatcher.hydrateFlow), so the swap publishes the
+      // fresh verdict snapshot to the webview automatically — no manual
+      // hydrate needed here.
+      flowController.applyPortResult(result, experimental);
+      // Read-only Project History (guide §6/§10-2): load the History list ONCE
+      // now that the real/mock HistoryPort is in place. This is read-only — it
+      // never starts a run, mutates, or auto-triggers discovery. loadHistory's
+      // notifyChange re-hydrates the flow snapshot so the list appears.
+      void flowController.loadHistory();
+    },
+  );
 
   const messageSubscription = webview.onDidReceiveMessage((raw) => {
     // Route by discriminator. Build_Surface intents are handled exactly as
@@ -741,6 +781,143 @@ export function buildWebviewHtml(
       margin: 0;
       color: var(--vscode-descriptionForeground);
       line-height: 1.5;
+    }
+
+    /* Native-support banner (guide §10-1) — a small, non-intrusive caption
+       showing the mode/experimental verdict (never a path/token). Reuses the
+       muted description color + small font tokens. */
+    .flow-support-banner {
+      flex: 0 0 auto;
+      font-size: 0.8em;
+      color: var(--vscode-descriptionForeground);
+      letter-spacing: 0.02em;
+      padding: var(--sp-1) 0;
+    }
+    .flow-support-banner[hidden] { display: none; }
+
+    /* ---- Read-only Project History (guide §6/§10-2) ---- */
+    .flow-history {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-2);
+      border: 1px solid var(--vscode-panel-border, color-mix(in srgb, var(--vscode-foreground) 14%, transparent));
+      border-radius: var(--radius-md);
+      background: color-mix(in srgb, var(--vscode-foreground) 3%, var(--vscode-editor-background));
+      padding: var(--sp-3);
+    }
+    .flow-history-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--sp-2);
+    }
+    .flow-history-title {
+      margin: 0;
+      font-size: 0.95em;
+      font-weight: 700;
+      color: var(--vscode-foreground);
+    }
+    .flow-history-refresh {
+      appearance: none;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.8em;
+      font-weight: 600;
+      color: var(--accent);
+      background: transparent;
+      border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+      border-radius: var(--radius-pill);
+      padding: var(--sp-1) var(--sp-3);
+      transition: background var(--transition), border-color var(--transition);
+    }
+    .flow-history-refresh:hover {
+      background: var(--accent-soft, color-mix(in srgb, var(--accent) 16%, transparent));
+    }
+    .flow-history-refresh:focus-visible {
+      outline: 2px solid var(--vscode-focusBorder, var(--accent));
+      outline-offset: 1px;
+    }
+    .flow-history-loading {
+      font-size: 0.85em;
+      color: var(--vscode-descriptionForeground);
+      animation: bhap-pulse 1.4s ease-in-out infinite;
+    }
+    .flow-history-loading[hidden] { display: none; }
+    @media (prefers-reduced-motion: reduce) {
+      .flow-history-loading { animation: none; opacity: 0.75; }
+    }
+    .flow-history-empty {
+      font-size: 0.85em;
+      color: var(--vscode-descriptionForeground);
+    }
+    .flow-history-empty[hidden] { display: none; }
+    .flow-history-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-2);
+    }
+    .flow-history-row {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-1);
+      border: 1px solid var(--vscode-panel-border, color-mix(in srgb, var(--vscode-foreground) 14%, transparent));
+      border-radius: var(--radius-md);
+      background: color-mix(in srgb, var(--vscode-foreground) 4%, var(--vscode-editor-background));
+      padding: var(--sp-2) var(--sp-3);
+    }
+    .flow-history-row-title {
+      font-weight: 700;
+      color: var(--vscode-foreground);
+      overflow-wrap: anywhere;
+    }
+    .flow-history-row-goal {
+      margin: 0;
+      font-size: 0.88em;
+      line-height: 1.45;
+      color: var(--vscode-descriptionForeground);
+      overflow-wrap: anywhere;
+    }
+    .flow-history-row-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--sp-1);
+    }
+    .flow-history-row-status {
+      display: inline-flex;
+      align-items: center;
+      font-size: 0.72em;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      color: var(--accent);
+      background: var(--accent-soft, color-mix(in srgb, var(--accent) 16%, transparent));
+      border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+      border-radius: var(--radius-pill);
+      padding: 1px var(--sp-2);
+    }
+    .flow-history-open {
+      align-self: flex-start;
+      appearance: none;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.82em;
+      font-weight: 600;
+      color: var(--vscode-foreground);
+      background: transparent;
+      border: 1px solid var(--vscode-panel-border, color-mix(in srgb, var(--vscode-foreground) 24%, transparent));
+      border-radius: var(--radius-pill);
+      padding: var(--sp-1) var(--sp-3);
+      transition: background var(--transition), border-color var(--transition);
+    }
+    .flow-history-open:hover {
+      border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+      background: var(--vscode-list-hoverBackground, color-mix(in srgb, var(--vscode-foreground) 8%, transparent));
+    }
+    .flow-history-open:focus-visible {
+      outline: 2px solid var(--vscode-focusBorder, var(--accent));
+      outline-offset: 1px;
     }
 
     /* Agent_Run_Banner — subtle pulsing status banner reusing bhap-pulse. */
@@ -1352,10 +1529,19 @@ export class AgentPanelViewProvider implements vscode.WebviewViewProvider {
       nonce,
     );
 
+    // Read the HOST-ONLY connection descriptor path from the machine setting
+    // (guide §4: an absolute file path only, never a token). It is passed into
+    // the wiring so the async gated factory can attempt a live connection on
+    // supported builds; it is NEVER forwarded to the webview (guide §9).
+    const connectionFile = vscode.workspace
+      .getConfiguration("vibeHelper")
+      .get<string>("connectionFile");
+
     // Wire the message channel to a fresh controller/dispatcher for this view
     // instance. The initial hydrateAll() inside the helper performs first paint.
     const { dispatcher, flowDispatcher, messageSubscription } = wireWebviewMessaging(
       webviewView.webview,
+      { connectionFile: connectionFile || undefined },
     );
     webviewView.onDidDispose(() => messageSubscription.dispose());
 

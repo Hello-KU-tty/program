@@ -30,6 +30,7 @@ import type {
   ProjectCandidateRevision,
   ProjectStatus,
 } from "./flow-types";
+import type { HistoryProjectView } from "./history-types";
 
 /**
  * The top-level shell phase, derived from `Project.status` (Req 12.2, 12.3):
@@ -39,6 +40,29 @@ import type {
  *   - `building`            — BUILDING or COMPLETED (reveal the Build_Surface)
  */
 export type FlowPhase = "discovery_start" | "discovery_workspace" | "spec_review" | "building";
+
+/**
+ * The non-sensitive native-support verdict projected to the webview so it can
+ * label the flow surface (guide §10-1 `macOS exact pin · experimental` /
+ * fail-closed notice) WITHOUT ever learning the connection or token.
+ *
+ * SECURITY (guide §9): this object MUST only ever carry `mode`, `experimental`,
+ * and an optional machine-readable `reason` string. It MUST NEVER contain the
+ * `connectionFile` path, the `LocalConnection`, the bearer token, or any other
+ * host-only secret — those stay inside the extension host / `LocalCoreClient`.
+ * Only the mode/reason/experimental verdict may cross to the webview.
+ */
+export interface FlowSupport {
+  /** `"live"` when backed by the real SDK; `"mock"` when running on test data. */
+  mode: "live" | "mock";
+  /** True only on the experimental macOS/arm64 live pin. */
+  experimental: boolean;
+  /** A machine-readable reason (e.g. why it failed closed). Never a secret. */
+  reason?: string;
+}
+
+/** The safe default verdict before any async factory result is applied. */
+export const DEFAULT_FLOW_SUPPORT: FlowSupport = { mode: "mock", experimental: false };
 
 /**
  * An immutable projection of the {@link FlowController}'s authoritative state,
@@ -72,6 +96,20 @@ export interface FlowSnapshot {
   specInProgress: boolean;
   /** The latest notice per the append-only log, or null if none. */
   notice: { surface: string; kind: string; message: string } | null;
+  /**
+   * The read-only Project History list (guide §6/§10-2). SECURITY (guide §9):
+   * only the safe {@link HistoryProjectView} fields cross to the webview — never
+   * a connection, token, or absolute path. Empty until loaded.
+   */
+  history: HistoryProjectView[];
+  /** Whether the read-only History list is currently loading. */
+  historyLoading: boolean;
+  /**
+   * The non-sensitive native-support verdict (guide §10-1 label / fail-closed
+   * notice). SECURITY (guide §9): only `{ mode, experimental, reason? }` — never
+   * the connection file path or token — may appear here or cross to the webview.
+   */
+  flowSupport: FlowSupport;
 }
 
 /**
@@ -110,6 +148,7 @@ function clone<T>(value: T): T {
 export function buildFlowSnapshot(
   state: FlowControllerState,
   notices: readonly FlowNotice[],
+  flowSupport: FlowSupport = DEFAULT_FLOW_SUPPORT,
 ): FlowSnapshot {
   const lastNotice = notices.length > 0 ? notices[notices.length - 1] : null;
 
@@ -129,5 +168,11 @@ export function buildFlowSnapshot(
     notice: lastNotice
       ? { surface: lastNotice.surface, kind: lastNotice.kind, message: lastNotice.message }
       : null,
+    // Only the non-sensitive verdict crosses (guide §9): mode/experimental/reason.
+    flowSupport: { ...flowSupport },
+    // Read-only History (guide §6/§10-2). Deep-copied safe view rows only
+    // (guide §9): no connection/token/path can be present in these fields.
+    history: clone(state.history),
+    historyLoading: state.historyLoading,
   };
 }

@@ -163,6 +163,14 @@ export function bootstrap(
     onDraftChanged: (field, text) => {
       client.postFlow({ type: "draftChangedFlow", field, text });
     },
+    onRefreshHistory: () => {
+      // Read-only (guide §6/§10-2): (re)load the History list.
+      client.postFlow({ type: "refreshHistory" });
+    },
+    onOpenHistoryProject: (projectId) => {
+      // Read-only (guide §6/§10-2): restore a safe summary only.
+      client.postFlow({ type: "openHistoryProject", projectId });
+    },
   };
 
   // Constructing the views appends their (self-hiding) containers to

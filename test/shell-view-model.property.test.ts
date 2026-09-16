@@ -52,6 +52,9 @@ function snapshotWithPhase(phase: FlowPhase): FlowSnapshot {
     discoveryInProgress: false,
     specInProgress: false,
     notice: null,
+    flowSupport: { mode: "mock", experimental: false },
+    history: [],
+    historyLoading: false,
   };
 }
 

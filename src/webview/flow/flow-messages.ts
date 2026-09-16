@@ -61,6 +61,12 @@ export type HostToWebviewFlow =
  * - `confirmSpec`: the learner confirmed the spec, advancing to Build (Req 11).
  * - `draftChangedFlow`: an unsent input field changed; reported so the host can
  *   restore it on re-hydration (Req 13.2).
+ * - `refreshHistory`: the learner asked to (re)load the read-only Project
+ *   History list (guide §6/§10-2). READ-ONLY: it only triggers
+ *   `listProjects()`; it NEVER starts a run or mutates anything.
+ * - `openHistoryProject`: the learner opened a history row. READ-ONLY: it only
+ *   triggers `restoreProject(projectId)` for a safe summary; it NEVER starts a
+ *   run, mutates, or auto-triggers discovery.
  */
 export type WebviewToHostFlow =
   | { type: "startDiscovery"; input: DiscoveryInput }
@@ -74,7 +80,9 @@ export type WebviewToHostFlow =
   | { type: "selectCandidate"; target: CandidateRevisionReference }
   | { type: "refineSpec"; message: string }
   | { type: "confirmSpec" }
-  | { type: "draftChangedFlow"; field: string; text: string };
+  | { type: "draftChangedFlow"; field: string; text: string }
+  | { type: "refreshHistory" }
+  | { type: "openHistoryProject"; projectId: string };
 
 /** The set of valid {@link HostToWebviewFlow} discriminators. */
 const HOST_TO_WEBVIEW_FLOW_TYPES: ReadonlySet<HostToWebviewFlow["type"]> = new Set([
@@ -91,6 +99,8 @@ const WEBVIEW_TO_HOST_FLOW_TYPES: ReadonlySet<WebviewToHostFlow["type"]> = new S
   "refineSpec",
   "confirmSpec",
   "draftChangedFlow",
+  "refreshHistory",
+  "openHistoryProject",
 ]);
 
 /**

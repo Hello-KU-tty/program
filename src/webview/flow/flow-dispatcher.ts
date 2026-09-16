@@ -171,6 +171,17 @@ export class FlowDispatcher {
         // state is mutated.
         return;
       }
+      case "refreshHistory": {
+        // Read-only (guide §6/§10-2): (re)load the History list. No run/mutation.
+        await this.controller.loadHistory();
+        return;
+      }
+      case "openHistoryProject": {
+        // Read-only (guide §6/§10-2): restore a safe summary only. No run is
+        // started, nothing is mutated, discovery is NOT auto-triggered.
+        await this.controller.restoreHistoryProject(msg.projectId);
+        return;
+      }
       default: {
         // Exhaustiveness guard: adding a new intent kind surfaces here at
         // compile time so the dispatcher is kept in sync with the protocol.

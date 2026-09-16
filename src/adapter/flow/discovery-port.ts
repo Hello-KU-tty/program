@@ -33,6 +33,10 @@ import type {
   PreviewRound,
   ProjectCandidateRevision,
 } from "../../core/flow/flow-types";
+import type {
+  ProjectHistoryView,
+  RestoredProjectView,
+} from "../../core/flow/history-types";
 
 /** Metadata every port call carries so a backend swap is seamless (Req 1.6). */
 export interface RequestEnvelope {
@@ -119,8 +123,41 @@ export interface SpecPort {
   ): Promise<PortResult<PreparedBuilderTask>>;
 }
 
+/**
+ * The read-only History half of the port boundary (guide §6 History row, §10-2):
+ * list previously-created durable projects and restore one project's durable
+ * snapshot for display. It is a SEPARATE, read-only concern from the
+ * Discovery -> Spec state machine — these ops NEVER start a run, mutate
+ * anything, or auto-trigger discovery ("read-only, 모델 호출 0",
+ * "run 자동 시작 없음").
+ *
+ * SECURITY (guide §9): the methods return only the program-local SAFE view
+ * types ({@link ProjectHistoryView} / {@link RestoredProjectView}), which carry
+ * only non-sensitive scalars — never the connection, token, or absolute paths.
+ * Non-throwing like the other ports: each resolves to a {@link PortResult}.
+ */
+export interface HistoryPort {
+  /** List up to `limit` durable projects as safe view rows (read-only). */
+  listProjects(
+    limit: number,
+    env: RequestEnvelope,
+  ): Promise<PortResult<ProjectHistoryView>>;
+
+  /** Restore one project's durable snapshot as a safe summary (read-only). */
+  restoreProject(
+    projectId: string,
+    env: RequestEnvelope,
+  ): Promise<PortResult<RestoredProjectView>>;
+}
+
 /** The pair the factory returns and the controller consumes. */
 export interface FlowPorts {
   discovery: DiscoveryPort;
   spec: SpecPort;
+  /**
+   * The optional read-only History port (guide §6/§10-2). Optional so existing
+   * constructions/tests that build `{ discovery, spec }` still typecheck; when
+   * present the controller can populate the read-only History list.
+   */
+  history?: HistoryPort;
 }

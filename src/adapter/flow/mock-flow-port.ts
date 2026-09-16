@@ -41,7 +41,13 @@ import type {
   SpecScopeEntry,
 } from "../../core/flow/flow-types";
 import type {
+  ProjectHistoryView,
+  HistoryProjectView,
+  RestoredProjectView,
+} from "../../core/flow/history-types";
+import type {
   DiscoveryPort,
+  HistoryPort,
   PortError,
   PortResult,
   RequestEnvelope,
@@ -57,7 +63,9 @@ export type MockOp =
   | "generateSpecDraft"
   | "refineSpec"
   | "confirmSpec"
-  | "prepareBuilderTask";
+  | "prepareBuilderTask"
+  | "listProjects"
+  | "restoreProject";
 
 /** Construction options for the {@link MockDiscoveryPort}. */
 export interface MockPortOptions {
@@ -255,11 +263,48 @@ const DEPLOYMENT_CONSTRAINTS: readonly string[] = [
   "외부 서버 없이 동작",
 ];
 
+/** A safe, seeded sample of previously-created projects for the History list. */
+interface HistorySeed {
+  title: string;
+  learningGoal: string;
+  status: HistoryProjectView["status"];
+  suggestedSurface: HistoryProjectView["suggestedSurface"];
+  pendingDecisionCount: number;
+  helperConversationCount: number;
+}
+
+const HISTORY_SEEDS: readonly HistorySeed[] = [
+  {
+    title: "습관 트래커",
+    learningGoal: "리액트로 매일 습관을 기록하는 앱을 만들어 보고 싶어요",
+    status: "BUILDING",
+    suggestedSurface: "BUILD",
+    pendingDecisionCount: 1,
+    helperConversationCount: 3,
+  },
+  {
+    title: "가계부",
+    learningGoal: "수입과 지출을 정리하는 간단한 가계부를 만들고 싶어요",
+    status: "SPEC_REVIEW",
+    suggestedSurface: "SPEC",
+    pendingDecisionCount: 0,
+    helperConversationCount: 1,
+  },
+  {
+    title: "플래시카드 암기",
+    learningGoal: "단어를 반복 학습하는 플래시카드 앱을 만들어 보고 싶어요",
+    status: "DISCOVERY",
+    suggestedSurface: "DISCOVERY",
+    pendingDecisionCount: 0,
+    helperConversationCount: 0,
+  },
+];
+
 /**
  * The combined mock port. A single instance satisfies both {@link DiscoveryPort}
  * and {@link SpecPort}; `createFlowPorts` returns it for both roles.
  */
-export class MockDiscoveryPort implements DiscoveryPort, SpecPort {
+export class MockDiscoveryPort implements DiscoveryPort, SpecPort, HistoryPort {
   private readonly clock: Clock;
   private readonly latency: { minMs: number; maxMs: number };
   private readonly failures: Partial<Record<MockOp, PortError>>;
@@ -420,6 +465,71 @@ export class MockDiscoveryPort implements DiscoveryPort, SpecPort {
         createdAt: this.clock.now(),
       };
       return task;
+    });
+  }
+
+  // --- HistoryPort (read-only; guide §6/§10-2) ---
+
+  /**
+   * List a small, deterministic, seeded set of sample projects (guide §6
+   * History row) so the read-only History UI has something believable to show
+   * on Windows / fail-closed / dev. Read-only: no run started, nothing mutated.
+   *
+   * SECURITY (guide §9): returns only the SAFE {@link HistoryProjectView}
+   * fields — no connection, token, or path is ever produced.
+   */
+  listProjects(
+    limit: number,
+    _env: RequestEnvelope,
+  ): Promise<PortResult<ProjectHistoryView>> {
+    return this.schedule("listProjects", () => {
+      // Seeded count in [0, HISTORY_SEEDS.length] so different seeds show
+      // different-but-repeatable sample sets (including an occasional empty).
+      const max = Math.min(HISTORY_SEEDS.length, Math.max(0, limit));
+      const count = Math.floor(this.rng() * (max + 1));
+      const projects: HistoryProjectView[] = [];
+      for (let i = 0; i < count; i++) {
+        const seed = HISTORY_SEEDS[i % HISTORY_SEEDS.length] as HistorySeed;
+        projects.push({
+          projectId: this.nextId("project"),
+          title: seed.title,
+          learningGoal: seed.learningGoal,
+          status: seed.status,
+          suggestedSurface: seed.suggestedSurface,
+          pendingDecisionCount: seed.pendingDecisionCount,
+          helperConversationCount: seed.helperConversationCount,
+          updatedAt: this.clock.now(),
+        });
+      }
+      return { projects };
+    });
+  }
+
+  /**
+   * Restore a minimal, safe summary for a project id (guide §6). Read-only:
+   * no run started, nothing mutated. SECURITY (guide §9): only safe scalars —
+   * never a workspaceDirectory/path or token.
+   */
+  restoreProject(
+    projectId: string,
+    _env: RequestEnvelope,
+  ): Promise<PortResult<RestoredProjectView>> {
+    return this.schedule("restoreProject", () => {
+      const seed = HISTORY_SEEDS[
+        Math.floor(this.rng() * HISTORY_SEEDS.length)
+      ] as HistorySeed;
+      const view: RestoredProjectView = {
+        projectId,
+        title: seed.title,
+        learningGoal: seed.learningGoal,
+        status: seed.status,
+        suggestedSurface: seed.suggestedSurface,
+        hasSpec: seed.status !== "DISCOVERY",
+        ...(seed.status === "BUILDING"
+          ? { currentTaskTitle: "첫 화면 만들기" }
+          : {}),
+      };
+      return view;
     });
   }
 

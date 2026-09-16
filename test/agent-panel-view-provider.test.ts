@@ -132,6 +132,14 @@ describe("wireWebviewMessaging", () => {
   it("drops malformed/unknown inbound payloads without forwarding", async () => {
     const webview = new FakeWebview();
     const { controller } = wireWebviewMessaging(webview);
+
+    // The wiring additively kicks off the async gated flow-port factory, which
+    // fails closed to Mock on this (non-macOS/arm64) platform and then posts one
+    // extra `hydrateFlow` when it swaps the ports + records the verdict. Let that
+    // startup swap settle FIRST, then capture the baseline, so this test cleanly
+    // asserts that MALFORMED INBOUND INPUT specifically produces no further posts
+    // (the concern this test owns), independent of the one-time startup swap.
+    await new Promise((resolve) => setTimeout(resolve, 0));
     const postedAfterInit = webview.posted.length;
 
     webview.send({ type: "not-a-real-intent" });

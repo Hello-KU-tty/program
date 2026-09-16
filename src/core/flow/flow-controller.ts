@@ -31,7 +31,13 @@ import type {
   RequestEnvelope,
 } from "../../adapter/flow/discovery-port";
 import { validateFeedback } from "./feedback-validation";
-import { buildFlowSnapshot, type FlowSnapshot } from "./flow-snapshot";
+import {
+  buildFlowSnapshot,
+  DEFAULT_FLOW_SUPPORT,
+  type FlowSnapshot,
+  type FlowSupport,
+} from "./flow-snapshot";
+import type { CreateFlowPortsResult } from "../../adapter/flow/flow-port-factory";
 import {
   type CandidateRevisionReference,
   type CandidateRound,
@@ -47,16 +53,24 @@ import {
   type ProjectStatus,
   refKey,
 } from "./flow-types";
+import type { HistoryProjectView, RestoredProjectView } from "./history-types";
 
 /** The two independently-locked surfaces of the flow. */
 export type FlowSurface = "discovery" | "spec";
+
+/**
+ * The surface a notice is scoped to. The read-only History concern (guide
+ * §6/§10-2) is independent of the discovery/spec single-flight surfaces, so it
+ * gets its own `"history"` notice scope without joining {@link FlowSurface}.
+ */
+export type FlowNoticeSurface = FlowSurface | "history";
 
 /** The kind of a notice surfaced to the webview. */
 export type FlowNoticeKind = "error" | "validation" | "info";
 
 /** An append-only, surface-scoped notice (error / validation / info). */
 export interface FlowNotice {
-  surface: FlowSurface;
+  surface: FlowNoticeSurface;
   kind: FlowNoticeKind;
   message: string;
 }
@@ -133,6 +147,10 @@ export interface FlowControllerState {
   preparedTask: PreparedBuilderTask | null;
   discoveryInProgress: boolean;
   specInProgress: boolean;
+  /** Read-only History list (guide §6/§10-2). Empty until loaded. */
+  history: HistoryProjectView[];
+  /** Whether the read-only History list is currently loading. */
+  historyLoading: boolean;
 }
 
 /** The 30-second per-op timeout budget (Req 4.9 / 11.8 / 14.4). */
@@ -147,7 +165,12 @@ const TIMEOUT_MESSAGE = "시간이 초과되었습니다. 다시 시도해 주�
  * runner.
  */
 export class FlowController {
-  private readonly ports: FlowPorts;
+  /**
+   * The active port pair. NOT `readonly`: {@link FlowController.setPorts} /
+   * {@link FlowController.applyPortResult} may replace it once, at startup,
+   * after the async gated factory resolves (see the caveat on `setPorts`).
+   */
+  private ports: FlowPorts;
   private readonly clock: Clock;
   private readonly onChange?: () => void;
   private readonly onNotice?: (n: FlowNotice) => void;
@@ -171,6 +194,21 @@ export class FlowController {
   };
   private readonly _notices: FlowNotice[] = [];
 
+  // --- read-only History slice (guide §6/§10-2), independent of the state
+  // machine above. Populated by loadHistory(); never starts a run or mutates.
+  private history: HistoryProjectView[] = [];
+  private historyLoading = false;
+
+  /**
+   * The current native-support verdict projected into every snapshot
+   * (guide §10-1 label / fail-closed notice). Starts at the safe default
+   * (mock, non-experimental) so a controller with no verdict yet is valid;
+   * {@link FlowController.applyPortResult} / {@link FlowController.setFlowSupport}
+   * updates it. SECURITY (guide §9): only the non-sensitive
+   * `{ mode, experimental, reason? }` is held here — never a path or token.
+   */
+  private flowSupport: FlowSupport = DEFAULT_FLOW_SUPPORT;
+
   /** Monotonically increasing token so each op can guard its own settlement. */
   private tokenCounter = 0;
 
@@ -180,6 +218,55 @@ export class FlowController {
     this.onChange = options.onChange;
     this.onNotice = options.onNotice;
     this.ids = options.ids ?? new DefaultIdSource();
+  }
+
+  // --- startup port/verdict swap (async gated factory, guide §10-1) ---
+
+  /**
+   * Replace the active port pair. This is a deliberately minimal setter for the
+   * async-gated-factory startup swap: the extension host builds the controller
+   * synchronously with the sync Mock ports (so first paint has zero delay), then
+   * swaps to the real (or fail-closed Mock) ports once
+   * {@link createFlowPortsAsync} resolves.
+   *
+   * CAVEAT: this simply replaces the internal reference and does NOT interrupt
+   * any op in flight. It is only safe to call once at startup, before any user
+   * intent has kicked off a port op. The provider calls it exactly once during
+   * wiring, before the first user interaction, so a plain replace is sufficient.
+   */
+  setPorts(ports: FlowPorts): void {
+    this.ports = ports;
+  }
+
+  /**
+   * Update the held native-support verdict (guide §10-1). Included in every
+   * subsequent {@link FlowController.snapshot}. SECURITY (guide §9): only the
+   * non-sensitive `{ mode, experimental, reason? }` is retained — the caller
+   * MUST NOT pass a connection path or token in `reason`.
+   */
+  setFlowSupport(support: FlowSupport): void {
+    this.flowSupport = { ...support };
+    this.notifyChange();
+  }
+
+  /**
+   * Apply the result of the async gated factory in one step: swap to the chosen
+   * ports and record the derived native-support verdict so it flows into every
+   * snapshot. `experimental` comes from {@link isNativeFlowSupported}, passed in
+   * by the provider (the factory result itself carries only `mode`/`reason`).
+   *
+   * SECURITY (guide §9): `result` carries only ports + a `mode`/`reason` string;
+   * neither the connection file path nor a token is part of it, so nothing
+   * sensitive is ever recorded or projected.
+   */
+  applyPortResult(result: CreateFlowPortsResult, experimental: boolean): void {
+    this.ports = result.ports;
+    this.flowSupport = {
+      mode: result.mode,
+      experimental,
+      ...(result.reason !== undefined ? { reason: result.reason } : {}),
+    };
+    this.notifyChange();
   }
 
   // --- read accessors (consumed by the snapshot builder, task 8) ---
@@ -237,6 +324,16 @@ export class FlowController {
     return this.preparedTask;
   }
 
+  /** The current read-only History list (guide §6/§10-2). */
+  getHistory(): HistoryProjectView[] {
+    return [...this.history];
+  }
+
+  /** Whether the read-only History list is currently loading. */
+  isHistoryLoading(): boolean {
+    return this.historyLoading;
+  }
+
   /** Whether a discovery-surface op is currently in flight. */
   isInProgress(surface: FlowSurface): boolean {
     return this.inFlight[surface] !== null;
@@ -258,6 +355,8 @@ export class FlowController {
       preparedTask: this.preparedTask,
       discoveryInProgress: this.inFlight.discovery !== null,
       specInProgress: this.inFlight.spec !== null,
+      history: [...this.history],
+      historyLoading: this.historyLoading,
     };
   }
 
@@ -268,7 +367,7 @@ export class FlowController {
    * webview projection can never mutate host state.
    */
   snapshot(): FlowSnapshot {
-    return buildFlowSnapshot(this.toState(), this.notices);
+    return buildFlowSnapshot(this.toState(), this.notices, this.flowSupport);
   }
 
   // --- notice / change plumbing ---
@@ -277,7 +376,11 @@ export class FlowController {
     this.onChange?.();
   }
 
-  private emitNotice(surface: FlowSurface, kind: FlowNoticeKind, message: string): void {
+  private emitNotice(
+    surface: FlowNoticeSurface,
+    kind: FlowNoticeKind,
+    message: string,
+  ): void {
     const notice: FlowNotice = { surface, kind, message };
     this._notices.push(notice);
     this.onNotice?.(notice);
@@ -650,5 +753,79 @@ export class FlowController {
         this.emitNotice("spec", "error", "빌더 작업을 준비하지 못했습니다. 다시 시도해 주세요.");
       },
     );
+  }
+
+  // --- read-only History (guide §6/§10-2) ---
+
+  /**
+   * Load the read-only History list from the {@link HistoryPort} (guide §6:
+   * `listProjects()`). This is a SEPARATE, read-only concern from the
+   * discovery/spec state machine: it NEVER starts a run, mutates discovery/spec
+   * state, or auto-triggers discovery ("read-only, 모델 호출 0",
+   * "run 자동 시작 없음").
+   *
+   * No-op when no {@link HistoryPort} is wired (`ports.history` absent). A
+   * single-flight guard (`historyLoading`) prevents concurrent calls from
+   * stacking. On success the safe {@link HistoryProjectView} list replaces the
+   * held one; on error a `"history"`-scoped notice is emitted and the prior
+   * list is retained. `historyLoading` is always cleared and a change is
+   * notified so the webview re-hydrates.
+   */
+  /**
+   * Read-only restore of a single history project's durable snapshot (guide
+   * §6: `restoreProject(projectId)`). This ONLY reads a safe summary — it NEVER
+   * starts a run, mutates discovery/spec state, or auto-triggers discovery
+   * ("run 자동 시작 없음"). No state is changed here; on error a `"history"`
+   * notice is emitted. Returns the safe {@link RestoredProjectView} on success
+   * so a caller could show a read-only detail, or null when unsupported/failed.
+   */
+  async restoreHistoryProject(
+    projectId: string,
+  ): Promise<RestoredProjectView | null> {
+    const historyPort = this.ports.history;
+    if (historyPort === undefined) {
+      return null; // History not supported by the active port pair.
+    }
+    const result = await historyPort.restoreProject(projectId, this.envelope(0));
+    if (result.ok) {
+      return result.value;
+    }
+    this.emitNotice(
+      "history",
+      "error",
+      "이전 프로젝트를 불러오지 못했습니다. 다시 시도해 주세요.",
+    );
+    this.notifyChange();
+    return null;
+  }
+
+  async loadHistory(): Promise<void> {
+    const historyPort = this.ports.history;
+    if (historyPort === undefined) {
+      return; // History not supported by the active port pair.
+    }
+    if (this.historyLoading) {
+      return; // Single-flight: a load is already in progress.
+    }
+
+    this.historyLoading = true;
+    this.notifyChange();
+
+    // Read-only op: History is independent of the discovery/spec surfaces and
+    // their optimistic-revision envelopes, so a fresh envelope with expected
+    // revision 0 is sufficient (the port ignores it for reads).
+    const result = await historyPort.listProjects(50, this.envelope(0));
+
+    this.historyLoading = false;
+    if (result.ok) {
+      this.history = [...result.value.projects];
+    } else {
+      this.emitNotice(
+        "history",
+        "error",
+        "이전 프로젝트를 불러오지 못했습니다. 다시 시도해 주세요.",
+      );
+    }
+    this.notifyChange();
   }
 }

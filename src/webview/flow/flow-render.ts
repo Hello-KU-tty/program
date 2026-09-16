@@ -37,6 +37,7 @@ import type {
   SpecScopeEntry,
 } from "../../core/flow/flow-types";
 import { refKey } from "../../core/flow/flow-types";
+import type { HistoryProjectView } from "../../core/flow/history-types";
 import type { RefinementAction } from "./flow-messages";
 
 /**
@@ -92,7 +93,26 @@ export interface FlowRenderCallbacks {
    * re-hydration (Req 13.2). Optional so views can omit draft reporting.
    */
   onDraftChanged?(field: string, text: string): void;
+  /**
+   * The learner asked to (re)load the read-only Project History list (guide
+   * §6/§10-2). READ-ONLY: never starts a run or mutates. Optional.
+   */
+  onRefreshHistory?(): void;
+  /**
+   * The learner opened a history row (guide §6/§10-2). READ-ONLY: only triggers
+   * a safe `restoreProject`; never starts a run, mutates, or auto-triggers
+   * discovery. Optional.
+   */
+  onOpenHistoryProject?(projectId: string): void;
 }
+
+/** Korean labels for a project's lifecycle status in the History list. */
+const HISTORY_STATUS_LABELS: Readonly<Record<string, string>> = {
+  DISCOVERY: "탐색 중",
+  SPEC_REVIEW: "스펙 검토",
+  BUILDING: "만드는 중",
+  COMPLETED: "완료",
+};
 
 /** The ordered set of learner levels offered by the Discovery Start form. */
 const LEVEL_OPTIONS: readonly { value: LearnerLevel; label: string }[] = [
@@ -139,6 +159,23 @@ export class DiscoveryStartView {
   private readonly submitButton: HTMLButtonElement;
   /** The Agent_Run_Banner, hidden unless a discovery op is in flight. */
   private readonly agentBanner: HTMLElement;
+  /**
+   * Native-support banner (guide §10-1): a small, non-intrusive caption near
+   * the top showing either the `macOS exact pin · experimental` label (live) or
+   * a Korean fail-closed test-data notice (mock). Rendered via `textContent`
+   * only (no HTML injection, guide §9). Hidden until the verdict resolves.
+   */
+  private readonly supportBanner: HTMLElement;
+
+  /**
+   * Read-only Project History block (guide §6/§10-2): a section header, a
+   * refresh affordance, a loading caption, an empty-state caption, and the list
+   * of previous projects. All text is set via `textContent` (guide §9): the
+   * rows carry only safe scalar fields (no path/token).
+   */
+  private readonly historyLoadingCaption: HTMLElement;
+  private readonly historyEmptyCaption: HTMLElement;
+  private readonly historyList: HTMLElement;
 
   /** True while a discovery op is in flight (mirrors the last snapshot). */
   private discoveryInProgress = false;
@@ -156,6 +193,55 @@ export class DiscoveryStartView {
     const intro = this.el("p", "flow-start-intro");
     intro.textContent = "배우고 싶은 목표를 적어 주세요. 함께 만들 프로젝트 후보를 찾아드릴게요.";
     container.appendChild(intro);
+
+    // Native-support banner (guide §10-1) — a small caption near the top. Hidden
+    // until a verdict is applied; populated by render() from snapshot.flowSupport
+    // via textContent only (guide §9: no HTML injection, no path/token).
+    const support = this.el("div", "flow-support-banner");
+    support.setAttribute("role", "note");
+    support.hidden = true;
+    container.appendChild(support);
+    this.supportBanner = support;
+
+    // Read-only Project History block (guide §6/§10-2). Built once; render()
+    // refreshes its list/loading/empty state from the snapshot. Read-only: the
+    // refresh + row affordances only post read-only intents.
+    const history = this.el("section", "flow-history");
+    history.setAttribute("aria-label", "이전 프로젝트");
+
+    const historyHeader = this.el("div", "flow-history-header");
+    const historyTitle = this.el("h2", "flow-history-title");
+    historyTitle.textContent = "이전 프로젝트";
+    historyHeader.appendChild(historyTitle);
+
+    const refresh = this.el("button", "flow-history-refresh") as HTMLButtonElement;
+    refresh.type = "button";
+    refresh.textContent = "새로고침";
+    refresh.addEventListener("click", () => {
+      this.callbacks.onRefreshHistory?.();
+    });
+    historyHeader.appendChild(refresh);
+    history.appendChild(historyHeader);
+
+    const historyLoading = this.el("div", "flow-history-loading");
+    historyLoading.setAttribute("role", "status");
+    historyLoading.setAttribute("aria-live", "polite");
+    historyLoading.textContent = "이전 프로젝트를 불러오는 중이에요…";
+    historyLoading.hidden = true;
+    history.appendChild(historyLoading);
+    this.historyLoadingCaption = historyLoading;
+
+    const historyEmpty = this.el("div", "flow-history-empty");
+    historyEmpty.textContent = "이전 프로젝트가 없어요.";
+    historyEmpty.hidden = true;
+    history.appendChild(historyEmpty);
+    this.historyEmptyCaption = historyEmpty;
+
+    const historyList = this.el("ul", "flow-history-list");
+    history.appendChild(historyList);
+    this.historyList = historyList;
+
+    container.appendChild(history);
 
     // Agent_Run_Banner (Req 4.6) — hidden by default.
     const banner = this.el("div", "flow-agent-banner");
@@ -278,7 +364,94 @@ export class DiscoveryStartView {
     this.discoveryInProgress = snapshot.discoveryInProgress;
     this.agentBanner.hidden = !this.discoveryInProgress;
 
+    // Native-support banner (guide §10-1) from the non-sensitive verdict.
+    this.renderSupportBanner(snapshot);
+
+    // Read-only Project History (guide §6/§10-2).
+    this.renderHistory(snapshot);
+
     this.refreshValidation();
+  }
+
+  /**
+   * Rebuild the read-only History list from `snapshot.history` (guide §6/§10-2).
+   * Shows a loading caption while `snapshot.historyLoading`, an empty-state
+   * caption when the loaded list is empty, or one read-only row per project.
+   * Each row's affordance posts `onOpenHistoryProject` (a read-only
+   * `restoreProject`); it NEVER starts a run or mutates. All text is set via
+   * `textContent` (guide §9): rows carry only safe scalar fields.
+   */
+  private renderHistory(snapshot: FlowSnapshot): void {
+    const loading = snapshot.historyLoading;
+    const projects = snapshot.history;
+
+    this.historyLoadingCaption.hidden = !loading;
+    // Empty-state only when not loading and the list is empty.
+    this.historyEmptyCaption.hidden = loading || projects.length > 0;
+
+    this.historyList.textContent = "";
+    for (const project of projects) {
+      this.historyList.appendChild(this.buildHistoryRow(project));
+    }
+  }
+
+  /** Build one read-only History row for a safe {@link HistoryProjectView}. */
+  private buildHistoryRow(project: HistoryProjectView): HTMLElement {
+    const row = this.el("li", "flow-history-row");
+
+    const title = this.el("div", "flow-history-row-title");
+    title.textContent = project.title;
+    row.appendChild(title);
+
+    const goal = this.el("p", "flow-history-row-goal");
+    goal.textContent = project.learningGoal;
+    row.appendChild(goal);
+
+    const meta = this.el("div", "flow-history-row-meta");
+    const status = this.el("span", "flow-history-row-status");
+    status.textContent = HISTORY_STATUS_LABELS[project.status] ?? project.status;
+    meta.appendChild(status);
+    row.appendChild(meta);
+
+    const open = this.el("button", "flow-history-open") as HTMLButtonElement;
+    open.type = "button";
+    open.textContent = "이어서 보기";
+    open.addEventListener("click", () => {
+      this.callbacks.onOpenHistoryProject?.(project.projectId);
+    });
+    row.appendChild(open);
+
+    return row;
+  }
+
+  /**
+   * Update the native-support banner from `snapshot.flowSupport` (guide §10-1).
+   * On `live` it shows the `macOS exact pin · experimental` label; on `mock` it
+   * shows a muted Korean notice that the flow is running on test data, and —
+   * when the `reason` indicates an unsupported/Windows platform — that live
+   * backend connection is not supported on this platform yet. Text is set via
+   * `textContent` only (guide §9): no HTML injection, and the verdict carries no
+   * path or token.
+   */
+  private renderSupportBanner(snapshot: FlowSnapshot): void {
+    const support = snapshot.flowSupport;
+    if (support.mode === "live") {
+      // Experimental live pin — always surface the guide §10-1 label.
+      this.supportBanner.hidden = false;
+      this.supportBanner.textContent = support.experimental
+        ? "macOS exact pin · experimental"
+        : "실제 백엔드에 연결되어 있어요.";
+      return;
+    }
+
+    // mode === "mock": running on test data (fail-closed on unsupported builds).
+    this.supportBanner.hidden = false;
+    const reason = support.reason ?? "";
+    const unsupportedPlatform =
+      reason.includes("WINDOWS") || reason.includes("UNSUPPORTED");
+    this.supportBanner.textContent = unsupportedPlatform
+      ? "이 플랫폼에서는 실제 백엔드 연결이 지원되지 않아 테스트 데이터로 동작합니다."
+      : "지금은 테스트 데이터로 동작하고 있어요.";
   }
 
   /**
