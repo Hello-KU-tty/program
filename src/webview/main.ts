@@ -17,12 +17,38 @@
  * intents and the resulting authoritative view arrives back as `hydrate`/patch
  * messages; the local optimistic updates (draft, cleared input) are corrected
  * by that next render if the host disagrees.
+ *
+ * ## Additive Discovery -> Spec flow shell (Req 12, 13)
+ *
+ * The same webview additively hosts the Discovery -> Spec flow surfaces
+ * alongside the Build_Surface. `bootstrap` also constructs a
+ * {@link FlowViewModelStore} and the three flow views ({@link DiscoveryStartView},
+ * {@link DiscoveryWorkspace}, {@link SpecReview}) into a dedicated child
+ * container of `root`, and routes flow intents/messages over the same transport
+ * via {@link WebviewClient.postFlow} / {@link WebviewClient.onHostFlowMessage}.
+ *
+ * The flow branch is **inert until a `hydrateFlow` host message arrives**:
+ * before then {@link FlowViewModelStore.current} is null, so
+ * {@link selectShellSurface}`(null)` returns `"build"` and the Build_Surface is
+ * shown exactly as before (the flow container starts hidden). On `hydrateFlow`
+ * the flow store is updated, {@link selectShellSurface} decides which surface is
+ * visible, and the three flow views render from the snapshot (each self-hides by
+ * phase). This keeps existing Builder/Helper behavior and tests unchanged.
  */
 
 import type { TabId } from "../core/types";
+import type { FlowSnapshot } from "../core/flow/flow-snapshot";
 import { WebviewClient } from "./client-messaging";
 import { PanelRenderer, type RenderCallbacks } from "./render";
 import { ViewModelStore } from "./view-model";
+import { FlowViewModelStore } from "./flow/flow-view-model";
+import {
+  DiscoveryStartView,
+  DiscoveryWorkspace,
+  SpecReview,
+  type FlowRenderCallbacks,
+} from "./flow/flow-render";
+import { selectShellSurface } from "./shell-view-model";
 
 /**
  * Bootstraps the webview against a root element and messaging client. Returns
@@ -36,7 +62,17 @@ import { ViewModelStore } from "./view-model";
 export function bootstrap(
   root: HTMLElement,
   client: WebviewClient = new WebviewClient(),
-): { store: ViewModelStore; renderer: PanelRenderer; client: WebviewClient } {
+): {
+  store: ViewModelStore;
+  renderer: PanelRenderer;
+  client: WebviewClient;
+  flowStore: FlowViewModelStore;
+  flowViews: {
+    discoveryStart: DiscoveryStartView;
+    discoveryWorkspace: DiscoveryWorkspace;
+    specReview: SpecReview;
+  };
+} {
   const store = new ViewModelStore();
 
   const callbacks: RenderCallbacks = {
@@ -69,7 +105,15 @@ export function bootstrap(
     },
   };
 
-  const renderer = new PanelRenderer(root, callbacks);
+  // The Build_Surface renders into its own child container of `root`, so its
+  // visibility can be toggled independently of the additive flow container
+  // (both are siblings under `root`). This does not restructure PanelRenderer —
+  // it simply renders into `buildContainer` instead of `root` directly.
+  const buildContainer = root.ownerDocument.createElement("div");
+  buildContainer.className = "build-shell";
+  root.appendChild(buildContainer);
+
+  const renderer = new PanelRenderer(buildContainer, callbacks);
 
   // Host → store → render. `apply` returns the tabs whose view may have changed,
   // but the renderer re-renders from the full model, so we render whenever any
@@ -82,8 +126,96 @@ export function bootstrap(
     }
   });
 
+  // ---- Additive Discovery -> Spec flow shell (Req 12, 13) ------------------
+  //
+  // The flow views render into their own child container of `root` (a sibling
+  // of `buildContainer`) so surface visibility can be toggled by hiding one
+  // container vs. the other. The flow container starts hidden: before any
+  // `hydrateFlow` arrives `flowStore.current` is null, so
+  // `selectShellSurface(null)` === "build" and the Build_Surface shows exactly
+  // as today (the flow branch is inert).
+  const flowStore = new FlowViewModelStore();
+
+  const flowContainer = root.ownerDocument.createElement("div");
+  flowContainer.className = "flow-shell";
+  flowContainer.hidden = true;
+  root.appendChild(flowContainer);
+
+  const flowCallbacks: FlowRenderCallbacks = {
+    onStartDiscovery: (input) => {
+      client.postFlow({ type: "startDiscovery", input });
+    },
+    onToggleBasket: (ref) => {
+      client.postFlow({ type: "toggleBasket", ref });
+    },
+    onSubmitRefinement: (action, text, targets) => {
+      client.postFlow({ type: "submitRefinement", action, text, targets });
+    },
+    onSelectCandidate: (target) => {
+      client.postFlow({ type: "selectCandidate", target });
+    },
+    onRefineSpec: (message) => {
+      client.postFlow({ type: "refineSpec", message });
+    },
+    onConfirmSpec: () => {
+      client.postFlow({ type: "confirmSpec" });
+    },
+    onDraftChanged: (field, text) => {
+      client.postFlow({ type: "draftChangedFlow", field, text });
+    },
+    onRefreshHistory: () => {
+      // Read-only (guide §6/§10-2): (re)load the History list.
+      client.postFlow({ type: "refreshHistory" });
+    },
+    onOpenHistoryProject: (projectId) => {
+      // Read-only (guide §6/§10-2): restore a safe summary only.
+      client.postFlow({ type: "openHistoryProject", projectId });
+    },
+  };
+
+  // Constructing the views appends their (self-hiding) containers to
+  // `flowContainer`; they only become visible when their phase is active.
+  const discoveryStart = new DiscoveryStartView(flowContainer, flowCallbacks);
+  const discoveryWorkspace = new DiscoveryWorkspace(flowContainer, flowCallbacks);
+  const specReview = new SpecReview(flowContainer, flowCallbacks);
+  const flowViews = { discoveryStart, discoveryWorkspace, specReview };
+
+  /**
+   * Toggle the top-level surface from the current flow projection: when the
+   * derived surface is "flow" the flow container is shown and the Build_Surface
+   * panel hidden; when "build" the reverse. The individual flow views still
+   * self-hide by phase, so exactly one flow view is visible within the flow
+   * container. `buildContainer` holds the PanelRenderer's Build_Surface DOM.
+   */
+  const applySurface = (snapshot: FlowSnapshot | null): void => {
+    const surface = selectShellSurface(snapshot);
+    // Show the flow container and hide the Build_Surface panel when a flow phase
+    // is active; reveal the Build_Surface otherwise. `buildContainer` and
+    // `flowContainer` are independent siblings of `root`, so toggling one never
+    // affects the other. The individual flow views still self-hide by phase, so
+    // exactly one flow view is visible within the flow container.
+    flowContainer.hidden = surface !== "flow";
+    buildContainer.hidden = surface === "flow";
+  };
+
+  // Flow host -> store -> render. `hydrateFlow` replaces the projection
+  // wholesale, decides the surface, and renders all three views (each self-hides
+  // by phase). `flowNotice` has no dedicated notice sink on the flow views yet,
+  // so it is a documented no-op forward here (the next `hydrateFlow` snapshot
+  // carries the authoritative latest notice anyway).
+  client.onHostFlowMessage((message) => {
+    if (message.type === "hydrateFlow") {
+      flowStore.apply(message.snapshot);
+      applySurface(flowStore.current);
+      discoveryStart.render(message.snapshot);
+      discoveryWorkspace.render(message.snapshot);
+      specReview.render(message.snapshot);
+    }
+    // message.type === "flowNotice": no-op (no flow-view notice API exists).
+  });
+
   client.start();
-  return { store, renderer, client };
+  return { store, renderer, client, flowStore, flowViews };
 }
 
 /**

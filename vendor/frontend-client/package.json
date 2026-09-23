@@ -1,0 +1,42 @@
+{
+  "name": "@vibe-helper/frontend-client",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./index.cjs",
+  "module": "./index.js",
+  "types": "./types/esm/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./types/esm/index.d.ts",
+        "default": "./index.js"
+      },
+      "require": {
+        "types": "./types/cjs/index.d.cts",
+        "default": "./index.cjs"
+      }
+    },
+    "./node": {
+      "import": {
+        "types": "./types/esm/node.d.ts",
+        "default": "./node.js"
+      },
+      "require": {
+        "types": "./types/cjs/node.d.cts",
+        "default": "./node.cjs"
+      }
+    }
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "zod": "4.4.3"
+  },
+  "files": [
+    "*.js",
+    "*.cjs",
+    "types",
+    "README.md"
+  ]
+}

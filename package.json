@@ -35,6 +35,17 @@
           "name": "Builder & Helper"
         }
       ]
+    },
+    "configuration": {
+      "title": "Vibe Helper",
+      "properties": {
+        "vibeHelper.connectionFile": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "markdownDescription": "Absolute file path to the local Core backend `connection.json`. Host-only; never sent to the webview. Live flow is macOS/arm64 experimental — unsupported platforms fail closed to test data."
+        }
+      }
     }
   },
   "scripts": {
@@ -54,5 +65,8 @@
   },
   "allowScripts": {
     "esbuild@0.21.5": true
+  },
+  "dependencies": {
+    "zod": "4.4.3"
   }
 }
