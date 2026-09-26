@@ -29,9 +29,7 @@
  * `err(PortError)`; it never throws. {@link LocalClientError} codes are mapped
  * to the normalized {@link PortError} code set by {@link toPortError}.
  *
- * Because the real SDK needs a live backend + `connection.json` and is
- * extension-host only (and there is no backend on Windows), this class is unit
- * tested against a hand-written fake client, never a live connection.
+ * The Windows handoff uses the managed host and durable run completion.
  */
 
 import {
@@ -45,7 +43,6 @@ import type {
   CandidateRound,
   CandidateScopeSuggestion,
   DiscoveryFeedback,
-  DiscoveryFeedbackIntent,
   DiscoveryInput,
   DiscoverySession,
   ExpectedDecision,
@@ -109,404 +106,148 @@ type ContractPreparedTask = Awaited<
  * @param client A LocalCoreClient already connected via `connectLocalCore`
  *   (host-only). The adapter never inspects the underlying connection.
  */
+type CoreClient = Pick<LocalCoreClient, "health" | "execute" | "startDiscovery" | "startRun" | "cancelRun" | "getRun" | "listRuns" | "watchRun" | "listProjects" | "restoreProject">;
 export class LocalCoreDiscoveryPort implements DiscoveryPort, SpecPort, HistoryPort {
-  private readonly client: LocalCoreClient;
+  private readonly projects = new Map<string, string>();
+  private readonly previews = new Map<string, string>();
+  constructor(private readonly client: CoreClient) {}
 
-  constructor(client: LocalCoreClient) {
-    this.client = client;
+  private remember(snapshot: Snapshot): Snapshot {
+    if (snapshot.discoverySession) this.projects.set(snapshot.discoverySession.id, snapshot.project.id);
+    return snapshot;
   }
-
-  // --- DiscoveryPort ---
-
-  /**
-   * Open a Discovery Session (guide \u00a76 `start`).
-   *
-   * Maps to `startDiscovery(input, { enrichAfterPreview: true })`, then reads
-   * the durable session back via `restoreProject`. NOTE: the SDK generates its
-   * own `projectId`; `req.projectId` is not authoritative. The returned
-   * DiscoverySession carries the SDK-owned projectId (documented mismatch with
-   * the program's caller-supplied projectId contract).
-   */
-  async startDiscovery(
-    req: { projectId: string; input: DiscoveryInput },
-    _env: RequestEnvelope,
-  ): Promise<PortResult<DiscoverySession>> {
-    try {
-      const { projectId } = await this.client.startDiscovery(req.input, {
-        enrichAfterPreview: true,
-      });
-      const snapshot = await this.client.restoreProject(projectId);
-      const session = snapshot.discoverySession;
-      if (!session) {
-        return err("unavailable", "discovery session missing from snapshot");
-      }
-      return ok(contractToProgramSession(session));
-    } catch (e) {
-      return err(...classify(e, "startDiscovery failed"));
+  private async snapshot(projectId: string): Promise<Snapshot> {
+    return this.remember(await this.client.restoreProject(projectId));
+  }
+  private async forSession(id: string): Promise<Snapshot> {
+    const projectId = this.projects.get(id);
+    if (!projectId) throw new Error("SESSION_RESTORE_REQUIRED");
+    const snapshot = await this.snapshot(projectId);
+    if (snapshot.discoverySession?.id !== id) throw new Error("STALE_DISCOVERY_SESSION");
+    return snapshot;
+  }
+  private async wait(id: string): Promise<void> {
+    const run = await this.client.watchRun(id, () => {}, { signal: AbortSignal.timeout(10 * 60_000) });
+    if (run.status !== "SUCCEEDED" || run.outcome !== "DURABLE_RESULT") {
+      throw new Error(run.errorCode ?? (run.status === "SUCCEEDED" ? "DURABLE_RESULT_REQUIRED" : run.status));
     }
   }
-
-  /**
-   * Read the current Preview Round (guide \u00a76: PREVIEW phase result).
-   *
-   * The preview round is produced by the discovery run's PREVIEW phase started
-   * in {@link startDiscovery} (`enrichAfterPreview: true`). We read it from a
-   * fresh `restoreProject` on `discoveryContext.previewRound`.
-   *
-   * SHAPE GAP: the port takes only `discoverySessionId`, but the SDK reads the
-   * durable snapshot per-project. We call `listRuns`/`restoreProject` is not
-   * possible without a projectId, so we resolve the projectId from the session
-   * id by restoring via the session's owning project. Since the port contract
-   * does not carry the projectId here, we look it up from the discovery run's
-   * snapshot the session belongs to. In practice the controller restores the
-   * project first; here we accept the sessionId and expect the SDK's snapshot
-   * to expose the previewRound tied to that session. If unavailable, we return
-   * `unavailable` with a clear reason rather than fabricating previews.
-   */
-  async generatePreviewRound(
-    req: { discoverySessionId: string },
-    _env: RequestEnvelope,
-  ): Promise<PortResult<PreviewRound>> {
-    try {
-      const previewRound = await this.readPreviewRoundForSession(
-        req.discoverySessionId,
-      );
-      if (!previewRound) {
-        return err(
-          "unavailable",
-          "preview round not yet durable for this session",
-        );
-      }
-      return ok(contractToProgramPreviewRound(previewRound));
-    } catch (e) {
-      return err(...classify(e, "generatePreviewRound failed"));
-    }
+  private async run(snapshot: Snapshot, phase: "ENRICH_SELECTED" | "ENRICH_ALL" | "ROUND" | "MERGE" | "SPEC",
+    key: string, candidateIds: string[] = [], message?: string, expectedSpecRevision?: number): Promise<Snapshot> {
+    const session = snapshot.discoverySession;
+    if (!session) throw new Error("DISCOVERY_SESSION_REQUIRED");
+    const active = (await this.client.listRuns(snapshot.project.id)).some(r => r.kind === "DISCOVERY" && ["ACCEPTED", "RUNNING"].includes(r.status));
+    if (active) throw new Error("DISCOVERY_RUN_ACTIVE_STOP_OR_WAIT");
+    const accepted = await this.client.startRun({ kind: "DISCOVERY", projectId: snapshot.project.id,
+      discoverySessionId: session.id, expectedSessionRevision: session.revision,
+      idempotencyKey: key, phase, candidateIds, enrichAfterPreview: false,
+      ...(message ? { message, expectedSpecRevision } : {}) });
+    await this.wait(accepted.id);
+    return this.snapshot(snapshot.project.id);
   }
-
-  /**
-   * Enrich one candidate (guide \u00a76 feedback path: `ENRICH_SELECTED`).
-   *
-   * Starts a DISCOVERY run with `phase: 'ENRICH_SELECTED'` and the single
-   * target candidate id, then restores and maps the enriched candidate
-   * revision from the snapshot.
-   */
-  async enrichCandidate(
-    req: { discoverySessionId: string; target: CandidateRevisionReference },
-    env: RequestEnvelope,
-  ): Promise<PortResult<ProjectCandidateRevision>> {
+  async startDiscovery(req: { projectId: string; input: DiscoveryInput }, _env: RequestEnvelope): Promise<PortResult<DiscoverySession>> {
     try {
-      const projectId = await this.projectIdForSession(req.discoverySessionId);
-      if (!projectId) {
-        return err("unavailable", "project not found for session");
-      }
-      await this.client.startRun({
-        kind: "DISCOVERY",
-        projectId,
-        idempotencyKey: env.idempotencyKey,
-        discoverySessionId: req.discoverySessionId,
-        expectedSessionRevision: env.expectedRevision,
-        phase: "ENRICH_SELECTED",
-        candidateIds: [req.target.candidateId],
-        enrichAfterPreview: false,
-      });
-      const snapshot = await this.client.restoreProject(projectId);
-      const enriched = findEnrichedCandidate(snapshot, req.target);
-      if (!enriched) {
-        return err("unavailable", "enriched candidate missing from snapshot");
-      }
-      return ok(contractToProgramCandidate(enriched));
-    } catch (e) {
-      return err(...classify(e, "enrichCandidate failed"));
-    }
+      const { projectId, run } = await this.client.startDiscovery(req.input, { enrichAfterPreview: false });
+      const snapshot = await this.snapshot(projectId);
+      if (!snapshot.discoverySession) throw new Error("DISCOVERY_SESSION_REQUIRED");
+      this.previews.set(snapshot.discoverySession.id, run.id);
+      return ok(contractToProgramSession(snapshot.discoverySession));
+    } catch (e) { return err(...classify(e, "startDiscovery failed")); }
   }
-
-  /**
-   * Apply Discovery Feedback then regenerate (guide \u00a76 `feedback`).
-   *
-   * Records feedback via `execute(UI_RECORD_DISCOVERY_FEEDBACK)`, then starts
-   * the DISCOVERY run whose phase matches the feedback intent
-   * (`MERGE` -> MERGE, `SELECT` -> SPEC, everything else -> ROUND), then
-   * restores and maps the resulting CandidateRound.
-   *
-   * The program {@link DiscoveryFeedback} is mapped into the contract
-   * `discoveryFeedbackSchema` shape. The contract requires `discoverySessionId`,
-   * `roundId`, `correlationId`, `createdAt`, `source`, `redactionStatus`; the
-   * program type lacks `roundId`/`createdAt`/`source`, so we carry the current
-   * round id from the snapshot, stamp `createdAt` now, and set
-   * `source: { kind: 'USER' }` / `redactionStatus: 'NOT_REQUIRED'`.
-   */
-  async submitFeedback(
-    req: { discoverySessionId: string; feedback: DiscoveryFeedback },
-    env: RequestEnvelope,
-  ): Promise<PortResult<CandidateRound>> {
+  async generatePreviewRound(req: { discoverySessionId: string }, _env: RequestEnvelope): Promise<PortResult<PreviewRound>> {
     try {
-      const projectId = await this.projectIdForSession(req.discoverySessionId);
-      if (!projectId) {
-        return err("unavailable", "project not found for session");
-      }
-      const before = await this.client.restoreProject(projectId);
-      const roundId = currentRoundId(before, req.discoverySessionId);
-
-      await this.client.execute({
-        ...uiMetadata(env.correlationId),
-        kind: "UI_RECORD_DISCOVERY_FEEDBACK",
-        idempotencyKey: env.idempotencyKey,
-        expectedSessionRevision: env.expectedRevision,
-        feedback: programToContractFeedback(
-          req.feedback,
-          req.discoverySessionId,
-          roundId,
-          env.correlationId,
-        ),
-      });
-
-      // The feedback mutation advances the session revision; use a fresh key
-      // for the follow-on run and the bumped revision.
-      await this.client.startRun({
-        kind: "DISCOVERY",
-        projectId,
-        idempotencyKey: entityId("idem"),
-        discoverySessionId: req.discoverySessionId,
-        expectedSessionRevision: env.expectedRevision + 1,
-        phase: phaseForIntent(req.feedback.intent),
-        candidateIds: req.feedback.targets.map((t) => t.candidateId),
-        message: req.feedback.message,
-        enrichAfterPreview: false,
-      });
-
-      const after = await this.client.restoreProject(projectId);
-      const round = latestRound(after);
-      if (!round) {
-        return err("unavailable", "candidate round missing from snapshot");
-      }
-      return ok(contractToProgramRound(round));
-    } catch (e) {
-      return err(...classify(e, "submitFeedback failed"));
-    }
+      const runId = this.previews.get(req.discoverySessionId);
+      if (runId) await this.wait(runId);
+      const snapshot = await this.forSession(req.discoverySessionId);
+      if (!snapshot.discoveryContext?.previewRound) throw new Error("PREVIEW_NOT_DURABLE");
+      return ok(contractToProgramPreviewRound(snapshot.discoveryContext.previewRound));
+    } catch (e) { return err(...classify(e, "generatePreviewRound failed")); }
   }
-
-  // --- SpecPort ---
-
-  /**
-   * Draft a Learning Spec (guide \u00a76: SPEC phase result).
-   *
-   * Starts a DISCOVERY run with `phase: 'SPEC'`, then restores and maps
-   * `snapshot.learningSpec` into a program {@link LearningSpecRevision}.
-   */
-  async generateSpecDraft(
-    req: { projectId: string; selectedCandidate: CandidateRevisionReference },
-    env: RequestEnvelope,
-  ): Promise<PortResult<LearningSpecRevision>> {
+  async enrichCandidate(req: { discoverySessionId: string; target: CandidateRevisionReference }, env: RequestEnvelope): Promise<PortResult<ProjectCandidateRevision>> {
     try {
-      const sessionId = await this.sessionIdForProject(req.projectId);
-      if (!sessionId) {
-        return err("unavailable", "discovery session not found for project");
+      let snapshot = await this.forSession(req.discoverySessionId);
+      let candidate = findEnrichedCandidate(snapshot, req.target);
+      if (!candidate) {
+        snapshot = await this.run(snapshot, "ENRICH_SELECTED", env.idempotencyKey, [req.target.candidateId]);
+        candidate = findEnrichedCandidate(snapshot, req.target);
       }
-      await this.client.startRun({
-        kind: "DISCOVERY",
-        projectId: req.projectId,
-        idempotencyKey: env.idempotencyKey,
-        discoverySessionId: sessionId,
-        expectedSessionRevision: env.expectedRevision,
-        phase: "SPEC",
-        candidateIds: [req.selectedCandidate.candidateId],
-        enrichAfterPreview: false,
-      });
-      const snapshot = await this.client.restoreProject(req.projectId);
-      if (!snapshot.learningSpec) {
-        return err("unavailable", "learning spec missing from snapshot");
+      if (!candidate) throw new Error("CANDIDATE_REVISION_NOT_FOUND");
+      return ok(contractToProgramCandidate(candidate));
+    } catch (e) { return err(...classify(e, "enrichCandidate failed")); }
+  }
+  async submitFeedback(req: { discoverySessionId: string; feedback: DiscoveryFeedback }, env: RequestEnvelope): Promise<PortResult<CandidateRound>> {
+    try {
+      let snapshot = await this.forSession(req.discoverySessionId);
+      if (!snapshot.discoveryContext) throw new Error("DISCOVERY_CONTEXT_REQUIRED");
+      if (!snapshot.discoveryContext.rounds.length) {
+        if (req.feedback.intent === "MORE") snapshot = await this.run(snapshot, "ENRICH_ALL", entityId("idem"));
+        const missing = req.feedback.targets.filter(t => !findEnrichedCandidate(snapshot, t));
+        if (missing.length) snapshot = await this.run(snapshot, "ENRICH_SELECTED", entityId("idem"), missing.map(t => t.candidateId));
       }
+      const session = snapshot.discoverySession!;
+      const roundId = currentRoundId(snapshot, session.id);
+      await this.client.execute({ ...uiMetadata(session.correlationId), kind: "UI_RECORD_DISCOVERY_FEEDBACK",
+        idempotencyKey: env.idempotencyKey, expectedSessionRevision: session.revision,
+        feedback: programToContractFeedback(req.feedback, session.id, roundId, session.correlationId) });
+      snapshot = await this.snapshot(snapshot.project.id);
+      // SELECT is persisted here. The controller's next generateSpecDraft call owns the one SPEC run.
+      if (req.feedback.intent !== "SELECT") snapshot = await this.run(snapshot,
+        req.feedback.intent === "MERGE" ? "MERGE" : "ROUND", entityId("idem"));
+      const round = latestRound(snapshot);
+      if (round) return ok(contractToProgramRound(round));
+      const preview = snapshot.discoveryContext?.previewRound;
+      if (!preview || req.feedback.intent !== "SELECT") throw new Error("ROUND_NOT_DURABLE");
+      // The existing port requires a round-shaped acknowledgement for SELECT;
+      // its controller ignores it. This projection uses only persisted preview/enrichments.
+      return ok({ roundIndex: 1, candidates: snapshot.discoveryContext!.candidateEnrichments.map(e => ({ candidateId: e.candidate.id, revision: e.candidate.revision })),
+        generationRationale: preview.generationRationale, appliedFeedbackIds: [] });
+    } catch (e) { return err(...classify(e, "submitFeedback failed")); }
+  }
+  async generateSpecDraft(req: { projectId: string; selectedCandidate: CandidateRevisionReference }, env: RequestEnvelope): Promise<PortResult<LearningSpecRevision>> {
+    try {
+      let snapshot = await this.snapshot(req.projectId);
+      if (!snapshot.selectedCandidate || snapshot.selectedCandidate.id !== req.selectedCandidate.candidateId || snapshot.selectedCandidate.revision !== req.selectedCandidate.revision)
+        throw new Error("SELECTED_CANDIDATE_REVISION_MISMATCH");
+      if (!snapshot.learningSpec) snapshot = await this.run(snapshot, "SPEC", env.idempotencyKey);
+      if (!snapshot.learningSpec) throw new Error("SPEC_NOT_DURABLE");
       return ok(contractToProgramSpec(snapshot.learningSpec));
-    } catch (e) {
-      return err(...classify(e, "generateSpecDraft failed"));
-    }
+    } catch (e) { return err(...classify(e, "generateSpecDraft failed")); }
   }
-
-  /**
-   * Refine the current draft (guide \u00a76 `refineSpec`).
-   *
-   * Starts a DISCOVERY run `phase: 'SPEC'` with the refinement `message` and
-   * `expectedSpecRevision`, then restores and maps the higher-revision spec.
-   */
-  async refineSpec(
-    req: { projectId: string; learningSpecId: string; message: string },
-    env: RequestEnvelope,
-  ): Promise<PortResult<LearningSpecRevision>> {
+  async refineSpec(req: { projectId: string; learningSpecId: string; message: string }, env: RequestEnvelope): Promise<PortResult<LearningSpecRevision>> {
     try {
-      const sessionId = await this.sessionIdForProject(req.projectId);
-      if (!sessionId) {
-        return err("unavailable", "discovery session not found for project");
-      }
-      await this.client.startRun({
-        kind: "DISCOVERY",
-        projectId: req.projectId,
-        idempotencyKey: env.idempotencyKey,
-        discoverySessionId: sessionId,
-        // A SPEC refine does not bump the session revision; the fresh snapshot
-        // revision is the current session revision the caller observed.
-        expectedSessionRevision: currentSessionRevisionOr(env.expectedRevision),
-        phase: "SPEC",
-        message: req.message,
-        expectedSpecRevision: env.expectedRevision,
-        enrichAfterPreview: false,
-      });
-      const snapshot = await this.client.restoreProject(req.projectId);
-      if (!snapshot.learningSpec) {
-        return err("unavailable", "refined learning spec missing from snapshot");
-      }
+      let snapshot = await this.snapshot(req.projectId);
+      if (snapshot.learningSpec?.id !== req.learningSpecId || snapshot.learningSpec.revision !== env.expectedRevision)
+        throw new Error("STALE_SPEC_REVISION");
+      snapshot = await this.run(snapshot, "SPEC", env.idempotencyKey, [], req.message, env.expectedRevision);
+      if (!snapshot.learningSpec || snapshot.learningSpec.revision <= env.expectedRevision) throw new Error("SPEC_REVISION_NOT_ADVANCED");
       return ok(contractToProgramSpec(snapshot.learningSpec));
-    } catch (e) {
-      return err(...classify(e, "refineSpec failed"));
-    }
+    } catch (e) { return err(...classify(e, "refineSpec failed")); }
   }
-
-  /**
-   * Confirm the current revision (guide \u00a76 `confirm`).
-   *
-   * Executes `UI_CONFIRM_LEARNING_SPEC`, then restores and maps the CONFIRMED
-   * spec.
-   */
-  async confirmSpec(
-    req: { projectId: string; learningSpecId: string },
-    env: RequestEnvelope,
-  ): Promise<PortResult<LearningSpecRevision>> {
+  async confirmSpec(req: { projectId: string; learningSpecId: string }, env: RequestEnvelope): Promise<PortResult<LearningSpecRevision>> {
     try {
-      await this.client.execute({
-        ...uiMetadata(env.correlationId),
-        kind: "UI_CONFIRM_LEARNING_SPEC",
-        idempotencyKey: env.idempotencyKey,
-        projectId: req.projectId,
-        learningSpecId: req.learningSpecId,
-        expectedSpecRevision: env.expectedRevision,
-      });
-      const snapshot = await this.client.restoreProject(req.projectId);
-      if (!snapshot.learningSpec) {
-        return err("unavailable", "confirmed learning spec missing from snapshot");
-      }
+      const before = await this.snapshot(req.projectId);
+      await this.client.execute({ ...uiMetadata(before.discoverySession?.correlationId ?? before.project.correlationId), kind: "UI_CONFIRM_LEARNING_SPEC", ...req,
+        idempotencyKey: env.idempotencyKey, expectedSpecRevision: env.expectedRevision });
+      const snapshot = await this.snapshot(req.projectId);
+      if (!snapshot.learningSpec) throw new Error("SPEC_NOT_DURABLE");
       return ok(contractToProgramSpec(snapshot.learningSpec));
-    } catch (e) {
-      return err(...classify(e, "confirmSpec failed"));
-    }
+    } catch (e) { return err(...classify(e, "confirmSpec failed")); }
   }
-
-  /**
-   * Prepare the Builder handoff task (guide \u00a76 `confirm` second step).
-   *
-   * Executes `UI_PREPARE_BUILDER_TASK` and maps the returned
-   * `PreparedBuilderTaskDescriptor` into a program {@link PreparedBuilderTask}.
-   */
-  async prepareBuilderTask(
-    req: { projectId: string; learningSpecId: string },
-    env: RequestEnvelope,
-  ): Promise<PortResult<PreparedBuilderTask>> {
+  async prepareBuilderTask(req: { projectId: string; learningSpecId: string }, env: RequestEnvelope): Promise<PortResult<PreparedBuilderTask>> {
     try {
-      const response = await this.client.execute({
-        ...uiMetadata(),
-        kind: "UI_PREPARE_BUILDER_TASK",
-        idempotencyKey: entityId("idem"),
-        projectId: req.projectId,
-        learningSpecId: req.learningSpecId,
-        expectedSpecRevision: env.expectedRevision,
-      });
-      return ok(contractToProgramPreparedTask(response as ContractPreparedTask));
-    } catch (e) {
-      return err(...classify(e, "prepareBuilderTask failed"));
-    }
+      const before = await this.snapshot(req.projectId);
+      const response = await this.client.execute({ ...uiMetadata(before.discoverySession?.correlationId ?? before.project.correlationId), kind: "UI_PREPARE_BUILDER_TASK", ...req,
+        idempotencyKey: env.idempotencyKey, expectedSpecRevision: env.expectedRevision });
+      return ok(contractToProgramPreparedTask(response));
+    } catch (e) { return err(...classify(e, "prepareBuilderTask failed")); }
   }
-
-  // --- HistoryPort (read-only; guide §6/§10-2) ---
-
-  /**
-   * List durable projects for the read-only History surface (guide §6:
-   * `listProjects()` → ProjectHistory). Read-only: no run started, nothing
-   * mutated, no model call. Maps each contract `ProjectHistoryItem` into the
-   * SAFE {@link HistoryProjectView} (guide §9) — projecting only the safe
-   * scalars and NEVER the workspace path, connection, or token.
-   */
-  async listProjects(
-    limit: number,
-    _env: RequestEnvelope,
-  ): Promise<PortResult<ProjectHistoryView>> {
-    try {
-      const history = await this.client.listProjects(limit);
-      return ok(contractToProgramHistory(history));
-    } catch (e) {
-      return err(...classify(e, "listProjects failed"));
-    }
+  async listProjects(limit: number, _env: RequestEnvelope): Promise<PortResult<ProjectHistoryView>> {
+    try { return ok(contractToProgramHistory(await this.client.listProjects(limit))); }
+    catch (e) { return err(...classify(e, "listProjects failed")); }
   }
-
-  /**
-   * Restore one project's durable snapshot as a SAFE summary (guide §6:
-   * `restoreProject(projectId)` → ProjectSessionSnapshot). Read-only: no run
-   * started, nothing mutated. Maps only safe scalars into
-   * {@link RestoredProjectView} (guide §9) — NEVER the `generatedWorkspacePath`
-   * / `workspaceDirectory`, connection, token, or raw transcripts.
-   */
-  async restoreProject(
-    projectId: string,
-    _env: RequestEnvelope,
-  ): Promise<PortResult<RestoredProjectView>> {
-    try {
-      const snapshot = await this.client.restoreProject(projectId);
-      return ok(contractToProgramRestoredProject(snapshot));
-    } catch (e) {
-      return err(...classify(e, "restoreProject failed"));
-    }
-  }
-
-  // --- snapshot lookups (durable truth) ---
-
-  private async projectIdForSession(
-    discoverySessionId: string,
-  ): Promise<string | undefined> {
-    // The port contract does not carry the projectId for session-scoped ops.
-    // A session id is `discovery_session_<uuid>`; the owning project is read
-    // from a restore. We resolve it by restoring the project that the session
-    // belongs to. Since restoreProject requires a projectId, callers in the
-    // live flow have already selected one; here we accept that the session's
-    // project equals the id embedded by the SDK. We look it up by restoring the
-    // session via a project scan is not exposed, so we return the session's
-    // projectId from a snapshot when the controller supplies it out-of-band.
-    //
-    // In this adapter we cannot list-by-session, so we return undefined only
-    // when no snapshot is reachable. The fake-client tests exercise the happy
-    // path where restoreProject(sessionId-derived projectId) is wired.
-    return this.tryResolveProjectId(discoverySessionId);
-  }
-
-  private async sessionIdForProject(
-    projectId: string,
-  ): Promise<string | undefined> {
-    const snapshot = await this.client.restoreProject(projectId);
-    return snapshot.discoverySession?.id;
-  }
-
-  private async readPreviewRoundForSession(
-    discoverySessionId: string,
-  ): Promise<ContractPreviewRound | undefined> {
-    const projectId = await this.tryResolveProjectId(discoverySessionId);
-    if (!projectId) return undefined;
-    const snapshot = await this.client.restoreProject(projectId);
-    return snapshot.discoveryContext?.previewRound ?? undefined;
-  }
-
-  /**
-   * Resolve a projectId for a given session id. The SDK convention mirrors the
-   * session/project 1:1 relationship: the caller-facing session id maps to a
-   * single owning project. We derive it by restoring with the projectId the
-   * SDK embeds; the fake client used in tests implements this mapping.
-   */
-  private async tryResolveProjectId(
-    discoverySessionId: string,
-  ): Promise<string | undefined> {
-    // Restore by session id: the vendored client accepts a projectId, and the
-    // owning project id is discoverable from any snapshot whose session matches.
-    const snapshot = await this.client.restoreProject(discoverySessionId);
-    if (snapshot.discoverySession?.id === discoverySessionId) {
-      return snapshot.project.id;
-    }
-    // Fallback: the snapshot's project owns this session.
-    return snapshot.project.id;
+  async restoreProject(projectId: string, _env: RequestEnvelope): Promise<PortResult<RestoredProjectView>> {
+    try { return ok(contractToProgramRestoredProject(await this.snapshot(projectId))); }
+    catch (e) { return err(...classify(e, "restoreProject failed")); }
   }
 }
 
@@ -554,7 +295,7 @@ export function toPortError(e: unknown, fallbackMessage: string): PortError {
     if (/timeout|timed out|abort/i.test(e.message) || e.name === "AbortError") {
       return { code: "timeout", message: e.message };
     }
-    return { code: "unknown", message: e.message };
+    return { code: mapClientCode(e.message), message: /^[A-Z][A-Z0-9_]{0,99}$/.test(e.message) ? e.message : fallbackMessage };
   }
   return { code: "unknown", message: fallbackMessage };
 }
@@ -584,6 +325,9 @@ function mapClientCode(code: string, status?: number): PortError["code"] {
     return "timeout";
   }
   if (
+    c.includes("REQUIRED") ||
+    c.includes("NOT_DURABLE") ||
+    c.includes("ACTIVE_STOP") ||
     c.includes("CANCEL") ||
     c.includes("CONNECTION") ||
     c.includes("UNAVAILABLE") ||
@@ -837,20 +581,6 @@ export function programToContractFeedback(
   };
 }
 
-/** Map the program feedback intent -> the DISCOVERY run phase (guide \u00a76). */
-function phaseForIntent(
-  intent: DiscoveryFeedbackIntent,
-): "ROUND" | "MERGE" | "SPEC" {
-  switch (intent) {
-    case "MERGE":
-      return "MERGE";
-    case "SELECT":
-      return "SPEC";
-    default:
-      return "ROUND";
-  }
-}
-
 // --- small helpers ---
 
 function mapRef(r: { candidateId: string; revision: number }): CandidateRevisionReference {
@@ -878,7 +608,7 @@ function findEnrichedCandidate(
   if (match) return match.candidate;
   // Fallback: a freshly-enriched candidate may surface as selectedCandidate.
   const selected = snapshot.selectedCandidate;
-  if (selected && selected.id === target.candidateId) return selected;
+  if (selected && selected.id === target.candidateId && selected.revision === target.revision) return selected;
   // Or in the discoveryContext candidate list.
   return snapshot.discoveryContext?.candidates.find(
     (c) => c.id === target.candidateId && c.revision === target.revision,
@@ -890,7 +620,11 @@ function currentRoundId(snapshot: Snapshot, discoverySessionId: string): string 
   const rounds = (snapshot.discoveryContext?.rounds ?? []).filter(
     (r) => r.discoverySessionId === discoverySessionId,
   );
-  if (rounds.length === 0) return "round_unknown";
+  if (rounds.length === 0) {
+    const id = snapshot.discoveryContext?.previewRound?.finalRoundId;
+    if (!id) throw new Error("ROUND_NOT_DURABLE");
+    return id;
+  }
   const latest = rounds.reduce((a, b) => (b.roundIndex > a.roundIndex ? b : a));
   return latest.id;
 }
@@ -902,12 +636,3 @@ function latestRound(snapshot: Snapshot): ContractRound | undefined {
   return rounds.reduce((a, b) => (b.roundIndex > a.roundIndex ? b : a));
 }
 
-/**
- * A conservative default for `expectedSessionRevision` on SPEC-only runs where
- * the caller only supplied a spec revision. Uses the provided value directly;
- * kept as a named helper so the intent (SPEC does not require a bumped session
- * revision) is explicit at the call site.
- */
-function currentSessionRevisionOr(fallback: number): number {
-  return fallback;
-}

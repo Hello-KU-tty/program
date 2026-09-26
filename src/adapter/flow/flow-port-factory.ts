@@ -94,7 +94,7 @@ export interface CreateFlowPortsResult {
   /** The Discovery/Spec port pair the controller consumes. */
   ports: FlowPorts;
   /** `"live"` when backed by the real SDK; `"mock"` otherwise. */
-  mode: "live" | "mock";
+  mode: "live" | "mock" | "unavailable";
   /**
    * When `mode === "mock"` on a build that could have been live, an explicit
    * machine-readable reason for the fallback (never silent). Absent only when
@@ -174,4 +174,27 @@ function errorCodeOf(e: unknown): string {
   }
   if (e instanceof Error) return e.name || "ERROR";
   return "UNKNOWN";
+}
+
+// Managed Windows product entry. Legacy explicit Mock factory remains for development tests only.
+export function unavailableFlowPorts(reason = "CORE_PREPARING"): FlowPorts {
+  const unavailable = async () => ({ ok: false as const, error: { code: "unavailable" as const, message: reason } });
+  const port = { startDiscovery: unavailable, generatePreviewRound: unavailable, enrichCandidate: unavailable,
+    submitFeedback: unavailable, generateSpecDraft: unavailable, refineSpec: unavailable,
+    confirmSpec: unavailable, prepareBuilderTask: unavailable, listProjects: unavailable, restoreProject: unavailable };
+  return { discovery: port, spec: port, history: port };
+}
+export async function createManagedFlowPorts(hostPromise: Promise<import("../../../vendor/frontend-host").FrontendHost>): Promise<CreateFlowPortsResult> {
+  try {
+    const host = await hostPromise;
+    await host.prepare();
+    const port = new LocalCoreDiscoveryPort(host.client);
+    const status = host.getStatus();
+    return { ports: { discovery: port, spec: port, history: port },
+      mode: status.native === "WORKER_READY" ? "live" : "unavailable",
+      reason: status.nativeErrorCode ?? undefined };
+  } catch (error) {
+    const code = error instanceof Error && /^[A-Z][A-Z0-9_]{0,99}$/.test(error.message) ? error.message : "CORE_PREPARE_FAILED";
+    return { ports: unavailableFlowPorts(code), mode: "unavailable", reason: code };
+  }
 }

@@ -120,6 +120,8 @@ export interface FlowControllerOptions {
   onChange?: () => void;
   /** Deterministic id source; defaults to {@link DefaultIdSource}. */
   ids?: IdSource;
+  /** Live native turns have a longer bounded deadline than deterministic mocks. */
+  timeoutMs?: number;
 }
 
 /** A single in-flight port operation on a surface (single-flight lock). */
@@ -175,6 +177,7 @@ export class FlowController {
   private readonly onChange?: () => void;
   private readonly onNotice?: (n: FlowNotice) => void;
   private readonly ids: IdSource;
+  private readonly timeoutMs: number;
 
   // --- authoritative state (single source of truth, Req 13.1) ---
   private project: Project | null = null;
@@ -218,6 +221,7 @@ export class FlowController {
     this.onChange = options.onChange;
     this.onNotice = options.onNotice;
     this.ids = options.ids ?? new DefaultIdSource();
+    this.timeoutMs = options.timeoutMs ?? TIMEOUT_MS;
   }
 
   // --- startup port/verdict swap (async gated factory, guide §10-1) ---
@@ -432,7 +436,7 @@ export class FlowController {
       this.emitNotice(surface, "error", TIMEOUT_MESSAGE);
       onErr({ code: "timeout", message: TIMEOUT_MESSAGE });
       this.notifyChange();
-    }, TIMEOUT_MS);
+    }, this.timeoutMs);
 
     this.inFlight[surface] = { kind, timerId, token };
     this.notifyChange();
@@ -492,6 +496,8 @@ export class FlowController {
       0,
       async (session) => {
         this.session = session;
+        // Core owns the project ID; every subsequent Spec operation must use it.
+        if (this.project) this.project.id = session.projectId;
         // The discovery surface is free again here (runOp cleared the lock
         // before invoking onOk), so chaining the preview op does not violate
         // single-flight. See design.md note on legitimate chaining.

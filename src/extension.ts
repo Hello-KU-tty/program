@@ -8,6 +8,9 @@
 // lazily when the view is first resolved.
 
 import * as vscode from "vscode";
+import { join } from "node:path";
+import type { FrontendHost } from "../vendor/frontend-host";
+let managedHost: Promise<FrontendHost> | undefined;
 
 import {
   AgentPanelViewProvider,
@@ -19,8 +22,24 @@ import {
  * webview view provider for the Agent_Panel and tracks the disposable so it is
  * cleaned up on deactivation (Req 1.1).
  */
-export function activate(context: vscode.ExtensionContext): void {
-  const provider = new AgentPanelViewProvider(context.extensionUri);
+export function activate(context: vscode.ExtensionContext): { backend: Promise<FrontendHost> } {
+  // Dynamic absolute require keeps the native host outside the frontend bundle.
+  managedHost = (async () => {
+    const api: typeof import("../vendor/frontend-host") = require(join(context.extensionPath, "portable/bin/frontend-host.cjs"));
+    return api.createFrontendHost(context);
+  })();
+  void managedHost.catch(() => {});
+  const provider = new AgentPanelViewProvider(context.extensionUri, managedHost);
+  context.subscriptions.push(vscode.commands.registerCommand("vibeHelper.retryCore", async () => {
+    try { await (await managedHost!).retry(); await vscode.commands.executeCommand("workbench.action.reloadWindow"); }
+    catch { void vscode.window.showErrorMessage("Core 연결을 복구하지 못했습니다. 지원 버전과 Workspace Trust를 확인하세요."); }
+  }));
+  context.subscriptions.push(vscode.commands.registerCommand("vibeHelper.stopDiscovery", async () => {
+    const host = await managedHost!;
+    const history = await host.client.listProjects();
+    for (const item of history.projects) for (const run of await host.client.listRuns(item.project.id))
+      if (run.kind === "DISCOVERY" && ["ACCEPTED", "RUNNING"].includes(run.status)) await host.client.cancelRun(run.id);
+  }));
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(AGENT_PANEL_VIEW_ID, provider),
   );
@@ -38,6 +57,7 @@ export function activate(context: vscode.ExtensionContext): void {
   void revealAgentPanelOnRight().catch(() => {
     // no-op: relocation is best-effort and never affects activation success.
   });
+  return { backend: managedHost };
 }
 
 /**
@@ -110,6 +130,8 @@ async function revealAgentPanelOnRight(): Promise<void> {
  * Called by the host when the extension is deactivated. Cleanup is handled by
  * the disposables pushed onto `context.subscriptions`, so this is a no-op.
  */
-export function deactivate(): void {
-  // no-op: disposables handle cleanup
+export async function deactivate(): Promise<void> {
+  const host = await managedHost?.catch(() => undefined);
+  await host?.dispose();
+  managedHost = undefined;
 }

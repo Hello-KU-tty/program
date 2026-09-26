@@ -54,7 +54,7 @@ export type FlowPhase = "discovery_start" | "discovery_workspace" | "spec_review
  */
 export interface FlowSupport {
   /** `"live"` when backed by the real SDK; `"mock"` when running on test data. */
-  mode: "live" | "mock";
+  mode: "live" | "mock" | "unavailable";
   /** True only on the experimental macOS/arm64 live pin. */
   experimental: boolean;
   /** A machine-readable reason (e.g. why it failed closed). Never a secret. */

@@ -6,7 +6,7 @@
   "private": true,
   "publisher": "vibe-helper",
   "engines": {
-    "vscode": "^1.90.0",
+    "vscode": "^1.131.0",
     "node": ">=18.0.0"
   },
   "categories": [
@@ -38,15 +38,18 @@
     },
     "configuration": {
       "title": "Vibe Helper",
-      "properties": {
-        "vibeHelper.connectionFile": {
-          "type": "string",
-          "default": "",
-          "scope": "machine",
-          "markdownDescription": "Absolute file path to the local Core backend `connection.json`. Host-only; never sent to the webview. Live flow is macOS/arm64 experimental — unsupported platforms fail closed to test data."
-        }
+      "properties": {}
+    },
+    "commands": [
+      {
+        "command": "vibeHelper.retryCore",
+        "title": "Vibe Helper: Retry Core Connection"
+      },
+      {
+        "command": "vibeHelper.stopDiscovery",
+        "title": "Vibe Helper: Stop Active Discovery"
       }
-    }
+    ]
   },
   "scripts": {
     "build": "node esbuild.mjs",
@@ -68,5 +71,14 @@
   },
   "dependencies": {
     "zod": "4.4.3"
+  },
+  "extensionDependencies": [
+    "kiro.kiroAgent"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "History is available. Native Agent requires Workspace Trust."
+    }
   }
 }

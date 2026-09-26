@@ -435,6 +435,11 @@ export class DiscoveryStartView {
    */
   private renderSupportBanner(snapshot: FlowSnapshot): void {
     const support = snapshot.flowSupport;
+    if (support.mode === "unavailable") {
+      this.supportBanner.hidden = false;
+      this.supportBanner.textContent = "실제 연결 준비/오류: " + (support.reason ?? "CORE_PREPARING") + " · 명령 팔레트에서 Vibe Helper: Retry Core Connection";
+      return;
+    }
     if (support.mode === "live") {
       // Experimental live pin — always surface the guide §10-1 label.
       this.supportBanner.hidden = false;
