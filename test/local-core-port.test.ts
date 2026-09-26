@@ -234,12 +234,12 @@ function fakeClient(overrides: Partial<Record<string, unknown>> = {}): LocalCore
   const base = {
     startDiscovery: async () => ({ projectId: "project_1", run: {} }),
     restoreProject: async () => contractSnapshot({}),
-    startRun: async () => ({}),
+    startRun: async () => ({ id: "run_1" }),
     execute: async () => ({ accepted: true, resourceRevision: 5 }),
     getRun: async () => ({}),
     listRuns: async () => [],
     cancelRun: async () => ({}),
-    watchRun: async () => ({}),
+    watchRun: async () => ({ status: "SUCCEEDED", outcome: "DURABLE_RESULT" }),
     health: async () => ({ protocolVersion: 1, backendInstanceId: "b1" }),
     listProjects: async () => ({ projects: [] }),
     ...overrides,
@@ -269,6 +269,7 @@ describe("LocalCoreDiscoveryPort success mapping (guide \u00a76)", () => {
       restoreProject: async () => contractSnapshot({ previewRound: contractPreviewRound() }),
     });
     const port = new LocalCoreDiscoveryPort(client);
+    await port.restoreProject("project_1", ENV);
     const res = await port.generatePreviewRound({ discoverySessionId: "discovery_session_1" }, ENV);
     expect(res.ok).toBe(true);
     if (!res.ok) return;
@@ -297,6 +298,7 @@ describe("LocalCoreDiscoveryPort success mapping (guide \u00a76)", () => {
         }),
     });
     const port = new LocalCoreDiscoveryPort(client);
+    await port.restoreProject("project_1", ENV);
     const res = await port.enrichCandidate({ discoverySessionId: "discovery_session_1", target }, ENV);
     expect(res.ok).toBe(true);
     if (!res.ok) return;
@@ -318,6 +320,7 @@ describe("LocalCoreDiscoveryPort success mapping (guide \u00a76)", () => {
         contractSnapshot({ rounds: [contractRound(1, "round_1"), contractRound(2, "round_2")] }),
     });
     const port = new LocalCoreDiscoveryPort(client);
+    await port.restoreProject("project_1", ENV);
     const res = await port.submitFeedback({ discoverySessionId: "discovery_session_1", feedback }, ENV);
     expect(res.ok).toBe(true);
     if (!res.ok) return;
@@ -331,6 +334,7 @@ describe("LocalCoreDiscoveryPort success mapping (guide \u00a76)", () => {
       restoreProject: async () =>
         contractSnapshot({
           discoverySession: contractSession(),
+          selectedCandidate: contractCandidate("cand_1", 2),
           learningSpec: contractSpec(1, "DRAFT"),
         }),
     });
@@ -348,17 +352,18 @@ describe("LocalCoreDiscoveryPort success mapping (guide \u00a76)", () => {
   });
 
   it("refineSpec -> ok(LearningSpecRevision) with higher revision", async () => {
+    let reads = 0;
     const client = fakeClient({
       restoreProject: async () =>
         contractSnapshot({
           discoverySession: contractSession(),
-          learningSpec: contractSpec(2, "DRAFT", 1),
+          learningSpec: ++reads === 1 ? contractSpec(1, "DRAFT") : contractSpec(2, "DRAFT", 1),
         }),
     });
     const port = new LocalCoreDiscoveryPort(client);
     const res = await port.refineSpec(
       { projectId: "project_1", learningSpecId: "learning_spec_1", message: "다듬어줘" },
-      ENV,
+      { ...ENV, expectedRevision: 1 },
     );
     expect(res.ok).toBe(true);
     if (!res.ok) return;
@@ -426,7 +431,7 @@ describe("LocalCoreDiscoveryPort error mapping (never throws)", () => {
       },
     });
     const port = new LocalCoreDiscoveryPort(client);
-    const res = await port.generatePreviewRound({ discoverySessionId: "s" }, ENV);
+    const res = await port.restoreProject("project_1", ENV);
     expect(res.ok).toBe(false);
     if (res.ok) return;
     expect(res.error.code).toBe("timeout");

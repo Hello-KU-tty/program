@@ -50,6 +50,7 @@ vi.mock("vscode", () => {
   }
   return {
     Disposable,
+    commands: { registerCommand: vi.fn(() => new Disposable(() => {})) },
     Uri: {
       joinPath: (...parts: unknown[]) => ({ parts }),
     },
@@ -105,7 +106,7 @@ describe("extension activation contributes the Agent_Panel (Req 1.1 wiring)", ()
     expect(register.mock.calls[0][0]).toBe(AGENT_PANEL_VIEW_ID);
 
     // The registration disposable is tracked for cleanup (Req 1.1 lifecycle).
-    expect(subscriptions).toHaveLength(1);
+    expect(subscriptions).toHaveLength(3);
     expect(typeof subscriptions[0].dispose).toBe("function");
 
     // deactivate is a no-op (disposables handle cleanup) and must not throw.

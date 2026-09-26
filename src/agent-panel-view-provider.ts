@@ -47,6 +47,8 @@
  */
 
 import * as vscode from "vscode";
+import { randomUUID } from "node:crypto";
+import type { FrontendHost } from "../vendor/frontend-host";
 
 import { PanelController } from "./core/panel-controller";
 import { SystemClock } from "./core/clock";
@@ -57,6 +59,8 @@ import { FlowController } from "./core/flow/flow-controller";
 import { FlowDispatcher } from "./webview/flow/flow-dispatcher";
 import {
   createFlowPorts,
+  createManagedFlowPorts,
+  unavailableFlowPorts,
   createFlowPortsAsync,
   isNativeFlowSupported,
 } from "./adapter/flow/flow-port-factory";
@@ -119,7 +123,7 @@ export interface MessagingWebview {
  */
 export function wireWebviewMessaging(
   webview: MessagingWebview,
-  options: { connectionFile?: string } = {},
+  options: { connectionFile?: string; managedHost?: Promise<FrontendHost> } = {},
 ): {
   controller: PanelController;
   dispatcher: WebviewDispatcher;
@@ -153,7 +157,9 @@ export function wireWebviewMessaging(
   // `onChange` triggers a full flow re-hydrate, so async/non-intent-driven
   // mutations (e.g. a timer-driven mock round settling) push a fresh snapshot.
   let flowDispatcher: FlowDispatcher;
-  const flowController = new FlowController(createFlowPorts(), {
+  const flowController = new FlowController(options.managedHost ? unavailableFlowPorts() : createFlowPorts(), {
+    ...(options.managedHost ? { timeoutMs: 15 * 60_000,
+      ids: { correlationId: () => "corr_" + randomUUID(), idempotencyKey: () => "idem_" + randomUUID(), id: (prefix: string) => prefix + "_" + randomUUID() } } : {}),
     clock: new SystemClock(),
     onNotice: (n) => flowDispatcher.forwardNotice(n),
     onChange: () => flowDispatcher.hydrateFlow(),
@@ -162,44 +168,43 @@ export function wireWebviewMessaging(
     webview.postMessage(message);
   });
 
-  // Async gated port construction / native-support verdict (guide §10-1, §9).
-  //
-  // The controller above is built synchronously with the sync Mock ports so
-  // first paint and inbound routing work with zero delay and identical behavior
-  // to before. The REAL gated factory is async, so we kick it off here and swap
-  // the controller's ports + record the fail-closed native-support verdict once
-  // it resolves. On Windows / unsupported pins this resolves near-instantly
-  // WITHOUT attempting any connection (it fails closed to Mock), so the swap is
-  // effectively immediate and non-networked in tests and on unsupported builds.
-  //
-  // SECURITY (guide §9): `options.connectionFile` is a HOST-ONLY absolute file
-  // path. It is passed into the factory (which reads it inside the host-side
-  // LocalCoreClient) but is NEVER forwarded to the controller snapshot or any
-  // webview message — only the derived `{ mode, experimental, reason? }` verdict
-  // crosses. `isNativeFlowSupported().experimental` supplies the experimental
-  // flag for the `macOS exact pin · experimental` label.
-  const experimental = isNativeFlowSupported().experimental;
-  void createFlowPortsAsync({ connectionFile: options.connectionFile }).then(
-    (result) => {
-      // Swap to the chosen (real/live or fail-closed Mock) ports and record the
-      // non-sensitive verdict. applyPortResult invokes the controller's onChange
-      // (wired above to flowDispatcher.hydrateFlow), so the swap publishes the
-      // fresh verdict snapshot to the webview automatically — no manual
-      // hydrate needed here.
-      flowController.applyPortResult(result, experimental);
-      // Read-only Project History (guide §6/§10-2): load the History list ONCE
-      // now that the real/mock HistoryPort is in place. This is read-only — it
-      // never starts a run, mutates, or auto-triggers discovery. loadHistory's
-      // notifyChange re-hydrates the flow snapshot so the list appears.
-      void flowController.loadHistory();
-    },
-  );
+  let disposed = false;
+  let unsubscribeStatus: (() => void) | undefined;
+  let unsubscribeRotation: (() => void) | undefined;
+  const experimental = options.managedHost ? false : isNativeFlowSupported().experimental;
+  const refreshPorts = async () => {
+    const result = options.managedHost ? await createManagedFlowPorts(options.managedHost)
+      : await createFlowPortsAsync({ connectionFile: options.connectionFile });
+    if (disposed) return;
+    flowController.applyPortResult(result, experimental);
+    await flowController.loadHistory();
+  };
+  if (options.managedHost) {
+    flowController.setFlowSupport({ mode: "unavailable", experimental: false, reason: "CORE_PREPARING" });
+    void options.managedHost.then(host => {
+      if (disposed) return;
+      unsubscribeStatus = host.subscribeStatus(status => {
+        if (disposed) return;
+        flowController.setFlowSupport({ mode: status.phase === "CORE_CONNECTED" && status.native === "WORKER_READY" ? "live" : "unavailable",
+          experimental: false, reason: status.nativeErrorCode ?? status.errorCode ?? status.phase });
+      });
+      unsubscribeRotation = host.onDidRotate(() => {
+        // Restore durable History only. Never restart a command after rotation.
+        if (!disposed) void flowController.loadHistory();
+      });
+    }).catch(() => {});
+  }
+  void refreshPorts();
 
-  const messageSubscription = webview.onDidReceiveMessage((raw) => {
+  const inboundSubscription = webview.onDidReceiveMessage((raw) => {
     // Route by discriminator. Build_Surface intents are handled exactly as
     // before; anything else is tried against the additive flow union.
     const intent = parseWebviewToHost(raw);
     if (intent !== null) {
+      if (options.managedHost && intent.type === "submit") {
+        webview.postMessage({ type: "notice", tab: intent.tab, kind: "error", message: "Builder/Helper 화면 연결은 다음 단계입니다. 현재 Discovery·Spec·History는 실제 Core를 사용합니다." });
+        return;
+      }
       // `handle` is async (submit awaits the adapter); chain the interim
       // full-refresh so the conversation reflects any state the intent mutated.
       void dispatcher.handle(intent).then(() => {
@@ -218,6 +223,7 @@ export function wireWebviewMessaging(
     // Untrusted/malformed payload from the webview: drop it defensively.
   });
 
+  const messageSubscription = { dispose() { disposed = true; inboundSubscription.dispose(); unsubscribeStatus?.(); unsubscribeRotation?.(); } };
   // Render immediately from host state (first paint / re-wire after disposal).
   dispatcher.hydrateAll();
   // Push the initial flow snapshot so the webview's flow store hydrates and
@@ -1499,7 +1505,7 @@ export function buildWebviewHtml(
  * {@link activate} against {@link AGENT_PANEL_VIEW_ID}.
  */
 export class AgentPanelViewProvider implements vscode.WebviewViewProvider {
-  constructor(private readonly extensionUri: vscode.Uri) {}
+  constructor(private readonly extensionUri: vscode.Uri, private readonly managedHost?: Promise<FrontendHost>) {}
 
   /**
    * Called by VS Code when the view is first shown (and again after disposal).
@@ -1541,7 +1547,7 @@ export class AgentPanelViewProvider implements vscode.WebviewViewProvider {
     // instance. The initial hydrateAll() inside the helper performs first paint.
     const { dispatcher, flowDispatcher, messageSubscription } = wireWebviewMessaging(
       webviewView.webview,
-      { connectionFile: connectionFile || undefined },
+      { connectionFile: this.managedHost ? undefined : connectionFile || undefined, managedHost: this.managedHost },
     );
     webviewView.onDidDispose(() => messageSubscription.dispose());
 
