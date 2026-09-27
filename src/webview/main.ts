@@ -185,22 +185,31 @@ export function bootstrap(
   const specReview = new SpecReview(flowContainer, flowCallbacks);
   const flowViews = { discoveryStart, discoveryWorkspace, specReview };
 
+  // The live agent container is created here (appended after `flowContainer`)
+  // so `applySurface` can arbitrate it too. It starts hidden and stays hidden
+  // until the first `agent/hydrate` switches the panel into live agent mode.
+  const agentContainer = root.ownerDocument.createElement("div");
+  agentContainer.className = "agent-shell";
+  agentContainer.hidden = true;
+  root.appendChild(agentContainer);
+  let agentActive = false;
+
   /**
    * Toggle the top-level surface from the current flow projection: when the
    * derived surface is "flow" the flow container is shown and the Build_Surface
    * panel hidden; when "build" the reverse. The individual flow views still
    * self-hide by phase, so exactly one flow view is visible within the flow
    * container. `buildContainer` holds the PanelRenderer's Build_Surface DOM.
+   *
+   * In product mode (after the first `agent/hydrate`) the live agent surface
+   * replaces the Demo Build_Surface for the "build" surface, and it is hidden
+   * during Discovery/Spec so it never squeezes the flow shell.
    */
   const applySurface = (snapshot: FlowSnapshot | null): void => {
     const surface = selectShellSurface(snapshot);
-    // Show the flow container and hide the Build_Surface panel when a flow phase
-    // is active; reveal the Build_Surface otherwise. `buildContainer` and
-    // `flowContainer` are independent siblings of `root`, so toggling one never
-    // affects the other. The individual flow views still self-hide by phase, so
-    // exactly one flow view is visible within the flow container.
     flowContainer.hidden = surface !== "flow";
-    buildContainer.hidden = surface === "flow";
+    buildContainer.hidden = surface === "flow" || agentActive;
+    agentContainer.hidden = surface === "flow" || !agentActive;
   };
 
   // Flow host -> store -> render. `hydrateFlow` replaces the projection
@@ -229,14 +238,9 @@ export function bootstrap(
   // in dev/tests no agent host message is ever posted, so this branch never
   // fires and the existing Build/flow bootstrap behavior is unchanged.
   //
-  // The agent container starts hidden and is revealed on the first
-  // `agent/hydrate`; it does not participate in `selectShellSurface` (which only
-  // arbitrates Build vs. flow), keeping the shipped surface logic untouched.
-  const agentContainer = root.ownerDocument.createElement("div");
-  agentContainer.className = "agent-shell";
-  agentContainer.hidden = true;
-  root.appendChild(agentContainer);
-
+  // The agent container (created above) starts hidden. The first
+  // `agent/hydrate` marks live agent mode, and `applySurface` then shows it in
+  // place of the Demo Build_Surface whenever the flow phase is "building".
   const agentCallbacks: AgentRenderCallbacks = {
     onBuilderStart: (message) => {
       client.postAgent({ kind: "builder/start", message });
@@ -300,7 +304,8 @@ export function bootstrap(
   client.onHostAgentMessage((message) => {
     switch (message.kind) {
       case "agent/hydrate": {
-        agentContainer.hidden = false;
+        agentActive = true;
+        applySurface(flowStore.current);
         agentView.render(message.vm);
         return;
       }
