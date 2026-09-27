@@ -2726,6 +2726,8 @@ var crewAppSurfaceSchema = z15.enum(["DISCOVERY", "SPEC", "BUILD"]);
 var helperConversationSummarySchema = z15.strictObject({
   conversationId: conversationIdSchema,
   episodeId: episodeIdSchema,
+  /** Helper turn correlation; matches the PersonalizationTrace written for that turn. */
+  correlationId: correlationIdSchema.optional(),
   taskId: taskIdSchema,
   decisionId: decisionIdSchema.optional(),
   status: episodeStatusSchema,

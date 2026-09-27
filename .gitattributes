@@ -1,0 +1,3 @@
+/portable/** -text
+/vendor/frontend-client/** -text
+/vendor/frontend-host/** -text

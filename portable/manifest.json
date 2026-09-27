@@ -29,24 +29,24 @@
       "bytes": 9348
     },
     "bin/bridge.mjs": {
-      "sha256": "3629d78ee14b19eadc8c21f1bc7690ff27480ac76f573ad3b8b909cfd2f36be7",
-      "bytes": 1010742
+      "sha256": "0ae50095294918f73bff8f0994d3595063891e6bfbe34718a3c241dfb3e06a61",
+      "bytes": 1010770
     },
     "bin/client.cjs": {
-      "sha256": "5d6a345b56251527522d56d73e76f437498f20702e58cd3e371922dad300651d",
-      "bytes": 394314
+      "sha256": "5babb3bfe7f3e2ea12a2d38656608bfc6e1b5e2c4afae7d661422ea7a358cf2f",
+      "bytes": 394341
     },
     "bin/core.mjs": {
-      "sha256": "b944a89117e076415356b43b8171edee141ff7a7853c0d705b660fecf3afa7e9",
-      "bytes": 1025401
+      "sha256": "373bcc9c730cbd3710e6a5bdb94d662be55b74d63bbd0b16ab7656478597458e",
+      "bytes": 1026207
     },
     "bin/extension.cjs": {
-      "sha256": "fe36a442429c29f7f0727da466c7de446182961510589a76b919dd4576860846",
-      "bytes": 555961
+      "sha256": "ace184c36d2f1fe56c2c65229014a83704ece2be12dc899a3a018037acf14cad",
+      "bytes": 562475
     },
     "bin/frontend-host.cjs": {
-      "sha256": "236856565b14cde09790a8a4746217333bccd98f2199bcee2b0d6525162b91df",
-      "bytes": 523693
+      "sha256": "f20dfb723b2a9e71a776873b9d4350b7ba053e536672ab25a6812c7f2cb67e5f",
+      "bytes": 523754
     },
     "bin/guard.mjs": {
       "sha256": "d21014410e0e03ab141aba0c119da459280f2cb2241417629b3a111866529871",
@@ -57,20 +57,20 @@
       "bytes": 4587
     },
     "bin/native-worker.cjs": {
-      "sha256": "57b9ab7e436792b259802b2b0c69ce0208a81d60d35dd0d38fb588b24dabba53",
-      "bytes": 510820
+      "sha256": "55fa4fa3439ade1fb606db961fa5625fd17d75bad5ad9ee32ed42b26adb892ad",
+      "bytes": 510881
     },
     "bin/probe.cjs": {
       "sha256": "77f2015f1bff167f3e0ed697914c5c65eda252a3aa1a6b8a46649c07d33856dc",
       "bytes": 1012
     },
     "bin/project-tools.mjs": {
-      "sha256": "6b75789902281e1a1efec15943b3d7f9762abc21c564e44c4c34e88c60dc9516",
-      "bytes": 400285
+      "sha256": "85f7e2a30921c055ce9ce47dcbdaa9fd81bc580bcc22db2571992177745e12a4",
+      "bytes": 400312
     },
     "bin/runtime.cjs": {
-      "sha256": "8ef98c2516e465f78f19939e91b32f06b0b363f8ef5056352d55119d3225f712",
-      "bytes": 439274
+      "sha256": "6285213892601a5c6ccde2f75d7dad506f4e8623c3db248e0d93e8660b0808bf",
+      "bytes": 439301
     },
     "drizzle/0000_daily_moira_mactaggert.sql": {
       "sha256": "96f726a8baee7111af86e34022f3430b978b58d0316522a15a330b72dab9489b",
