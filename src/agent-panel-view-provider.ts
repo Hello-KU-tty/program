@@ -460,6 +460,18 @@ export function buildWebviewHtml(
     .flow-shell[hidden] {
       display: none;
     }
+    /* Live agent surface (product mode): shown in place of the Build_Surface
+       during the "building" phase and scrolls as one column. */
+    .agent-shell {
+      display: flex;
+      flex-direction: column;
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+    }
+    .agent-shell[hidden] {
+      display: none;
+    }
 
     /* ---------------------------------------------------------------------
        Root panel: full-height flex column. The active accent is scoped by the
@@ -1623,6 +1635,447 @@ export function buildWebviewHtml(
       box-shadow: none;
       filter: none;
     }
+
+    /* =====================================================================
+       Live Builder/Helper agent surface
+       Class hooks emitted by src/webview/agent/agent-render.ts. Reuses the
+       same tokens as the flow surfaces. Builder is blue, Helper is purple.
+       ===================================================================== */
+    .agent-surface {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-3);
+      padding: var(--sp-2) var(--sp-3) var(--sp-4);
+    }
+    .agent-surface [hidden] { display: none !important; }
+
+    /* ---- Section cards ---- */
+    .agent-builder,
+    .agent-helper,
+    .agent-decisions,
+    .agent-native-questions,
+    .agent-evidence,
+    .agent-final-upgrade {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-2);
+      border: 1px solid var(--vscode-panel-border, color-mix(in srgb, var(--vscode-foreground) 14%, transparent));
+      border-radius: var(--radius-lg);
+      background: color-mix(in srgb, var(--vscode-foreground) 4%, var(--vscode-editor-background));
+      padding: var(--sp-3);
+    }
+    .agent-builder {
+      --accent: var(--vscode-charts-blue, #4f8cff);
+      border-top: 3px solid var(--accent);
+    }
+    .agent-helper {
+      --accent: var(--vscode-charts-purple, #a78bfa);
+      border-top: 3px solid var(--accent);
+    }
+    .agent-decisions { --accent: var(--vscode-charts-orange, #f5a524); }
+
+    /* Decisions / native questions only take space when they have content. */
+    .agent-decisions:not(:has(.agent-decision)),
+    .agent-native-questions:not(:has(.agent-native-question)) {
+      display: none;
+    }
+
+    /* ---- Headings ---- */
+    .agent-builder-heading,
+    .agent-helper-heading,
+    .agent-section-heading {
+      margin: 0;
+      font-size: 1.05em;
+      font-weight: 700;
+      color: var(--vscode-foreground);
+      letter-spacing: 0.01em;
+    }
+    .agent-builder-heading,
+    .agent-helper-heading { color: var(--accent); }
+    .agent-section-label {
+      margin: var(--sp-1) 0 0;
+      font-size: 0.75em;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--vscode-descriptionForeground);
+    }
+    /* Empty transcript / tool lists: hide their label too. */
+    .agent-section-label:has(+ .agent-transcript:empty),
+    .agent-section-label:has(+ .agent-tool-rows:empty) {
+      display: none;
+    }
+    .agent-evidence-header,
+    .agent-final-upgrade-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--sp-2);
+    }
+
+    /* ---- Status pills and banners ---- */
+    .agent-builder-phase,
+    .agent-helper-phase {
+      align-self: flex-start;
+      font-size: 0.8em;
+      font-weight: 600;
+      color: var(--accent);
+      background: color-mix(in srgb, var(--accent) 14%, transparent);
+      border-radius: var(--radius-pill);
+      padding: 2px var(--sp-2);
+    }
+    .agent-builder-task {
+      font-weight: 600;
+      line-height: 1.4;
+    }
+    .agent-builder-completion,
+    .agent-builder-error,
+    .agent-builder-permission,
+    .agent-helper-window,
+    .agent-helper-error,
+    .agent-worker-status,
+    .agent-notice {
+      font-size: 0.9em;
+      line-height: 1.45;
+      border-radius: var(--radius-md);
+      padding: var(--sp-2) var(--sp-3);
+      border: 1px solid transparent;
+      overflow-wrap: anywhere;
+    }
+    .agent-builder-completion {
+      color: var(--vscode-testing-iconPassed, #3fb950);
+      background: color-mix(in srgb, var(--vscode-testing-iconPassed, #3fb950) 12%, transparent);
+      border-color: color-mix(in srgb, var(--vscode-testing-iconPassed, #3fb950) 35%, transparent);
+    }
+    .agent-builder-error,
+    .agent-helper-error {
+      color: var(--vscode-errorForeground, #f14c4c);
+      background: color-mix(in srgb, var(--vscode-errorForeground, #f14c4c) 10%, transparent);
+      border-color: color-mix(in srgb, var(--vscode-errorForeground, #f14c4c) 35%, transparent);
+    }
+    .agent-builder-permission {
+      color: var(--vscode-editorWarning-foreground, #cca700);
+      background: color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 10%, transparent);
+      border-color: color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 35%, transparent);
+    }
+    .agent-helper-window {
+      color: var(--accent);
+      background: color-mix(in srgb, var(--accent) 12%, transparent);
+      animation: bhap-pulse 1.4s ease-in-out infinite;
+    }
+    .agent-worker-status,
+    .agent-notice {
+      color: var(--vscode-descriptionForeground);
+      background: color-mix(in srgb, var(--vscode-foreground) 6%, transparent);
+      border-color: var(--vscode-panel-border, transparent);
+    }
+    .agent-notice[data-kind="error"] {
+      color: var(--vscode-errorForeground, #f14c4c);
+      border-color: color-mix(in srgb, var(--vscode-errorForeground, #f14c4c) 35%, transparent);
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .agent-helper-window { animation: none; }
+    }
+
+    /* ---- Transcript and conversations ---- */
+    .agent-transcript,
+    .agent-helper-conversations {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-2);
+      max-height: 45vh;
+      overflow-y: auto;
+    }
+    .agent-transcript:empty,
+    .agent-helper-conversations:empty,
+    .agent-tool-rows:empty { display: none; }
+    .agent-transcript-line,
+    .agent-helper-conversation-user,
+    .agent-helper-conversation-response {
+      margin: 0;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    .agent-helper-conversation {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-1);
+      border-left: 2px solid color-mix(in srgb, var(--accent) 50%, transparent);
+      padding-left: var(--sp-2);
+    }
+    .agent-helper-conversation-label,
+    .agent-helper-conversation-status {
+      font-size: 0.8em;
+      color: var(--vscode-descriptionForeground);
+    }
+    .agent-helper-conversation-user { font-weight: 600; }
+
+    /* ---- Tool rows ---- */
+    .agent-tool-rows {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-1);
+    }
+    .agent-tool-row {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      font-size: 0.9em;
+      border: 1px solid var(--vscode-panel-border, color-mix(in srgb, var(--vscode-foreground) 12%, transparent));
+      border-radius: var(--radius-md);
+      padding: var(--sp-1) var(--sp-2);
+    }
+    .agent-tool-row-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--sp-2);
+    }
+    .agent-tool-row-tool { font-weight: 600; }
+    .agent-tool-row-status {
+      font-size: 0.8em;
+      color: var(--vscode-descriptionForeground);
+    }
+    .agent-tool-row-status[data-status="FAILED"] { color: var(--vscode-errorForeground, #f14c4c); }
+    .agent-tool-row-status[data-status="SUCCEEDED"] { color: var(--vscode-testing-iconPassed, #3fb950); }
+    .agent-tool-row-path,
+    .agent-tool-row-command,
+    .agent-tool-row-core-action,
+    .agent-tool-row-exit,
+    .agent-tool-row-truncated {
+      font-size: 0.85em;
+      color: var(--vscode-descriptionForeground);
+      overflow-wrap: anywhere;
+    }
+    .agent-tool-row-path,
+    .agent-tool-row-command { font-family: var(--vscode-editor-font-family, monospace); }
+    .agent-tool-row-output {
+      margin: 0;
+      max-height: 160px;
+      overflow: auto;
+      font-family: var(--vscode-editor-font-family, monospace);
+      font-size: 0.85em;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      background: var(--vscode-textCodeBlock-background, color-mix(in srgb, var(--vscode-foreground) 6%, transparent));
+      border-radius: var(--radius-sm);
+      padding: var(--sp-1) var(--sp-2);
+    }
+
+    /* ---- Composer and form fields ---- */
+    .agent-composer,
+    .agent-field,
+    .agent-final-upgrade-prepare {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-1);
+    }
+    .agent-final-upgrade-prepare { gap: var(--sp-2); }
+    .agent-field-label {
+      font-size: 0.85em;
+      font-weight: 600;
+      color: var(--vscode-descriptionForeground);
+      letter-spacing: 0.02em;
+    }
+    .agent-composer-input,
+    .agent-input,
+    .agent-decision-rationale,
+    .agent-decision-custom,
+    .agent-final-upgrade-goal,
+    .agent-native-question-freetext {
+      box-sizing: border-box;
+      width: 100%;
+      font-family: inherit;
+      font-size: inherit;
+      line-height: 1.4;
+      color: var(--vscode-input-foreground);
+      background: var(--vscode-input-background);
+      border: 1px solid var(--vscode-panel-border, color-mix(in srgb, var(--vscode-foreground) 20%, transparent));
+      border-radius: var(--radius-md);
+      padding: var(--sp-2) var(--sp-3);
+      resize: vertical;
+      transition: border-color var(--transition), box-shadow var(--transition);
+    }
+    .agent-composer-input:focus,
+    .agent-input:focus,
+    .agent-decision-rationale:focus,
+    .agent-decision-custom:focus,
+    .agent-final-upgrade-goal:focus,
+    .agent-native-question-freetext:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent);
+    }
+    .agent-composer-input:disabled { opacity: 0.6; cursor: not-allowed; }
+    .agent-composer-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: var(--sp-2);
+    }
+
+    /* ---- Buttons: primary (filled accent) and secondary (outline) ---- */
+    .agent-surface button {
+      appearance: none;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.9em;
+      font-weight: 600;
+      color: var(--vscode-foreground);
+      background: transparent;
+      border: 1px solid var(--vscode-panel-border, color-mix(in srgb, var(--vscode-foreground) 24%, transparent));
+      border-radius: var(--radius-md);
+      padding: var(--sp-1) var(--sp-3);
+      transition: background var(--transition), border-color var(--transition), filter var(--transition);
+    }
+    .agent-surface button:hover:not(:disabled) {
+      border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+      background: var(--vscode-list-hoverBackground, color-mix(in srgb, var(--vscode-foreground) 8%, transparent));
+    }
+    .agent-surface button:focus-visible {
+      outline: 2px solid var(--vscode-focusBorder, var(--accent));
+      outline-offset: 1px;
+    }
+    .agent-surface button:disabled { opacity: 0.45; cursor: not-allowed; }
+    .agent-surface .agent-builder-send,
+    .agent-surface .agent-builder-resume,
+    .agent-surface .agent-helper-send,
+    .agent-surface .agent-decision-choose,
+    .agent-surface .agent-decision-accept-recommended,
+    .agent-surface .agent-final-upgrade-prepare-button {
+      color: var(--vscode-button-foreground, var(--accent-contrast));
+      background: var(--accent);
+      border-color: transparent;
+    }
+    .agent-surface .agent-builder-send:hover:not(:disabled),
+    .agent-surface .agent-builder-resume:hover:not(:disabled),
+    .agent-surface .agent-helper-send:hover:not(:disabled),
+    .agent-surface .agent-decision-choose:hover:not(:disabled),
+    .agent-surface .agent-decision-accept-recommended:hover:not(:disabled),
+    .agent-surface .agent-final-upgrade-prepare-button:hover:not(:disabled) {
+      background: var(--accent);
+      filter: brightness(1.08);
+    }
+    .agent-surface .agent-builder-stop {
+      color: var(--vscode-errorForeground, #f14c4c);
+      border-color: color-mix(in srgb, var(--vscode-errorForeground, #f14c4c) 45%, transparent);
+    }
+    .agent-final-upgrade-prepare-button { align-self: flex-start; }
+
+    /* ---- Decisions and native questions ---- */
+    .agent-decisions-list,
+    .agent-native-list,
+    .agent-decision-options,
+    .agent-native-question-options {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-2);
+    }
+    .agent-decision,
+    .agent-native-question {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-2);
+    }
+    .agent-decision-category,
+    .agent-native-question-role {
+      align-self: flex-start;
+      font-size: 0.75em;
+      font-weight: 700;
+      color: var(--accent);
+      background: color-mix(in srgb, var(--accent) 14%, transparent);
+      border-radius: var(--radius-pill);
+      padding: 2px var(--sp-2);
+    }
+    .agent-decision-question,
+    .agent-native-question-prompt {
+      margin: 0;
+      font-weight: 600;
+      line-height: 1.45;
+      white-space: pre-wrap;
+    }
+    .agent-decision-option,
+    .agent-native-question-option {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-1);
+      border: 1px solid var(--vscode-panel-border, color-mix(in srgb, var(--vscode-foreground) 14%, transparent));
+      border-radius: var(--radius-md);
+      padding: var(--sp-2);
+    }
+    .agent-decision-option[data-recommended="true"] {
+      border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+      background: color-mix(in srgb, var(--accent) 8%, transparent);
+    }
+    .agent-decision-option-label,
+    .agent-native-question-option-label { font-weight: 600; }
+    .agent-decision-option-description,
+    .agent-native-question-option-description,
+    .agent-native-question-suboptions-label {
+      margin: 0;
+      font-size: 0.9em;
+      color: var(--vscode-descriptionForeground);
+      line-height: 1.45;
+    }
+    .agent-decision-option button,
+    .agent-native-question-option button { align-self: flex-start; }
+    .agent-native-question-suboption {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-2);
+      font-size: 0.9em;
+    }
+    .agent-decision-resolved {
+      font-size: 0.9em;
+      color: var(--vscode-descriptionForeground);
+    }
+
+    /* ---- Evidence ---- */
+    .agent-evidence-body,
+    .agent-evidence-concepts,
+    .agent-evidence-analysis {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-2);
+    }
+    .agent-evidence-body:empty,
+    .agent-evidence-concepts:empty,
+    .agent-evidence-analysis:empty { display: none; }
+    .agent-evidence-summary,
+    .agent-evidence-empty,
+    .agent-evidence-accepted-excerpt,
+    .agent-final-upgrade-empty {
+      margin: 0;
+      line-height: 1.45;
+      color: var(--vscode-descriptionForeground);
+    }
+    .agent-evidence-concept,
+    .agent-evidence-analysis-job,
+    .agent-final-upgrade-candidate {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      border: 1px solid var(--vscode-panel-border, color-mix(in srgb, var(--vscode-foreground) 12%, transparent));
+      border-radius: var(--radius-md);
+      padding: var(--sp-2);
+    }
+    .agent-evidence-concept-name,
+    .agent-final-upgrade-candidate-id { font-weight: 600; overflow-wrap: anywhere; }
+    .agent-evidence-concept-state,
+    .agent-evidence-concept-issues,
+    .agent-evidence-analysis-status,
+    .agent-final-upgrade-candidate-meta {
+      font-size: 0.85em;
+      color: var(--vscode-descriptionForeground);
+    }
+    .agent-evidence-retry { align-self: flex-start; }
+    .agent-final-upgrade-list {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-2);
+    }
+    .agent-final-upgrade-list:empty { display: none; }
   </style>
 </head>
 <body>
