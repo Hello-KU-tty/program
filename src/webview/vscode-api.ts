@@ -17,6 +17,7 @@
 
 import type { WebviewToHost } from "./messages";
 import type { WebviewToHostFlow } from "./flow/flow-messages";
+import type { AgentAction } from "./agent/agent-messages";
 
 /**
  * The subset of the VS Code webview API this panel uses. Only `postMessage` is
@@ -29,7 +30,7 @@ import type { WebviewToHostFlow } from "./flow/flow-messages";
  * `postMessage` accepts `any`, so accepting the wider union is safe.
  */
 export interface VsCodeApi {
-  postMessage(message: WebviewToHost | WebviewToHostFlow): void;
+  postMessage(message: WebviewToHost | WebviewToHostFlow | AgentAction): void;
 }
 
 /**

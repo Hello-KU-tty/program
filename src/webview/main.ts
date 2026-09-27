@@ -48,6 +48,10 @@ import {
   SpecReview,
   type FlowRenderCallbacks,
 } from "./flow/flow-render";
+import {
+  AgentSurfaceView,
+  type AgentRenderCallbacks,
+} from "./agent/agent-render";
 import { selectShellSurface } from "./shell-view-model";
 
 /**
@@ -72,6 +76,7 @@ export function bootstrap(
     discoveryWorkspace: DiscoveryWorkspace;
     specReview: SpecReview;
   };
+  agentView: AgentSurfaceView;
 } {
   const store = new ViewModelStore();
 
@@ -214,8 +219,108 @@ export function bootstrap(
     // message.type === "flowNotice": no-op (no flow-view notice API exists).
   });
 
+  // ---- Additive LIVE Builder/Helper agent surface (Req 13, 14) -------------
+  //
+  // The agent surface renders into its own child container of `root` (a sibling
+  // of `buildContainer` / `flowContainer`) and is wired symmetrically to the
+  // flow surface: gestures post `AgentAction`s via `client.postAgent`, and
+  // host→webview agent messages update the view. It is INERT until an
+  // `agent/hydrate` arrives (product mode only, when a Managed_Host is present);
+  // in dev/tests no agent host message is ever posted, so this branch never
+  // fires and the existing Build/flow bootstrap behavior is unchanged.
+  //
+  // The agent container starts hidden and is revealed on the first
+  // `agent/hydrate`; it does not participate in `selectShellSurface` (which only
+  // arbitrates Build vs. flow), keeping the shipped surface logic untouched.
+  const agentContainer = root.ownerDocument.createElement("div");
+  agentContainer.className = "agent-shell";
+  agentContainer.hidden = true;
+  root.appendChild(agentContainer);
+
+  const agentCallbacks: AgentRenderCallbacks = {
+    onBuilderStart: (message) => {
+      client.postAgent({ kind: "builder/start", message });
+    },
+    onBuilderStop: () => {
+      client.postAgent({ kind: "builder/stop" });
+    },
+    onHelperStart: (message, origin, decisionId) => {
+      client.postAgent({
+        kind: "helper/start",
+        message,
+        origin,
+        ...(decisionId !== undefined ? { decisionId } : {}),
+      });
+    },
+    onResolveDecision: (decisionId, selection, rationale, helperUsed) => {
+      client.postAgent({
+        kind: "decision/resolve",
+        decisionId,
+        selection,
+        helperUsed,
+        ...(rationale !== undefined ? { rationale } : {}),
+      });
+    },
+    onResumeAfterDecision: () => {
+      client.postAgent({ kind: "builder/resumeAfterDecision" });
+    },
+    onNativeAnswer: (requestId, nativeJobId, answer) => {
+      client.postAgent({ kind: "native/answer", requestId, nativeJobId, answer });
+    },
+    onOpenWorkspace: (taskId) => {
+      client.postAgent({ kind: "workspace/open", taskId });
+    },
+    onLaunchResult: () => {
+      client.postAgent({ kind: "result/launch" });
+    },
+    onReadEvidence: (conceptId) => {
+      client.postAgent({
+        kind: "evidence/read",
+        ...(conceptId !== undefined ? { conceptId } : {}),
+      });
+    },
+    onRetryAnalysis: (analysisJobId, expectedJobRevision) => {
+      client.postAgent({ kind: "evidence/retry", analysisJobId, expectedJobRevision });
+    },
+    onListFinalUpgrade: () => {
+      client.postAgent({ kind: "finalUpgrade/list" });
+    },
+    onPrepareFinalUpgrade: (input) => {
+      client.postAgent({ kind: "finalUpgrade/prepare", ...input });
+    },
+  };
+
+  const agentView = new AgentSurfaceView(agentContainer, agentCallbacks);
+
+  // Agent host → view. The surface renders when `agent/hydrate` arrives (which
+  // also reveals the container); targeted read-style responses update their
+  // dedicated regions. Notices ride inside the hydrated `vm.notice`, so
+  // `agent/notice` triggers a re-render only if a standalone notice is ever
+  // posted (the host currently hydrates for state changes).
+  client.onHostAgentMessage((message) => {
+    switch (message.kind) {
+      case "agent/hydrate": {
+        agentContainer.hidden = false;
+        agentView.render(message.vm);
+        return;
+      }
+      case "agent/evidence": {
+        agentView.renderEvidence(message.view);
+        return;
+      }
+      case "agent/finalUpgrade": {
+        agentView.renderFinalUpgrade(message.candidates);
+        return;
+      }
+      // agent/patch/* and agent/notice: the host drives full `agent/hydrate`
+      // snapshots for state changes (design §B.16), so these are no-ops here.
+      default:
+        return;
+    }
+  });
+
   client.start();
-  return { store, renderer, client, flowStore, flowViews };
+  return { store, renderer, client, flowStore, flowViews, agentView };
 }
 
 /**

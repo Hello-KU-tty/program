@@ -68,6 +68,10 @@ import {
   parseWebviewToHostFlow,
   type HostToWebviewFlow,
 } from "./webview/flow/flow-messages";
+import { AgentSurfaceController } from "./core/agent/agent-controller";
+import { AgentDispatcher } from "./webview/agent/agent-dispatcher";
+import { ManagedAgentPort } from "./adapter/agent/managed-agent-port";
+import type { AgentHostMessage } from "./webview/agent/agent-messages";
 
 /** The webview view id contributed in package.json (`contributes.views`). */
 export const AGENT_PANEL_VIEW_ID = "builderHelperAgentPanel.view";
@@ -80,9 +84,12 @@ export const AGENT_PANEL_VIEW_ID = "builderHelperAgentPanel.view";
 export interface MessagingWebview {
   // Widened to accept flow messages too (Req 12, 13): the additive
   // Discovery -> Spec flow posts {@link HostToWebviewFlow} over the same
-  // channel. VS Code's real `postMessage` accepts `any`, so accepting the union
-  // is safe and keeps flow hydration type-checking without a second transport.
-  postMessage(message: HostToWebview | HostToWebviewFlow): unknown;
+  // channel. It is widened again for the live agent surfaces (Req 13, 14): the
+  // additive Builder/Helper surface posts {@link AgentHostMessage} over the same
+  // channel when a Managed_Host is present. VS Code's real `postMessage` accepts
+  // `any`, so accepting the union is safe and keeps agent/flow hydration
+  // type-checking without a second transport.
+  postMessage(message: HostToWebview | HostToWebviewFlow | AgentHostMessage): unknown;
   onDidReceiveMessage(listener: (message: unknown) => unknown): vscode.Disposable;
 }
 
@@ -123,13 +130,38 @@ export interface MessagingWebview {
  */
 export function wireWebviewMessaging(
   webview: MessagingWebview,
-  options: { connectionFile?: string; managedHost?: Promise<FrontendHost> } = {},
+  options: {
+    connectionFile?: string;
+    managedHost?: Promise<FrontendHost>;
+    /**
+     * Persistent extension state for `bhlr.lastProjectId` (§3.1 recovery),
+     * threaded from `context.globalState` in product mode. Only consumed when
+     * {@link options.managedHost} is present; the dev/test path (no managedHost)
+     * never constructs the live agent controller, so this is optional.
+     */
+    globalState?: {
+      get(key: string): string | undefined;
+      update(key: string, value: string): Thenable<void> | Promise<void>;
+    };
+  } = {},
 ): {
   controller: PanelController;
   dispatcher: WebviewDispatcher;
   messageSubscription: vscode.Disposable;
   flowController: FlowController;
   flowDispatcher: FlowDispatcher;
+  /**
+   * The live agent controller/dispatcher, present ONLY in product mode (when
+   * {@link options.managedHost} is set). Because the {@link ManagedAgentPort}
+   * needs the awaited `host.client` / `host.worker`, these are built
+   * asynchronously; {@link agentReady} resolves once they exist (or to `null`
+   * when there is no managed host / the host failed to prepare), so
+   * `resolveWebviewView` can call `recover()` / `dispose()` / `hydrate()`.
+   */
+  agentReady: Promise<{
+    controller: AgentSurfaceController;
+    dispatcher: AgentDispatcher;
+  } | null>;
 } {
   // The dispatcher and controller reference each other: the controller's
   // onNotice must forward to the dispatcher, but the dispatcher needs the
@@ -168,6 +200,35 @@ export function wireWebviewMessaging(
     webview.postMessage(message);
   });
 
+  // ---- Additive LIVE agent host side (Req 13, 14) --------------------------
+  //
+  // Only constructed in product mode (a Managed_Host is present). The
+  // ManagedAgentPort needs the awaited `host.client` + `host.worker`, so the
+  // controller/dispatcher are built asynchronously inside the same
+  // `await managedHost` used below (ONE await yields both the flow ports via
+  // createManagedFlowPorts AND this agent port). `agentHolder` is a mutable
+  // forward reference the inbound listener reads: it stays null until the host
+  // resolves, and the dispatcher no-ops on non-agent messages, so routing every
+  // inbound message through it is safe and never destructive (parseAgentAction
+  // returns null for flow/build payloads). When there is no Managed_Host the
+  // holder stays null forever and NOTHING agent-live is built (Req 14.4).
+  let agentHolder: {
+    controller: AgentSurfaceController;
+    dispatcher: AgentDispatcher;
+  } | null = null;
+  let resolveAgentReady!: (
+    value: {
+      controller: AgentSurfaceController;
+      dispatcher: AgentDispatcher;
+    } | null,
+  ) => void;
+  const agentReady = new Promise<{
+    controller: AgentSurfaceController;
+    dispatcher: AgentDispatcher;
+  } | null>((resolve) => {
+    resolveAgentReady = resolve;
+  });
+
   let disposed = false;
   let unsubscribeStatus: (() => void) | undefined;
   let unsubscribeRotation: (() => void) | undefined;
@@ -192,17 +253,84 @@ export function wireWebviewMessaging(
         // Restore durable History only. Never restart a command after rotation.
         if (!disposed) void flowController.loadHistory();
       });
-    }).catch(() => {});
+
+      // ---- Build the LIVE agent controller + dispatcher (Req 13, 14) --------
+      //
+      // The awaited `host` yields `host.client` + `host.worker` synchronously,
+      // so the ManagedAgentPort can be constructed here (design §B.17). Use the
+      // SAME forward-reference closure the FlowDispatcher/FlowController use:
+      // the controller's `onChange` is set at construction and forwards to
+      // `agentDispatcher.hydrate()` (assigned right after). A globalState is
+      // required for `bhlr.lastProjectId` (§3.1 recovery); if the product path
+      // did not thread one, skip building the live agent side rather than crash.
+      if (disposed) return;
+      const globalState = options.globalState;
+      if (!globalState) {
+        resolveAgentReady(null);
+        return;
+      }
+      const port = new ManagedAgentPort(host.client, host.worker);
+      let agentDispatcher: AgentDispatcher;
+      const agentController = new AgentSurfaceController({
+        port,
+        globalState,
+        onChange: () => agentDispatcher.hydrate(),
+        // Host-side side effects only (never messaged): the absolute workspace
+        // path and the validated local URL are consumed here, never projected.
+        openFolder: async (p) => {
+          await vscode.commands.executeCommand(
+            "vscode.openFolder",
+            vscode.Uri.file(p),
+            { forceNewWindow: false },
+          );
+        },
+        openExternal: async (url) => {
+          await vscode.env.openExternal(vscode.Uri.parse(url));
+        },
+      });
+      agentDispatcher = new AgentDispatcher(agentController, (m) =>
+        webview.postMessage(m),
+      );
+      agentHolder = { controller: agentController, dispatcher: agentDispatcher };
+      // First paint of the agent surface from host state.
+      agentDispatcher.hydrate();
+      resolveAgentReady(agentHolder);
+    }).catch(() => {
+      // The host failed to resolve/prepare: no live agent side (fail-closed).
+      resolveAgentReady(null);
+    });
+  } else {
+    // No Managed_Host (dev/tests): NOTHING agent-live is built (Req 14.4).
+    resolveAgentReady(null);
   }
   void refreshPorts();
 
   const inboundSubscription = webview.onDidReceiveMessage((raw) => {
+    // ---- LIVE agent routing (product mode only) ---------------------------
+    //
+    // In product mode (a Managed_Host is present), agent gestures reach the live
+    // controller. Agent actions (`builder/*`, `helper/*`, `decision/*`,
+    // `native/*`, `workspace/*`, `result/*`, `evidence/*`, `finalUpgrade/*`)
+    // live in a DISTINCT `kind` namespace from Build (`type`-keyed) and flow
+    // (`type`-keyed) intents, so `agentDispatcher.handle(raw)` internally runs
+    // parseAgentAction and no-ops (returns null → drop) on any Build/flow/
+    // malformed payload. Routing every inbound message through it is therefore
+    // safe and never destructive; it is done IN ADDITION to (and before) the
+    // Build/flow routing below, and only a genuine AgentAction is acted on.
+    if (agentHolder) {
+      void agentHolder.dispatcher.handle(raw);
+    }
+
     // Route by discriminator. Build_Surface intents are handled exactly as
     // before; anything else is tried against the additive flow union.
     const intent = parseWebviewToHost(raw);
     if (intent !== null) {
+      // In product mode the Demo `submit` path is superseded by the live agent
+      // controller (Req 14.3): a `submit` intent is an agent gesture handled
+      // above by `agentDispatcher.handle`, so drop it here rather than driving
+      // the Demo adapter. Non-submit Build intents (selectTab / draftChanged /
+      // toggleWorkItem) remain harmless view-local no-ops on the Demo path.
       if (options.managedHost && intent.type === "submit") {
-        webview.postMessage({ type: "notice", tab: intent.tab, kind: "error", message: "Builder/Helper 화면 연결은 다음 단계입니다. 현재 Discovery·Spec·History는 실제 Core를 사용합니다." });
         return;
       }
       // `handle` is async (submit awaits the adapter); chain the interim
@@ -223,14 +351,18 @@ export function wireWebviewMessaging(
     // Untrusted/malformed payload from the webview: drop it defensively.
   });
 
-  const messageSubscription = { dispose() { disposed = true; inboundSubscription.dispose(); unsubscribeStatus?.(); unsubscribeRotation?.(); } };
+  const messageSubscription = { dispose() { disposed = true; inboundSubscription.dispose(); unsubscribeStatus?.(); unsubscribeRotation?.();
+    // Abort the live agent SSE subscription only (§B.8 abort ≠ cancel): dispose
+    // never calls cancelRun, so the run keeps going in Core and recovery
+    // re-watches on reactivation (Requirement 6.3).
+    agentHolder?.controller.dispose(); } };
   // Render immediately from host state (first paint / re-wire after disposal).
   dispatcher.hydrateAll();
   // Push the initial flow snapshot so the webview's flow store hydrates and
   // `selectShellSurface` can decide the top-level surface (Req 12, 13).
   flowDispatcher.hydrateFlow();
 
-  return { controller, dispatcher, messageSubscription, flowController, flowDispatcher };
+  return { controller, dispatcher, messageSubscription, flowController, flowDispatcher, agentReady };
 }
 
 /**
@@ -1505,7 +1637,18 @@ export function buildWebviewHtml(
  * {@link activate} against {@link AGENT_PANEL_VIEW_ID}.
  */
 export class AgentPanelViewProvider implements vscode.WebviewViewProvider {
-  constructor(private readonly extensionUri: vscode.Uri, private readonly managedHost?: Promise<FrontendHost>) {}
+  constructor(
+    private readonly extensionUri: vscode.Uri,
+    private readonly managedHost?: Promise<FrontendHost>,
+    // Threaded from `context.globalState` (a vscode.Memento) in product mode so
+    // the live AgentSurfaceController can persist/read `bhlr.lastProjectId`
+    // (§3.1 window-switch recovery). Optional so the dev/test path (no managed
+    // host) constructs the provider without it.
+    private readonly globalState?: {
+      get(key: string): string | undefined;
+      update(key: string, value: string): Thenable<void> | Promise<void>;
+    },
+  ) {}
 
   /**
    * Called by VS Code when the view is first shown (and again after disposal).
@@ -1545,19 +1688,42 @@ export class AgentPanelViewProvider implements vscode.WebviewViewProvider {
 
     // Wire the message channel to a fresh controller/dispatcher for this view
     // instance. The initial hydrateAll() inside the helper performs first paint.
-    const { dispatcher, flowDispatcher, messageSubscription } = wireWebviewMessaging(
+    const { dispatcher, flowDispatcher, messageSubscription, agentReady } = wireWebviewMessaging(
       webviewView.webview,
-      { connectionFile: this.managedHost ? undefined : connectionFile || undefined, managedHost: this.managedHost },
+      {
+        connectionFile: this.managedHost ? undefined : connectionFile || undefined,
+        managedHost: this.managedHost,
+        globalState: this.globalState,
+      },
     );
     webviewView.onDidDispose(() => messageSubscription.dispose());
 
+    // Reactivation recovery (§3.2 / Requirement 3.2): once the live agent
+    // controller exists (product mode only; `agentReady` resolves to null in
+    // dev/tests), recover any in-progress Builder run for the persisted
+    // project. This re-binds and replays the run from sequence 0 rather than
+    // silently losing it after the window-switch reload. dispose is handled by
+    // `messageSubscription.dispose()` (which aborts the SSE subscription only).
+    void agentReady.then((agent) => {
+      if (agent) {
+        void agent.controller.recover();
+      }
+    });
+
     // On re-reveal after being hidden/disposed, push a fresh full hydrate so the
-    // projection is restored from authoritative host state (Req 1.5), and a
-    // fresh flow hydrate so the flow shell re-hydrates too (Req 13.2).
+    // projection is restored from authoritative host state (Req 1.5), a fresh
+    // flow hydrate so the flow shell re-hydrates too (Req 13.2), and — in
+    // product mode — a fresh agent hydrate so the Builder/Helper surface
+    // re-hydrates alongside the flow (Requirement 6.3 companion / §3.2).
     webviewView.onDidChangeVisibility(() => {
       if (webviewView.visible) {
         dispatcher.hydrateAll();
         flowDispatcher.hydrateFlow();
+        void agentReady.then((agent) => {
+          if (agent) {
+            agent.dispatcher.hydrate();
+          }
+        });
       }
     });
   }

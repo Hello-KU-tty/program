@@ -29,7 +29,13 @@ export function activate(context: vscode.ExtensionContext): { backend: Promise<F
     return api.createFrontendHost(context);
   })();
   void managedHost.catch(() => {});
-  const provider = new AgentPanelViewProvider(context.extensionUri, managedHost);
+  const provider = new AgentPanelViewProvider(
+    context.extensionUri,
+    managedHost,
+    // Thread the extension's persistent Memento so the live agent controller can
+    // persist/read `bhlr.lastProjectId` for §3.1 window-switch recovery.
+    context.globalState,
+  );
   context.subscriptions.push(vscode.commands.registerCommand("vibeHelper.retryCore", async () => {
     try { await (await managedHost!).retry(); await vscode.commands.executeCommand("workbench.action.reloadWindow"); }
     catch { void vscode.window.showErrorMessage("Core 연결을 복구하지 못했습니다. 지원 버전과 Workspace Trust를 확인하세요."); }
