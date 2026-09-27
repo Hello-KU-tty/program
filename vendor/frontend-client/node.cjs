@@ -2751,6 +2751,8 @@ var crewAppSurfaceSchema = import_zod15.z.enum(["DISCOVERY", "SPEC", "BUILD"]);
 var helperConversationSummarySchema = import_zod15.z.strictObject({
   conversationId: conversationIdSchema,
   episodeId: episodeIdSchema,
+  /** Helper turn correlation; matches the PersonalizationTrace written for that turn. */
+  correlationId: correlationIdSchema.optional(),
   taskId: taskIdSchema,
   decisionId: decisionIdSchema.optional(),
   status: episodeStatusSchema,

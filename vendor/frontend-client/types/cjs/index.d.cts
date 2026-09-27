@@ -1,6 +1,7 @@
 import { type DiscoveryInput, type LocalConnection, type LocalRun, type LocalRunEvent, type LocalRunInput, type LocalUiResponse, type UiRequest } from './contracts/index.cjs';
 export * from './contracts/index.cjs';
 export * from './program-adapter.cjs';
+export * from './workflow-view.cjs';
 export declare function entityId(prefix: string): string;
 export declare function uiMetadata(correlationId?: string): {
     schemaVersion: 1;
@@ -1029,6 +1030,7 @@ export declare class LocalCoreClient {
         helperConversations: {
             conversationId: string;
             episodeId: string;
+            correlationId?: string | undefined;
             taskId: string;
             decisionId?: string | undefined;
             status: "ANALYSIS_FAILED" | "ANALYZED" | "OPEN" | "PENDING_ANALYSIS";

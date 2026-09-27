@@ -7,6 +7,7 @@ export declare const crewAppSurfaceSchema: z.ZodEnum<{
 export declare const helperConversationSummarySchema: z.ZodObject<{
     conversationId: z.ZodString;
     episodeId: z.ZodString;
+    correlationId: z.ZodOptional<z.ZodString>;
     taskId: z.ZodString;
     decisionId: z.ZodOptional<z.ZodString>;
     status: z.ZodEnum<{
@@ -1712,6 +1713,7 @@ export declare const projectSessionSnapshotSchema: z.ZodObject<{
     helperConversations: z.ZodArray<z.ZodObject<{
         conversationId: z.ZodString;
         episodeId: z.ZodString;
+        correlationId: z.ZodOptional<z.ZodString>;
         taskId: z.ZodString;
         decisionId: z.ZodOptional<z.ZodString>;
         status: z.ZodEnum<{

@@ -25,6 +25,7 @@ __export(dist_exports, {
   CREW_APP_VERSION: () => CREW_APP_VERSION,
   CREW_UI_PROTOCOL_VERSION: () => CREW_UI_PROTOCOL_VERSION,
   CURRENT_SCHEMA_VERSION: () => CURRENT_SCHEMA_VERSION,
+  DecisionInputError: () => DecisionInputError,
   FRONTEND_CLIENT_VERSION: () => FRONTEND_CLIENT_VERSION,
   GENERATED_RESULT_MANIFEST_PATH: () => GENERATED_RESULT_MANIFEST_PATH,
   LOCAL_PROTOCOL_VERSION: () => LOCAL_PROTOCOL_VERSION,
@@ -95,6 +96,8 @@ __export(dist_exports, {
   candidateRoundSchema: () => candidateRoundSchema,
   candidateScopeSuggestionSchema: () => candidateScopeSuggestionSchema,
   canonicalConceptSchema: () => canonicalConceptSchema,
+  classifyBuilderTurn: () => classifyBuilderTurn,
+  classifyNativeWorkerStatus: () => classifyNativeWorkerStatus,
   codeReferenceSchema: () => codeReferenceSchema,
   commandReceiptSchema: () => commandReceiptSchema,
   completionReportIdSchema: () => completionReportIdSchema,
@@ -115,6 +118,7 @@ __export(dist_exports, {
   contractValidationIssueSchema: () => contractValidationIssueSchema,
   conversationIdSchema: () => conversationIdSchema,
   correlationIdSchema: () => correlationIdSchema,
+  createDecisionResolutionRequest: () => createDecisionResolutionRequest,
   crewAppSurfaceSchema: () => crewAppSurfaceSchema,
   decisionApplicationIdSchema: () => decisionApplicationIdSchema,
   decisionApplicationSchema: () => decisionApplicationSchema,
@@ -152,6 +156,7 @@ __export(dist_exports, {
   discoverySubmitCandidateRoundToolInputSchema: () => discoverySubmitCandidateRoundToolInputSchema,
   discoverySubmitLearningSpecCommandSchema: () => discoverySubmitLearningSpecCommandSchema,
   discoverySubmitLearningSpecToolInputSchema: () => discoverySubmitLearningSpecToolInputSchema,
+  eligibleFinalUpgradeTraces: () => eligibleFinalUpgradeTraces,
   entityId: () => entityId,
   entityRevisionSchema: () => entityRevisionSchema,
   episodeContextSchema: () => episodeContextSchema,
@@ -200,6 +205,7 @@ __export(dist_exports, {
   helperRequestContextRefreshCommandSchema: () => helperRequestContextRefreshCommandSchema,
   helperSourceExcerptSchema: () => helperSourceExcerptSchema,
   idempotencyKeySchema: () => idempotencyKeySchema,
+  isRunActive: () => isRunActive,
   labelSchema: () => labelSchema,
   learnerLevelSchema: () => learnerLevelSchema,
   learningScopeCategorySchema: () => learningScopeCategorySchema,
@@ -239,6 +245,7 @@ __export(dist_exports, {
   projectHistoryItemSchema: () => projectHistoryItemSchema,
   projectHistorySchema: () => projectHistorySchema,
   projectIdSchema: () => projectIdSchema,
+  projectRunEvent: () => projectRunEvent,
   projectSchema: () => projectSchema,
   projectSessionSnapshotSchema: () => projectSessionSnapshotSchema,
   projectStatusSchema: () => projectStatusSchema,
@@ -251,6 +258,7 @@ __export(dist_exports, {
   sequenceSchema: () => sequenceSchema,
   shortTextSchema: () => shortTextSchema,
   stableEntityIdSchema: () => stableEntityIdSchema,
+  summarizeEvidenceTrace: () => summarizeEvidenceTrace,
   taskCompletionReportSchema: () => taskCompletionReportSchema,
   taskIdSchema: () => taskIdSchema,
   testResultIdSchema: () => testResultIdSchema,
@@ -288,7 +296,7 @@ __export(dist_exports, {
   validationResultSchema: () => validationResultSchema
 });
 module.exports = __toCommonJS(dist_exports);
-var import_node_crypto2 = require("node:crypto");
+var import_node_crypto3 = require("node:crypto");
 
 // packages/contracts/dist/activity.js
 var import_zod3 = require("zod");
@@ -3019,6 +3027,8 @@ var crewAppSurfaceSchema = import_zod15.z.enum(["DISCOVERY", "SPEC", "BUILD"]);
 var helperConversationSummarySchema = import_zod15.z.strictObject({
   conversationId: conversationIdSchema,
   episodeId: episodeIdSchema,
+  /** Helper turn correlation; matches the PersonalizationTrace written for that turn. */
+  correlationId: correlationIdSchema.optional(),
   taskId: taskIdSchema,
   decisionId: decisionIdSchema.optional(),
   status: episodeStatusSchema,
@@ -3392,9 +3402,216 @@ var LocalProgramAdapter = class {
   }
 };
 
+// packages/frontend-client/dist/workflow-view.js
+var import_node_crypto2 = require("node:crypto");
+var TEXT_LIMIT = 320;
+var OUTPUT_LIMIT = 2048;
+var stringOrNull = (value, limit = TEXT_LIMIT) => typeof value === "string" && value.length > 0 ? value.length > limit ? `${value.slice(0, limit)}\u2026` : value : null;
+var codeOrNull = (value) => typeof value === "string" && /^[A-Z0-9_]{1,100}$/.test(value) ? value : null;
+function isRunActive(run) {
+  return run.status === "ACCEPTED" || run.status === "RUNNING";
+}
+function toolStatus(update, failed) {
+  const raw = update.nativeStatus ?? update.status;
+  if (raw === "failed" || failed)
+    return "FAILED";
+  if (raw === "completed")
+    return "SUCCEEDED";
+  if (raw === "pending" || raw === "in_progress")
+    return "RUNNING";
+  return "UNKNOWN";
+}
+function projectRunEvent(event) {
+  const { sequence } = event;
+  if (event.kind === "TEXT")
+    return { kind: "TEXT", sequence, text: event.text ?? "" };
+  if (event.kind === "STATE")
+    return { kind: "STATE", sequence, run: event.run ?? null };
+  if (event.kind === "PERMISSION_DENIED")
+    return { kind: "PERMISSION_DENIED", sequence };
+  const update = event.update ?? {};
+  const exitCode = typeof update.shellExitCode === "number" && Number.isSafeInteger(update.shellExitCode) ? update.shellExitCode : null;
+  const coreAction = codeOrNull(update.coreAction) ?? stringOrNull(update.coreAction, 80);
+  const errorCode = codeOrNull(update.coreErrorCode) ?? codeOrNull(update.bridgeErrorCode);
+  const failed = update.coreIsError === true || update.coreSuccess === false || errorCode !== null || exitCode !== null && exitCode !== 0;
+  const toolName = stringOrNull(update.toolName, 40);
+  return {
+    kind: "TOOL",
+    sequence,
+    toolId: stringOrNull(update.toolId, 80) ?? stringOrNull(update.toolCallId, 80),
+    tool: toolName ?? (coreAction !== null ? "core" : stringOrNull(update.title, 80)),
+    status: update.summary === "TOOL_OUTPUT_TOO_LARGE" ? "UNKNOWN" : toolStatus(update, failed),
+    relativePath: stringOrNull(update.relativePath, 200),
+    command: stringOrNull(update.command, 200),
+    exitCode,
+    coreAction,
+    errorCode,
+    output: stringOrNull(update.output, OUTPUT_LIMIT),
+    truncated: update.outputTruncated === true || update.status === "truncated" || update.summary === "TOOL_OUTPUT_TOO_LARGE"
+  };
+}
+function classifyBuilderTurn(run, after, taskId) {
+  if (run.kind !== "BUILDER" || run.projectId !== after.project.id)
+    return { kind: "TASK_BINDING_CHANGED" };
+  if (isRunActive(run))
+    return { kind: "RUNNING" };
+  if (run.status === "CANCELLED")
+    return { kind: "CANCELLED" };
+  if (run.status === "FAILED")
+    return { kind: "FAILED", errorCode: run.errorCode ?? "FAILED" };
+  const task = after.currentTask;
+  if (task === null || task.id !== taskId)
+    return { kind: "TASK_BINDING_CHANGED" };
+  if (task.status === "COMPLETED" && after.completionReport?.taskId === task.id)
+    return { kind: "TASK_COMPLETED", completionReportId: after.completionReport.id };
+  const pending = after.pendingDecisions.filter((decision) => decision.taskId === task.id);
+  if (pending.length > 0)
+    return { kind: "DECISION_REQUIRED", decisionIds: pending.map((decision) => decision.id) };
+  return { kind: "TURN_ENDED_TASK_ACTIVE", taskStatus: task.status };
+}
+var DecisionInputError = class extends Error {
+  code;
+  constructor(code) {
+    super(code);
+    this.code = code;
+    this.name = "DecisionInputError";
+  }
+};
+function createDecisionResolutionRequest(snapshot, input) {
+  const decision = snapshot.pendingDecisions.find((item) => item.id === input.decisionId);
+  if (decision === void 0)
+    throw new DecisionInputError("DECISION_NOT_PENDING");
+  const context = snapshot.liveContext;
+  if (context === null || context.taskId !== decision.taskId)
+    throw new DecisionInputError("DECISION_CONTEXT_REQUIRED");
+  const rationale = input.rationale?.trim() ?? "";
+  if (rationale.length > 4e3)
+    throw new DecisionInputError("DECISION_RATIONALE_TOO_LONG");
+  let selected;
+  if (input.selection.kind === "CUSTOM") {
+    const customProposal = input.selection.customProposal.trim();
+    if (!customProposal || customProposal.length > 4e3)
+      throw new DecisionInputError("DECISION_CUSTOM_INVALID");
+    selected = { customProposal };
+  } else {
+    const optionId = input.selection.kind === "RECOMMENDATION" ? decision.recommendedOptionId : input.selection.optionId;
+    if (!decision.options.some((option) => option.id === optionId))
+      throw new DecisionInputError("DECISION_OPTION_INVALID");
+    selected = { selectedOptionId: optionId };
+  }
+  return {
+    schemaVersion: 1,
+    correlationId: decision.correlationId,
+    actor: { kind: "UI" },
+    kind: "UI_RESOLVE_DECISION",
+    idempotencyKey: `idem_${(0, import_node_crypto2.randomUUID)()}`,
+    resolution: {
+      schemaVersion: 1,
+      id: `decision_resolution_${(0, import_node_crypto2.randomUUID)()}`,
+      decisionId: decision.id,
+      projectId: decision.projectId,
+      taskId: decision.taskId,
+      correlationId: decision.correlationId,
+      expectedContextVersion: context.contextVersion,
+      selectionKind: input.selection.kind,
+      ...selected,
+      ...rationale ? { rationale } : {},
+      helperUsed: input.helperUsed,
+      resolvedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      source: { kind: "USER" },
+      redactionStatus: "NOT_REQUIRED"
+    }
+  };
+}
+function summarizeEvidenceTrace(projectId, trace, options = {}) {
+  if (trace.projectId !== projectId)
+    throw new Error("EVIDENCE_TRACE_PROJECT_MISMATCH");
+  const text = (value) => {
+    const bounded = stringOrNull(value);
+    return bounded === null || options.redactText === void 0 ? bounded : options.redactText(bounded);
+  };
+  const concepts = trace.concepts.map((concept) => {
+    const understanding = concept.evidence.filter((item) => item.kind === "USER_UNDERSTANDING");
+    const displayState = concept.state === null ? "NO_STATE" : understanding.length === 0 || concept.state === "OBSERVED" ? "OBSERVED_ONLY" : `USER_EVIDENCE_${concept.state}`;
+    return {
+      id: concept.conceptId,
+      name: concept.conceptName,
+      state: concept.state,
+      displayState,
+      userUnderstandingCount: understanding.length,
+      openIssueCount: concept.openIssues.length,
+      accepted: concept.evidence.map((item) => ({
+        id: item.evidenceId,
+        kind: item.kind,
+        signal: item.signal ?? null,
+        strength: item.strength ?? null,
+        promptDependence: item.promptDependence ?? null,
+        supportsState: item.supportsState ?? null,
+        episodeId: item.episodeId,
+        excerpt: text(item.redactedEvidenceExcerpt),
+        rationale: text(item.rationale)
+      })),
+      rejected: concept.rejectedEvidence.map((item) => ({
+        proposalId: item.proposalId,
+        reasonCode: item.reasonCode,
+        excerpt: text(item.redactedEvidenceExcerpt),
+        explanation: text(item.explanation)
+      }))
+    };
+  });
+  return {
+    concepts,
+    analysis: trace.analysis.map((item) => ({
+      jobId: item.analysisJobId,
+      episodeId: item.episodeId,
+      status: item.status,
+      displayState: item.status === "PENDING" ? "WAITING" : item.status === "RUNNING" ? "ANALYZING" : item.status === "SUCCEEDED" ? "ANALYZED" : "ANALYSIS_FAILED",
+      acceptedCount: item.resultSummary?.acceptedCount ?? null,
+      noEvidenceReason: text(item.resultSummary?.noEvidenceReason),
+      failureCode: codeOrNull(item.lastFailure?.code)
+    })),
+    userUnderstandingTotal: concepts.reduce((sum, item) => sum + item.userUnderstandingCount, 0),
+    emptyReason: text(trace.emptyReason)
+  };
+}
+function eligibleFinalUpgradeTraces(snapshot, trace) {
+  const task = snapshot.currentTask;
+  if (snapshot.project.status !== "BUILDING" || task === null || task.status !== "COMPLETED" || task.sequence !== 1 || task.finalUpgrade !== void 0 || snapshot.completionReport?.taskId !== task.id || trace.projectId !== snapshot.project.id)
+    return [];
+  const recorded = new Set(snapshot.helperConversations.filter((item) => item.taskId === task.id && item.helperResponseSummaries.length > 0).flatMap((item) => item.correlationId === void 0 ? [] : [item.correlationId]));
+  return trace.personalization.filter((item) => item.projectId === snapshot.project.id && item.target.kind === "HELPER_TURN" && item.target.taskId === task.id && item.mode === "EVIDENCE_AWARE" && item.basis.length > 0 && recorded.has(item.correlationId)).map((item) => ({ id: item.id, createdAt: item.createdAt, basisCount: item.basis.length })).sort((a, b) => b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id));
+}
+var ROLE = /_(DISCOVERY|BUILDER|HELPER|EVIDENCE_ANALYST)(?:_|$)/;
+var EXACT_STAGES = {
+  WORKER_STARTED: "STARTING",
+  WORKER_CONNECTED: "CONNECTED",
+  HELPER_WINDOW_OPENING: "HELPER_WINDOW_OPENING",
+  WORKSPACE_SWITCHING: "WORKSPACE_SWITCHING",
+  WORKSPACE_SWITCH_FAILED: "WORKSPACE_SWITCH_FAILED",
+  WORKSPACE_SWITCH_UNCONFIRMED: "WORKSPACE_SWITCH_FAILED"
+};
+var PREFIX_STAGES = [
+  ["JOB_CLAIMED_", "JOB_CLAIMED"],
+  ["AGENT_OPENING_", "AGENT_OPENING"],
+  ["AGENT_QUEUED_", "AGENT_QUEUED"],
+  ["AGENT_RUNNING_", "AGENT_RUNNING"],
+  ["AGENT_ENDED_", "AGENT_ENDED"],
+  ["AGENT_SESSION_CLOSED_", "AGENT_ENDED"],
+  ["AGENT_FAILED_", "AGENT_FAILED"],
+  ["USER_INPUT_", "USER_INPUT"],
+  ["PERMISSION_", "PERMISSION"]
+];
+function classifyNativeWorkerStatus(code) {
+  if (typeof code !== "string" || !/^[A-Z0-9_]{1,200}$/.test(code))
+    return null;
+  const stage = EXACT_STAGES[code] ?? PREFIX_STAGES.find(([prefix]) => code.startsWith(prefix))?.[1] ?? "DIAGNOSTIC";
+  const role = stage === "AGENT_FAILED" ? null : code.match(ROLE)?.[1] ?? null;
+  return { stage, role, code };
+}
+
 // packages/frontend-client/dist/index.js
 function entityId(prefix) {
-  return `${prefix}_${(0, import_node_crypto2.randomUUID)()}`;
+  return `${prefix}_${(0, import_node_crypto3.randomUUID)()}`;
 }
 function uiMetadata(correlationId = entityId("corr")) {
   return { schemaVersion: 1, correlationId, actor: { kind: "UI" } };
@@ -3612,6 +3829,7 @@ var LocalCoreClient = class {
   CREW_APP_VERSION,
   CREW_UI_PROTOCOL_VERSION,
   CURRENT_SCHEMA_VERSION,
+  DecisionInputError,
   FRONTEND_CLIENT_VERSION,
   GENERATED_RESULT_MANIFEST_PATH,
   LOCAL_PROTOCOL_VERSION,
@@ -3682,6 +3900,8 @@ var LocalCoreClient = class {
   candidateRoundSchema,
   candidateScopeSuggestionSchema,
   canonicalConceptSchema,
+  classifyBuilderTurn,
+  classifyNativeWorkerStatus,
   codeReferenceSchema,
   commandReceiptSchema,
   completionReportIdSchema,
@@ -3702,6 +3922,7 @@ var LocalCoreClient = class {
   contractValidationIssueSchema,
   conversationIdSchema,
   correlationIdSchema,
+  createDecisionResolutionRequest,
   crewAppSurfaceSchema,
   decisionApplicationIdSchema,
   decisionApplicationSchema,
@@ -3739,6 +3960,7 @@ var LocalCoreClient = class {
   discoverySubmitCandidateRoundToolInputSchema,
   discoverySubmitLearningSpecCommandSchema,
   discoverySubmitLearningSpecToolInputSchema,
+  eligibleFinalUpgradeTraces,
   entityId,
   entityRevisionSchema,
   episodeContextSchema,
@@ -3787,6 +4009,7 @@ var LocalCoreClient = class {
   helperRequestContextRefreshCommandSchema,
   helperSourceExcerptSchema,
   idempotencyKeySchema,
+  isRunActive,
   labelSchema,
   learnerLevelSchema,
   learningScopeCategorySchema,
@@ -3826,6 +4049,7 @@ var LocalCoreClient = class {
   projectHistoryItemSchema,
   projectHistorySchema,
   projectIdSchema,
+  projectRunEvent,
   projectSchema,
   projectSessionSnapshotSchema,
   projectStatusSchema,
@@ -3838,6 +4062,7 @@ var LocalCoreClient = class {
   sequenceSchema,
   shortTextSchema,
   stableEntityIdSchema,
+  summarizeEvidenceTrace,
   taskCompletionReportSchema,
   taskIdSchema,
   testResultIdSchema,
