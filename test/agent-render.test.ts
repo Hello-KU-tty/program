@@ -420,3 +420,80 @@ describe("native worker status line", () => {
     } finally { restore(); }
   });
 });
+
+describe("long tool activity stays compact", () => {
+  const rows = Array.from({ length: 8 }, (_, i) => toolRow({
+    key: `tool-${i}`, tool: i === 0 ? null : "read", relativePath: `src/f${i}.ts`,
+    status: i === 2 || i === 7 ? "FAILED" : "SUCCEEDED",
+  }));
+
+  it("shows only the latest rows with a summary until expanded", () => {
+    const { root, view, restore } = mount();
+    try {
+      view.render(vmWithBuilder({ toolRows: rows }));
+      const shown = () => byClass(root, "agent-tool-row").map((r) => r.dataset.key);
+      const toggle = byClass(root, "agent-tools-toggle")[0];
+      expect(shown()).toEqual(["tool-5", "tool-6", "tool-7"]);
+      expect(byClass(root, "agent-tools-summary")[0].textContent).toBe("8개 · 실패 2");
+      expect(toggle.hidden).toBe(false);
+      expect(toggle.textContent).toBe("이전 5개 더 보기");
+      expect(toggle.attributes["aria-expanded"]).toBe("false");
+
+      toggle.click();
+      expect(shown()).toHaveLength(8);
+      expect(toggle.attributes["aria-expanded"]).toBe("true");
+      expect(byClass(root, "agent-tool-rows")[0].dataset.expanded).toBe("true");
+
+      // A streamed re-render keeps the reader's choice.
+      view.render(vmWithBuilder({ toolRows: [...rows, toolRow({ key: "tool-8" })] }));
+      expect(shown()).toHaveLength(9);
+
+      view.resetProject();
+      view.render(vmWithBuilder({ toolRows: rows }));
+      expect(shown()).toHaveLength(3);
+    } finally { restore(); }
+  });
+
+  it("hides the toggle for short lists and names tools in Korean", () => {
+    const { root, view, restore } = mount();
+    try {
+      view.render(vmWithBuilder({ toolRows: [
+        toolRow({ key: "a", tool: null }),
+        toolRow({ key: "b", tool: "core", relativePath: null, coreAction: "BUILDER_GET_TASK" }),
+      ] }));
+      expect(byClass(root, "agent-tools-toggle")[0].hidden).toBe(true);
+      expect(byClass(root, "agent-tool-row-tool").map((e) => e.textContent)).toEqual(["기타 도구", "Core 작업"]);
+      expect(byClass(root, "agent-tool-row-core-action")[0].textContent).toBe("작업 조회");
+    } finally { restore(); }
+  });
+});
+
+describe("error lines explain known codes", () => {
+  it("explains a Helper tool-catalog rejection and keeps the code", () => {
+    const { root, view, restore } = mount();
+    try {
+      view.render({ ...initialAgentViewModel(), helper: { ...initialAgentViewModel().helper, phase: "FAILED",
+        errorCode: "NATIVE_ROLE_CATALOG_UNVERIFIED" } });
+      const text = byClass(root, "agent-helper-error")[0].textContent;
+      expect(text).toContain("도우미 창이 열려 있다면 닫은 뒤");
+      expect(text).toContain("(NATIVE_ROLE_CATALOG_UNVERIFIED)");
+    } finally { restore(); }
+  });
+
+  it("keeps an unknown Builder code as-is", () => {
+    const { root, view, restore } = mount();
+    try {
+      view.render(vmWithBuilder({ phase: "FAILED", errorCode: "SOMETHING_NEW" }));
+      expect(byClass(root, "agent-builder-error")[0].textContent).toBe("SOMETHING_NEW");
+    } finally { restore(); }
+  });
+
+  it("explains a Builder shell guard denial in the worker line", () => {
+    const { root, view, restore } = mount();
+    try {
+      view.render({ ...initialAgentViewModel(), worker: { stage: "DIAGNOSTIC", role: "BUILDER",
+        code: "PERMISSION_GUARD_BUILDER_SHELL_LOCKFILE_PREPARE_DENIED" } } as AgentViewModel);
+      expect(byClass(root, "agent-worker-status")[0].textContent).toContain("안전 규칙에 막혔어요");
+    } finally { restore(); }
+  });
+});

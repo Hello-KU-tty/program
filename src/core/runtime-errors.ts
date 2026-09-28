@@ -33,7 +33,13 @@ const workerGuidance: Readonly<Record<string, string>> = {
 };
 
 export function workerStatusGuidance(code: string): string | undefined {
-  return Object.prototype.hasOwnProperty.call(workerGuidance, code) ? workerGuidance[code] : undefined;
+  if (Object.prototype.hasOwnProperty.call(workerGuidance, code)) return workerGuidance[code];
+  // The tool guard denied one Builder command (e.g. lockfile prepare, timeout
+  // shape). The run continues; the denial is not a run failure by itself.
+  if (code.startsWith("PERMISSION_GUARD_BUILDER_SHELL_")) {
+    return "빌더의 명령 하나가 안전 규칙에 막혔어요. 빌더는 허용된 방법으로 계속 진행해요.";
+  }
+  return undefined;
 }
 
 export function runtimeFailure(code: string): { code: RuntimeErrorCode | "unknown"; message: string } | undefined {
@@ -42,6 +48,22 @@ export function runtimeFailure(code: string): { code: RuntimeErrorCode | "unknow
 
 export function safeRuntimeCode(value: unknown): string {
   return typeof value === "string" && /^[A-Z][A-Z0-9_]{0,99}$/.test(value) ? value : "UNKNOWN";
+}
+
+/**
+ * Display-only guidance for codes that keep their own agent classification and
+ * raw message contract (see agent-error.ts); used by the webview error lines.
+ */
+const displayOnlyGuidance: Readonly<Record<string, string>> = {
+  // Rejected before any model call: the role's Core tools never appeared.
+  NATIVE_ROLE_CATALOG_UNVERIFIED: "에이전트가 Core 도구를 준비하지 못해 요청을 보내지 않았어요(사용량은 차감되지 않아요). 진행 중인 작업이 없는지 확인하고, 도우미 창이 열려 있다면 닫은 뒤 다시 시도해 주세요.",
+};
+
+/** Guidance to show next to a raw error code, or undefined when none is known. */
+export function errorGuidance(code: string): string | undefined {
+  const known = runtimeFailure(code);
+  if (known) return known.message;
+  return Object.prototype.hasOwnProperty.call(displayOnlyGuidance, code) ? displayOnlyGuidance[code] : undefined;
 }
 
 export function runtimeErrorMessage(code: string, fallback: string): string {

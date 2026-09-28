@@ -54,7 +54,7 @@ import type {
   EvidenceTraceView,
   FinalUpgradeCandidate,
 } from "../../../vendor/frontend-client";
-import { workerStatusGuidance } from "../../core/runtime-errors";
+import { errorGuidance, workerStatusGuidance } from "../../core/runtime-errors";
 
 /**
  * Callbacks the agent render layer invokes when the learner interacts with a
@@ -132,6 +132,29 @@ const HELPER_PHASE_LABELS: Readonly<Record<HelperViewModel["phase"], string>> = 
 };
 
 /** Korean labels for a tool row status. */
+/** Rows kept visible while the tool list is collapsed (most recent last). */
+const COLLAPSED_TOOL_ROWS = 3;
+
+/** Learner-facing names for the projected tool kinds; unknown kinds pass through. */
+const TOOL_LABELS: Readonly<Record<string, string>> = {
+  read: "파일 읽기",
+  write: "파일 쓰기",
+  search: "검색",
+  shell: "명령 실행",
+  core: "Core 작업",
+};
+
+/** Learner-facing names for Builder Core actions; unknown actions pass through. */
+const CORE_ACTION_LABELS: Readonly<Record<string, string>> = {
+  BUILDER_GET_TASK: "작업 조회",
+  BUILDER_START_TASK: "작업 시작",
+  BUILDER_UPDATE_LIVE_CONTEXT: "진행 맥락 갱신",
+  BUILDER_REQUEST_DECISION: "결정 요청",
+  BUILDER_GET_DECISION_RESULT: "결정 결과 확인",
+  BUILDER_APPLY_DECISION: "결정 반영",
+  BUILDER_COMPLETE_TASK: "작업 완료 보고",
+};
+
 const TOOL_STATUS_LABELS: Readonly<Record<ToolRowViewModel["status"], string>> = {
   RUNNING: "진행 중",
   SUCCEEDED: "완료",
@@ -166,6 +189,11 @@ export class AgentSurfaceView {
   private readonly builderPermissionDenied: HTMLElement;
   private readonly builderTranscript: HTMLElement;
   private readonly builderToolRows: HTMLElement;
+  private readonly builderToolsHeader: HTMLElement;
+  private readonly builderToolsSummary: HTMLElement;
+  private readonly builderToolsToggle: HTMLButtonElement;
+  private toolsExpanded = false;
+  private lastToolRows: readonly ToolRowViewModel[] = [];
   private readonly builderComposerInput: HTMLTextAreaElement;
   private readonly builderSendButton: HTMLButtonElement;
   private readonly builderStopButton: HTMLButtonElement;
@@ -247,11 +275,29 @@ export class AgentSurfaceView {
     this.labelScrollable(this.builderTranscript, "빌더 진행 내용");
     builder.appendChild(this.builderTranscript);
 
+    // Tool activity: collapsed to the most recent rows by default so a long
+    // run does not push the composer off screen. Older rows stay one click away.
+    const toolsHeader = this.el("div", "agent-tools-header");
     const toolsLabel = this.el("h2", "agent-section-label");
     toolsLabel.textContent = "도구 실행";
-    builder.appendChild(toolsLabel);
+    toolsHeader.appendChild(toolsLabel);
+    this.builderToolsSummary = this.el("span", "agent-tools-summary");
+    toolsHeader.appendChild(this.builderToolsSummary);
+    this.builderToolsToggle = this.el("button", "agent-tools-toggle") as HTMLButtonElement;
+    this.builderToolsToggle.type = "button";
+    this.builderToolsToggle.hidden = true;
+    this.builderToolsToggle.setAttribute("aria-expanded", "false");
+    this.builderToolsToggle.addEventListener("click", () => {
+      this.toolsExpanded = !this.toolsExpanded;
+      this.renderToolRows(this.lastToolRows);
+    });
+    toolsHeader.appendChild(this.builderToolsToggle);
+    toolsHeader.hidden = true;
+    builder.appendChild(toolsHeader);
+    this.builderToolsHeader = toolsHeader;
 
     this.builderToolRows = this.el("div", "agent-tool-rows");
+    this.labelScrollable(this.builderToolRows, "도구 실행 기록");
     builder.appendChild(this.builderToolRows);
 
     // Builder composer (Req 1): free-text input + send.
@@ -513,6 +559,8 @@ export class AgentSurfaceView {
 
   /** Clear only project-bound local state when History changes project. */
   resetProject(): void {
+    this.toolsExpanded = false;
+    this.lastToolRows = [];
     this.upgradeTaskKey = undefined;
     this.renderedTaskId = null;
     this.workspaceOpenButton.hidden = true;
@@ -647,7 +695,7 @@ export class AgentSurfaceView {
       builder.errorCode
     ) {
       this.builderError.hidden = false;
-      this.builderError.textContent = builder.errorCode;
+      this.builderError.textContent = this.errorText(builder.errorCode);
     } else {
       this.builderError.hidden = true;
       this.builderError.textContent = "";
@@ -657,18 +705,17 @@ export class AgentSurfaceView {
     this.builderPermissionDenied.hidden = !builder.permissionDenied;
 
     // Transcript (Core-redacted agent text → textContent only, Req 2.7).
-    this.builderTranscript.textContent = "";
-    for (const line of builder.transcript) {
-      const lineEl = this.el("p", "agent-transcript-line");
-      lineEl.textContent = line.text;
-      this.builderTranscript.appendChild(lineEl);
-    }
+    this.keepScroll(this.builderTranscript, () => {
+      this.builderTranscript.textContent = "";
+      for (const line of builder.transcript) {
+        const lineEl = this.el("p", "agent-transcript-line");
+        lineEl.textContent = line.text;
+        this.builderTranscript.appendChild(lineEl);
+      }
+    });
 
-    // Tool rows — one row per stable key (Req 2.2/2.8).
-    this.builderToolRows.textContent = "";
-    for (const toolRow of builder.toolRows) {
-      this.builderToolRows.appendChild(this.buildToolRow(toolRow));
-    }
+    // Tool rows — one row per stable key (Req 2.2/2.8), collapsed by default.
+    this.renderToolRows(builder.toolRows);
 
     // Stop shown only while RUNNING (Req 6.1); resume only while DECISION_REQUIRED.
     this.builderStopButton.hidden = builder.phase !== "RUNNING";
@@ -691,6 +738,60 @@ export class AgentSurfaceView {
   }
 
   /**
+   * Renders the tool list. Collapsed, only the last {@link COLLAPSED_TOOL_ROWS}
+   * rows are in the DOM; expanded, every row is shown inside a bounded scroll
+   * region. The header summarizes the total and failed counts either way.
+   */
+  private renderToolRows(rows: readonly ToolRowViewModel[]): void {
+    this.lastToolRows = rows;
+    const failed = rows.filter((row) => row.status === "FAILED").length;
+    const collapsible = rows.length > COLLAPSED_TOOL_ROWS;
+    const expanded = collapsible && this.toolsExpanded;
+
+    this.builderToolsHeader.hidden = rows.length === 0;
+    this.builderToolsSummary.textContent =
+      rows.length === 0 ? "" : `${rows.length}개${failed > 0 ? ` · 실패 ${failed}` : ""}`;
+    this.builderToolsToggle.hidden = !collapsible;
+    this.builderToolsToggle.setAttribute("aria-expanded", String(expanded));
+    this.builderToolsToggle.textContent = expanded
+      ? "최근 기록만 보기"
+      : `이전 ${rows.length - COLLAPSED_TOOL_ROWS}개 더 보기`;
+    this.builderToolRows.dataset.expanded = String(expanded);
+
+    const visible = expanded ? rows : rows.slice(-COLLAPSED_TOOL_ROWS);
+    this.keepScroll(this.builderToolRows, () => {
+      this.builderToolRows.textContent = "";
+      for (const toolRow of visible) {
+        this.builderToolRows.appendChild(this.buildToolRow(toolRow));
+      }
+    });
+  }
+
+  /**
+   * Rebuilds a scroll region without losing the reader's place: a region
+   * scrolled to (near) the bottom follows new entries, otherwise the previous
+   * offset is restored. Streams re-render on every event, so this matters.
+   */
+  private keepScroll(region: HTMLElement, rebuild: () => void): void {
+    const measurable = typeof region.scrollTop === "number" && typeof region.scrollHeight === "number" &&
+      typeof region.clientHeight === "number";
+    if (!measurable) {
+      rebuild();
+      return;
+    }
+    const previous = region.scrollTop;
+    const followBottom = region.scrollHeight - previous - region.clientHeight < 24;
+    rebuild();
+    region.scrollTop = followBottom ? region.scrollHeight : previous;
+  }
+
+  /** Fixed guidance for a known runtime code, with the code kept for support. */
+  private errorText(code: string): string {
+    const message = errorGuidance(code);
+    return message ? `${message} (${code})` : code;
+  }
+
+  /**
    * Builds one tool activity row for a {@link ToolRowViewModel}. Renders
    * `relativePath` only (Req 2.9) and sets the bounded, Core-redacted `output`
    * via `textContent` (Req 2.7). One row per `key` (Req 2.2/2.8).
@@ -701,7 +802,7 @@ export class AgentSurfaceView {
 
     const head = this.el("div", "agent-tool-row-head");
     const tool = this.el("span", "agent-tool-row-tool");
-    tool.textContent = toolRow.tool ?? "도구";
+    tool.textContent = toolRow.tool ? (TOOL_LABELS[toolRow.tool] ?? toolRow.tool) : "기타 도구";
     head.appendChild(tool);
 
     const status = this.el("span", "agent-tool-row-status");
@@ -725,7 +826,7 @@ export class AgentSurfaceView {
 
     if (toolRow.coreAction) {
       const coreAction = this.el("div", "agent-tool-row-core-action");
-      coreAction.textContent = toolRow.coreAction;
+      coreAction.textContent = CORE_ACTION_LABELS[toolRow.coreAction] ?? toolRow.coreAction;
       row.appendChild(coreAction);
     }
 
@@ -774,7 +875,7 @@ export class AgentSurfaceView {
 
     if (helper.phase === "FAILED" && helper.errorCode) {
       this.helperError.hidden = false;
-      this.helperError.textContent = helper.errorCode;
+      this.helperError.textContent = this.errorText(helper.errorCode);
     } else {
       this.helperError.hidden = true;
       this.helperError.textContent = "";

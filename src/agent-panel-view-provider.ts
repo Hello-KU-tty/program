@@ -1814,7 +1814,8 @@ export function buildWebviewHtml(
     }
     /* Empty transcript / tool lists: hide their label too. */
     .agent-section-label:has(+ .agent-transcript:empty),
-    .agent-section-label:has(+ .agent-tool-rows:empty) {
+    .agent-section-label:has(+ .agent-tool-rows:empty),
+    .agent-tools-header:has(+ .agent-tool-rows:empty) {
       display: none;
     }
     .agent-evidence-header,
@@ -1923,23 +1924,55 @@ export function buildWebviewHtml(
     }
     .agent-helper-conversation-user { font-weight: 600; }
 
-    /* ---- Tool rows ---- */
+    /* ---- Tool rows: collapsed to recent rows, expandable into a scroll box ---- */
+    .agent-tools-header {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-2);
+      margin-top: var(--sp-1);
+    }
+    .agent-tools-header[hidden] { display: none; }
+    .agent-tools-header .agent-section-label { margin: 0; }
+    .agent-tools-summary {
+      font-size: 0.8em;
+      color: var(--vscode-descriptionForeground);
+    }
+    .agent-surface .agent-tools-toggle {
+      margin-left: auto;
+      font-size: 0.8em;
+      font-weight: 500;
+      padding: 1px var(--sp-2);
+      border-radius: var(--radius-pill);
+    }
     .agent-tool-rows {
       display: flex;
       flex-direction: column;
-      gap: var(--sp-1);
+      gap: 2px;
+    }
+    .agent-tool-rows[data-expanded="true"] {
+      max-height: 320px;
+      overflow-y: auto;
+      padding-right: 2px;
     }
     .agent-tool-row {
       display: flex;
-      flex-direction: column;
-      gap: 2px;
-      font-size: 0.9em;
-      border: 1px solid var(--vscode-panel-border, color-mix(in srgb, var(--vscode-foreground) 12%, transparent));
-      border-radius: var(--radius-md);
-      padding: var(--sp-1) var(--sp-2);
+      flex-wrap: wrap;
+      align-items: baseline;
+      column-gap: var(--sp-2);
+      row-gap: 2px;
+      font-size: 0.88em;
+      border-left: 2px solid var(--vscode-panel-border, color-mix(in srgb, var(--vscode-foreground) 18%, transparent));
+      padding: 2px var(--sp-2);
+    }
+    .agent-tool-row:has(.agent-tool-row-status[data-status="FAILED"]) {
+      border-left-color: var(--vscode-errorForeground, #f14c4c);
+    }
+    .agent-tool-row:has(.agent-tool-row-status[data-status="RUNNING"]) {
+      border-left-color: var(--accent);
     }
     .agent-tool-row-head {
       display: flex;
+      flex: 1 0 100%;
       align-items: center;
       justify-content: space-between;
       gap: var(--sp-2);
@@ -1963,8 +1996,9 @@ export function buildWebviewHtml(
     .agent-tool-row-path,
     .agent-tool-row-command { font-family: var(--vscode-editor-font-family, monospace); }
     .agent-tool-row-output {
+      flex: 1 0 100%;
       margin: 0;
-      max-height: 160px;
+      max-height: 96px;
       overflow: auto;
       font-family: var(--vscode-editor-font-family, monospace);
       font-size: 0.85em;

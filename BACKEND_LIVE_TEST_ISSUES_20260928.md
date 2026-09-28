@@ -105,6 +105,44 @@
 
 ---
 
+## B7. (2026-09-29) Helper가 Core 도구 0개로 연속 거절 — `NATIVE_ROLE_CATALOG_UNVERIFIED`
+
+**현상.** 01:36 Helper 질문은 `get_helper_context` 도구를 쓰고 정상 기록됐습니다. 01:37:41 Builder 턴이 끝난 직후 01:38:02, 01:38:42의 Helper 질문 두 개는 같은 순서로 실패했습니다: `AGENT_OPENING_HELPER` → `CATALOG_HELPER_VALID_TOTAL_0_MCP_0_BUILTIN_NONE` → 약 11초 뒤 `AGENT_FAILED_NATIVE_ROLE_CATALOG_UNVERIFIED`. 모델 호출 전 거절이라 사용량은 차감되지 않았습니다.
+
+**관찰.** 도우미 창(Kiro `window2`) 로그에는 두 번 모두 `Prepared 1 MCP servers from profile`만 있고 도구 목록이 오지 않았습니다. `Kiro - MCP Logs.log`는 비어 있어 bridge 기동 실패 여부를 확인할 수 없었습니다. 백엔드 W5 기록(`T19_W5_KIRO_1170_GENERAL_MODE_RESULTS_20260925.md` 62행)과 같은 현상입니다.
+
+**요청.**
+1. bridge(`bridge.mjs`) 기동/연결 실패를 구분할 수 있는 worker 진단(예: MCP 서버 spawn 결과, 첫 tools/list 응답 여부)을 추가해 주세요. gate 완화를 요청하는 것은 아닙니다.
+2. 문서의 복구 절차(도우미 창 닫고 새 질문)를 worker가 대신할 수 있는지 검토해 주세요. 예: 실패한 Helper 세션/창 정리 후 다음 질문에서 새로 여는 것.
+3. Builder 턴 직후에 재현된 점이 원인과 관련 있는지 확인해 주세요.
+
+## B8. (2026-09-29) Builder 셸 명령이 guard에 반복 거부됨
+
+**현상.** 같은 Builder 턴(01:37:14~01:37:28)에서 셸 명령이 두 번 거부됐습니다: `PERMISSION_GUARD_BUILDER_SHELL_LOCKFILE_PREPARE_DENIED`, `PERMISSION_GUARD_BUILDER_SHELL_TIMEOUT_INVALID`. 의존성 설치나 테스트 실행이 이뤄지지 않았을 수 있습니다.
+
+**요청.**
+1. 두 거부 사유의 허용 조건(lockfile 준비 명령 형태, timeout 인자 형식)을 알려 주세요.
+2. Builder prompt나 guard 중 어느 쪽을 맞춰야 하는지 판단해 주세요. Builder가 guard가 받지 않는 형식을 반복 생성하는 것으로 보입니다.
+3. 거부된 명령 때문에 Task가 검증 없이 완료로 보고되지 않는지 확인해 주세요.
+
+## B9. (2026-09-29) 도구 이벤트 표시 정보 보강
+
+**현상.** Builder 도구 행 중 일부는 도구 종류(`tool`)가 비어 있어 "기타 도구"로만 표시됩니다. 또 존재하지 않는 파일을 확인하는 `read`(예: `tsconfig.app.json`, `vite.config.ts`)가 "실패"로 표시되어 사용자가 오류로 오해합니다.
+
+**요청.**
+1. 도구 이벤트에 종류를 항상 채워 주세요(`projectRunEvent` 결과의 `tool`).
+2. "파일 없음" 확인을 일반 실패와 구분할 수 있는 상태나 코드를 줄 수 있는지 알려 주세요.
+
+## B10. (2026-09-29) B6 수정 kit를 Windows에서 빌드할 수 없음
+
+`FRONTEND_LIVE_TEST_RESPONSE_20260929.md`는 B6 수정(`a4a6632`)이 담긴 새 Windows kit를 Windows에서 만들라고 안내합니다. 그런데 백엔드가 고정한 **pnpm 11.12.0은 설치가 거부됩니다**(`ERR_PNPM_BROKEN_PNPM_RELEASE`: "`@pnpm/exe` build shipped without a binary"). 버전 검사를 우회하지 않았습니다.
+
+**요청 (둘 중 하나).**
+1. 설치 가능한 pnpm 버전으로 고정을 바꿔 주세요. 그러면 프론트 PC에서 Node 24.19.0을 맞추고 kit를 빌드하겠습니다.
+2. 또는 B6 수정이 담긴 Windows kit ZIP과 receipt를 직접 전달해 주세요.
+
+---
+
 ## 4. 실측 재개 조건과 질문
 
 - 이 PC의 Kiro 크레딧은 2026-10-01 리셋입니다. 그 전에 실측하려면 overage(유료)를 켜거나 다른 계정을 써야 합니다.
