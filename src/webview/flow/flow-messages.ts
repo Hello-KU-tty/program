@@ -81,6 +81,8 @@ export type WebviewToHostFlow =
   | { type: "selectCandidate"; target: CandidateRevisionReference }
   | { type: "refineSpec"; message: string }
   | { type: "confirmSpec" }
+  | { type: "returnToDiscovery" }
+  | { type: "goToStart" }
   | { type: "draftChangedFlow"; field: string; text: string }
   | { type: "refreshHistory" }
   | { type: "openHistoryProject"; projectId: string };
@@ -174,6 +176,8 @@ export function parseWebviewToHostFlow(value: unknown): WebviewToHostFlow | null
       valid = onlyKeys(value, ["type", "message"]) && isText(value.message, 4000);
       break;
     case "confirmSpec":
+    case "returnToDiscovery":
+    case "goToStart":
     case "refreshHistory":
       valid = onlyKeys(value, ["type"]);
       break;

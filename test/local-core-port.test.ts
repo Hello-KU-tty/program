@@ -835,3 +835,101 @@ describe("fail-closed native gating (guide \u00a71/\u00a710)", () => {
     }
   });
 });
+
+describe("navigation: return to Discovery and go to start", () => {
+  // Core after UI_RETURN_TO_DISCOVERY: a fresh ACTIVE session with the same
+  // input, no selection and no current spec (see core #returnToDiscovery).
+  function returnHarness() {
+    const specReview = {
+      ...contractSnapshot({
+        discoverySession: contractSession({ status: "SELECTED", correlationId: "corr_session" }),
+        previewRound: contractPreviewRound(),
+        learningSpec: contractSpec(2, "DRAFT", 1),
+      }),
+      project: { id: "project_1", status: "SPEC_REVIEW" },
+    };
+    const returned = contractSnapshot({
+      discoverySession: contractSession({ id: "discovery_session_2", revision: 1 }),
+    });
+    let snapshot: unknown = specReview;
+    const execute = vi.fn(async (request: { kind: string }) => {
+      if (request.kind === "UI_RETURN_TO_DISCOVERY") snapshot = returned;
+      return { accepted: true, resourceRevision: 1 };
+    });
+    const startRun = vi.fn(async (_request: unknown) => ({ id: "run_new", status: "RUNNING" }));
+    const listProjects = vi.fn(async () => ({ projects: [] }));
+    const client = fakeClient({ execute, startRun, listProjects, restoreProject: async () => snapshot });
+    return { client, execute, startRun, listProjects };
+  }
+
+  it("sends UI_RETURN_TO_DISCOVERY with the session correlation and starts no run", async () => {
+    const h = returnHarness();
+    const port = new LocalCoreDiscoveryPort(h.client);
+    const result = await port.returnToDiscovery(
+      { projectId: "project_1", discoverySessionId: "discovery_session_1" }, ENV);
+
+    expect(result.ok).toBe(true);
+    expect(h.execute).toHaveBeenCalledOnce();
+    expect(h.execute.mock.calls[0][0]).toMatchObject({
+      kind: "UI_RETURN_TO_DISCOVERY", correlationId: "corr_session", projectId: "project_1",
+      discoverySessionId: "discovery_session_1", expectedSessionRevision: 4,
+      expectedSpecRevision: 2, idempotencyKey: ENV.idempotencyKey,
+    });
+    expect(h.startRun).not.toHaveBeenCalled();
+    if (result.ok) {
+      expect(result.value.session?.id).toBe("discovery_session_2");
+      expect(result.value.spec).toBeNull();
+      expect(result.value.previewRound).toBeNull();
+    }
+  });
+
+  it("refuses a stale session without calling Core", async () => {
+    const h = returnHarness();
+    const port = new LocalCoreDiscoveryPort(h.client);
+    const result = await port.returnToDiscovery(
+      { projectId: "project_1", discoverySessionId: "discovery_session_old" }, ENV);
+    expect(result.ok).toBe(false);
+    expect(h.execute).not.toHaveBeenCalled();
+  });
+
+  it("controller returns to the start form with the input kept, then resubmit retries on the same project", async () => {
+    const h = returnHarness();
+    const port = new LocalCoreDiscoveryPort(h.client);
+    const controller = new FlowController({ discovery: port, spec: port, restore: port });
+    expect(await controller.restoreSavedProject("project_1")).toBe(true);
+    expect(controller.snapshot().phase).toBe("spec_review");
+
+    await controller.returnToDiscovery();
+    const snap = controller.snapshot();
+    expect(snap.phase).toBe("discovery_start");
+    expect(snap.project?.id).toBe("project_1");
+    expect(snap.input?.learningGoal).toBe(INPUT.learningGoal);
+    expect(snap.spec).toBeNull();
+    expect(h.startRun).not.toHaveBeenCalled();
+
+    // Same input -> explicit retry on the new session, not a new project.
+    await controller.startDiscovery(snap.input!);
+    expect(h.startRun).toHaveBeenCalledOnce();
+    expect(h.startRun.mock.calls[0][0]).toMatchObject({
+      kind: "DISCOVERY", phase: "PREVIEW", projectId: "project_1", discoverySessionId: "discovery_session_2",
+    });
+  });
+
+  it("goToStart clears the screen only and reloads History without touching Core state", async () => {
+    const h = returnHarness();
+    const port = new LocalCoreDiscoveryPort(h.client);
+    const controller = new FlowController({ discovery: port, spec: port, restore: port, history: port });
+    await controller.restoreSavedProject("project_1");
+    h.listProjects.mockClear();
+
+    await controller.goToStart();
+    const snap = controller.snapshot();
+    expect(snap.phase).toBe("discovery_start");
+    expect(snap.project).toBeNull();
+    expect(snap.input).toBeNull();
+    expect(snap.spec).toBeNull();
+    expect(h.execute).not.toHaveBeenCalled();
+    expect(h.startRun).not.toHaveBeenCalled();
+    expect(h.listProjects).toHaveBeenCalledOnce();
+  });
+});

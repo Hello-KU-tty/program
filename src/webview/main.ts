@@ -110,6 +110,28 @@ export function bootstrap(
     },
   };
 
+  // Project navigation bar, always the first child of `root`. It appears once a
+  // project is open on any surface (Discovery, Spec or Build) and returns to the
+  // start form + History. Screen-only: the project stays durable in Core.
+  const nav = root.ownerDocument.createElement("div");
+  nav.className = "panel-nav";
+  nav.hidden = true;
+  const navHome = root.ownerDocument.createElement("button");
+  navHome.type = "button";
+  navHome.className = "panel-nav-home";
+  navHome.textContent = "← 처음으로";
+  navHome.setAttribute("aria-label", "처음 화면과 이전 프로젝트 목록으로 이동");
+  navHome.addEventListener("click", () => client.postFlow({ type: "goToStart" }));
+  const navTitle = root.ownerDocument.createElement("span");
+  navTitle.className = "panel-nav-title";
+  nav.appendChild(navHome);
+  nav.appendChild(navTitle);
+  root.appendChild(nav);
+  const renderNav = (snapshot: FlowSnapshot): void => {
+    nav.hidden = snapshot.project === null;
+    navTitle.textContent = snapshot.project?.title ?? "";
+  };
+
   // The Build_Surface renders into its own child container of `root`, so its
   // visibility can be toggled independently of the additive flow container
   // (both are siblings under `root`). This does not restructure PanelRenderer —
@@ -177,6 +199,9 @@ export function bootstrap(
     onConfirmSpec: () => {
       client.postFlow({ type: "confirmSpec" });
     },
+    onReturnToDiscovery: () => {
+      client.postFlow({ type: "returnToDiscovery" });
+    },
     onDraftChanged: (field, text) => {
       client.postFlow({ type: "draftChangedFlow", field, text });
     },
@@ -196,6 +221,7 @@ export function bootstrap(
   const discoveryWorkspace = new DiscoveryWorkspace(flowContainer, flowCallbacks);
   const specReview = new SpecReview(flowContainer, flowCallbacks);
   const flowViews = { discoveryStart, discoveryWorkspace, specReview };
+
 
   // The live agent container is created here (appended after `flowContainer`)
   // so `applySurface` can arbitrate it too. It starts hidden and stays hidden
@@ -237,6 +263,7 @@ export function bootstrap(
       discoveryStart.render(message.snapshot);
       discoveryWorkspace.render(message.snapshot);
       specReview.render(message.snapshot);
+      renderNav(message.snapshot);
       renderFlowNotice(message.snapshot.notice);
     }
     if (message.type === "flowNotice") renderFlowNotice(message);

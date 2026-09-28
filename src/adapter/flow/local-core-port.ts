@@ -282,6 +282,21 @@ export class LocalCoreDiscoveryPort implements DiscoveryPort, SpecPort, HistoryP
       return ok(contractToProgramPreparedTask(response));
     } catch (e) { return err(...classify(e, "prepareBuilderTask failed")); }
   }
+  async returnToDiscovery(req: { projectId: string; discoverySessionId: string }, env: RequestEnvelope): Promise<PortResult<RestoredFlow>> {
+    try {
+      const before = await this.snapshot(req.projectId);
+      const session = before.discoverySession;
+      if (!session || session.id !== req.discoverySessionId) throw new Error("STALE_DISCOVERY_SESSION");
+      const active = (await this.client.listRuns(req.projectId)).some(r => r.kind === "DISCOVERY" && ["ACCEPTED", "RUNNING"].includes(r.status));
+      if (active) throw new Error("DISCOVERY_RUN_ACTIVE_STOP_OR_WAIT");
+      // Core requires the selected session's own correlation id. No run starts
+      // here: the next preview waits for the learner's explicit submit.
+      await this.client.execute({ ...uiMetadata(session.correlationId), kind: "UI_RETURN_TO_DISCOVERY",
+        projectId: req.projectId, discoverySessionId: session.id, expectedSessionRevision: session.revision,
+        expectedSpecRevision: before.learningSpec?.revision ?? 0, idempotencyKey: env.idempotencyKey });
+      return this.restoreFlow(req.projectId, env);
+    } catch (e) { return err(...classify(e, "returnToDiscovery failed")); }
+  }
   async listProjects(limit: number, _env: RequestEnvelope): Promise<PortResult<ProjectHistoryView>> {
     try { return ok(contractToProgramHistory(await this.client.listProjects(limit))); }
     catch (e) { return err(...classify(e, "listProjects failed")); }

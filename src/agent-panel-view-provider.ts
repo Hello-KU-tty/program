@@ -141,7 +141,7 @@ export function wireWebviewMessaging(
      */
     globalState?: {
       get(key: string): string | undefined;
-      update(key: string, value: string): Thenable<void> | Promise<void>;
+      update(key: string, value: string | undefined): Thenable<void> | Promise<void>;
     };
   } = {},
 ): {
@@ -380,6 +380,15 @@ export function wireWebviewMessaging(
       // webview re-hydrates automatically — no manual re-hydrate needed here.
       await flowDispatcher.handle(flowIntent);
       await projectBinding;
+      if (flowIntent.type === "goToStart") {
+        // Screen-only navigation: forget the auto-restore target so a reload
+        // stays on the start form. Reopening from History binds again.
+        boundProjectId = undefined;
+        if (!disposed) {
+          await Promise.resolve(options.globalState?.update("bhlr.lastProjectId", undefined)).catch(() => {});
+        }
+        return;
+      }
       if (!disposed && agentHolder) {
         await agentHolder.controller.refreshProject();
         if (flowIntent.type === "openHistoryProject") void agentHolder.controller.recover();
@@ -511,6 +520,70 @@ export function buildWebviewHtml(
     .agent-shell[hidden] {
       display: none;
     }
+
+    /* Project navigation bar: back to the start form + History. */
+    .panel-nav {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      gap: var(--sp-2);
+      padding: var(--sp-2) var(--sp-3);
+      border-bottom: 1px solid var(--vscode-panel-border, color-mix(in srgb, var(--vscode-foreground) 14%, transparent));
+      min-width: 0;
+    }
+    .panel-nav[hidden] { display: none; }
+    .panel-nav-home {
+      flex: 0 0 auto;
+      appearance: none;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.85em;
+      font-weight: 600;
+      color: var(--vscode-foreground);
+      background: transparent;
+      border: 1px solid var(--vscode-panel-border, color-mix(in srgb, var(--vscode-foreground) 24%, transparent));
+      border-radius: var(--radius-pill);
+      padding: 2px var(--sp-3);
+      transition: background var(--transition), border-color var(--transition);
+    }
+    .panel-nav-home:hover {
+      border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+      background: var(--vscode-list-hoverBackground, color-mix(in srgb, var(--vscode-foreground) 8%, transparent));
+    }
+    .panel-nav-home:focus-visible {
+      outline: 2px solid var(--vscode-focusBorder, var(--accent));
+      outline-offset: 1px;
+    }
+    .panel-nav-title {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 0.85em;
+      color: var(--vscode-descriptionForeground);
+    }
+
+    /* Spec review secondary action: back to Discovery (no Agent call). */
+    .flow-spec-return {
+      align-self: flex-start;
+      appearance: none;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.9em;
+      color: var(--vscode-descriptionForeground);
+      background: transparent;
+      border: none;
+      padding: var(--sp-1) 0;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+    .flow-spec-return:hover:not(:disabled) { color: var(--vscode-foreground); }
+    .flow-spec-return:focus-visible {
+      outline: 2px solid var(--vscode-focusBorder, var(--accent));
+      outline-offset: 2px;
+    }
+    .flow-spec-return:disabled { opacity: 0.45; cursor: not-allowed; }
+    .flow-spec-return[hidden] { display: none; }
 
     /* ---------------------------------------------------------------------
        Root panel: full-height flex column. The active accent is scoped by the
@@ -2138,7 +2211,7 @@ export class AgentPanelViewProvider implements vscode.WebviewViewProvider {
     // host) constructs the provider without it.
     private readonly globalState?: {
       get(key: string): string | undefined;
-      update(key: string, value: string): Thenable<void> | Promise<void>;
+      update(key: string, value: string | undefined): Thenable<void> | Promise<void>;
     },
   ) {}
 

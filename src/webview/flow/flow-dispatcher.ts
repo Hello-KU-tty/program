@@ -165,6 +165,16 @@ export class FlowDispatcher {
         await this.controller.confirmSpec();
         return;
       }
+      case "returnToDiscovery": {
+        // Supersedes the draft spec only; no Agent run starts here.
+        await this.controller.returnToDiscovery();
+        return;
+      }
+      case "goToStart": {
+        // Screen navigation only; Core project state is untouched.
+        await this.controller.goToStart();
+        return;
+      }
       case "draftChangedFlow": {
         // View-local (design 13.2): drafts are restored from the view model,
         // not host state. Intentionally a no-op on the controller so no flow

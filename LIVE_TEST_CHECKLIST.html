@@ -99,7 +99,7 @@
 <body>
 <main>
   <h1>실측 체크리스트</h1>
-  <p class="lead">VSIX 0.0.3 · Kiro 1.1.70 / Agent 1.1.158 · Windows x64. 항목별로 <b>통과 / 실패 / 보류</b>를 누르세요. 실패나 보류를 고르면 메모 칸이 열립니다. 상태는 이 브라우저에 저장되고, 결과는 Markdown으로 복사해 백엔드 회신에 붙일 수 있습니다.</p>
+  <p class="lead">VSIX 0.0.5 · Kiro 1.1.70 / Agent 1.1.158 · Windows x64. 항목별로 <b>통과 / 실패 / 보류</b>를 누르세요. 실패나 보류를 고르면 메모 칸이 열립니다. 상태는 이 브라우저에 저장되고, 결과는 Markdown으로 복사해 백엔드 회신에 붙일 수 있습니다.</p>
 
   <div class="summary">
     <div class="bar" id="bar"></div>
@@ -107,8 +107,8 @@
   </div>
 
   <div class="callout">
-    <h3>실패했는데 화면에 아무 안내가 없다면</h3>
-    Discovery/Spec 실패 안내가 화면에 안 뜨는 버그가 아직 남아 있습니다. 아래 순서로 원인을 확인하세요.
+    <h3>실패했을 때</h3>
+    0.0.5부터는 실패 원인이 화면 안내로 뜹니다(예: 사용량 한도, 폴더 신뢰 필요). 안내가 없거나 원인이 불분명하면 아래 순서로 확인하세요.
     <ul>
       <li>worker 진행 기록: <code>%APPDATA%\Kiro\User\globalStorage\vibe-helper.builder-helper-agent-panel\core-data\native-worker-status.jsonl</code>의 마지막 <code>AGENT_FAILED_*</code> 줄</li>
       <li>실제 사유: <code>%APPDATA%\Kiro\logs\&lt;최신 폴더&gt;\window*\exthost\</code>에서 <code>[KRS]</code> 또는 <code>Exception</code> 검색 (예: 한도 초과 <code>ServiceQuotaExceededException</code>)</li>
@@ -125,8 +125,9 @@ const GROUPS = [
   { title: "사전 준비", desc: "하나라도 어긋나면 이후 단계가 전부 막힙니다.", items: [
     { id: "pre-version", t: "Kiro 1.1.70 / Agent 1.1.158 확인", how: ["Help → About에서 Kiro 버전 확인", "자동 업데이트가 켜져 있으면 1.1.71 이상으로 올라가 다시 막힘"], exp: "버전이 정확히 1.1.70. 다르면 NATIVE_INSTALLATION_* 오류" },
     { id: "pre-quota", t: "Kiro 크레딧이 남아 있는지 확인", how: ["Kiro 계정 사용량 화면에서 이번 달 사용량 확인"], exp: "사용량이 한도 미만. 초과 시 모든 run이 NATIVE_RPC_REJECTED로 실패" },
-    { id: "pre-vsix", t: "확장 0.0.3 설치 확인", how: ["Extensions 목록에서 Builder & Helper Agent Panel 버전 확인"], exp: "0.0.3" },
+    { id: "pre-vsix", t: "확장 0.0.5 설치 확인", how: ["Extensions 목록에서 Builder & Helper Agent Panel 버전 확인"], exp: "0.0.5" },
     { id: "pre-restart", t: "VSIX 설치 후 Kiro 완전 재시작", how: ["Kiro 창을 모두 닫고 1분 뒤 다시 실행", "Reload Window만으로는 이전 Core가 남음 (백엔드 결함 B2)"], exp: "이후 NATIVE_PACKAGED_ROLE_CONFIG_INVALID가 나오지 않음", tag: "known" },
+    { id: "pre-window", t: "Kiro 창은 하나만", how: ["Kiro를 다시 연 뒤 창이 여러 개면 하나만 남기고 닫기", "core-data\\workspaces 창이 복원돼 있으면 그 창 하나에서 패널을 열어도 됨"], exp: "같은 폴더 창이 둘이면 NATIVE_ENDPOINT_AMBIGUOUS로 Discovery 실패 (백엔드 B6)", tag: "known" },
     { id: "pre-trust", t: "작업 폴더 두 곳 신뢰", how: ["vibe-test 폴더를 열고 Manage Workspace Trust → Trust", "같은 화면의 Add Folder로 core-data\\workspaces 폴더 추가"], exp: "하단 상태바에 Restricted Mode 없음" },
   ]},
   { title: "연결과 History", desc: "Core 자동 기동과 저장된 상태 복원.", items: [
@@ -135,7 +136,9 @@ const GROUPS = [
     { id: "con-restore", t: "이어서 보기 복원", how: ["목록에서 \"이어서 보기\" 누르기"], exp: "해당 프로젝트 단계(탐색/스펙/빌드)로 화면이 복원됨" },
   ]},
   { title: "Discovery", desc: "학습 목표 → 후보 10개 → 좁히기 → 선택.", items: [
-    { id: "dis-start", t: "후보 만나기", how: ["학습 목표 입력 (선택 칸도 채워 보기)", "\"후보 만나기\" 누르기"], exp: "\"후보를 찾고 있어요…\" 표시. 창이 core-data\\workspaces로 전환될 수 있고, 패널이 다시 붙음", tag: "core" },
+    { id: "dis-start", t: "후보 만나기", how: ["학습 목표 입력 (선택 칸도 채워 보기)", "\"후보 만나기\" 누르기"], exp: "\"후보를 찾고 있어요…\" 표시. 창이 core-data\\workspaces로 전환되고 패널이 다시 붙음", tag: "core" },
+    { id: "dis-reload", t: "창 전환 뒤 자동 복원", how: ["창 전환 후 아무것도 누르지 않고 기다리기"], exp: "추가 클릭 없이 후보 10개가 자동으로 표시됨 (PR #8 수정분)", tag: "core" },
+    { id: "dis-retry", t: "실패 후 재시도", how: ["실패 안내가 뜨면 입력을 그대로 두고 \"후보 만나기\" 다시 누르기"], exp: "새 프로젝트가 생기지 않고 같은 프로젝트에서 다시 생성됨 (History에 중복 프로젝트 없음)" },
     { id: "dis-list", t: "후보 10개 목록", how: ["결과 확인"], exp: "한 줄씩 훑는 목록. 제목·요약·매력 이유·핵심 상호작용이 보이고, 같은 CRUD에 테마만 바꾼 후보가 반복되지 않음" },
     { id: "dis-basket", t: "관심 후보 담기", how: ["체크박스로 담았다 빼기"], exp: "선택 상태와 선택 개수가 즉시 반영됨" },
     { id: "dis-need", t: "Personal Need 반영", how: ["\"최근에 겪은 불편함\"을 채워서 새로 시작"], exp: "불편과 관련된 후보와 독립 후보가 섞여 나옴" },
@@ -146,9 +149,14 @@ const GROUPS = [
   { title: "Learning Spec", desc: "권장안 확인 → 수정 요청 → 확정.", items: [
     { id: "spec-view", t: "스펙 요약", how: ["Spec 화면 확인"], exp: "\"이번 프로젝트의 범위\"에 배울 것 / 에이전트가 맡을 것 / 제외할 것이 읽기 쉽게 나뉨" },
     { id: "spec-refine", t: "스펙 다듬기", how: ["수정 요청을 입력하고 보내기"], exp: "\"스펙을 다듬고 있어요…\" 뒤 요청이 반영된 새 버전" },
+    { id: "spec-return", t: "다른 주제로 돌아가기", how: ["Spec 화면 아래 \"다른 주제로 돌아가기\" 누르기", "시작 화면에서 입력 그대로 \"후보 만나기\""], exp: "에이전트 호출 없이 즉시 시작 화면으로 돌아가고 입력이 채워져 있음. 다시 누르면 같은 프로젝트에서 새 후보 생성" },
     { id: "spec-confirm", t: "이걸로 시작", how: ["\"이 스펙으로 시작할까요?\"에서 \"이걸로 시작\""], exp: "Task가 준비되고 빌드 화면으로 전환", tag: "core" },
   ]},
-  { title: "화면 전환과 레이아웃 (0.0.3 수정분)", desc: "이번에 고친 부분이 실제로 동작하는지 확인합니다.", items: [
+  { title: "화면 전환과 이동", desc: "단계별 화면과 프로젝트 간 이동.", items: [
+    { id: "nav-bar", t: "이동 막대", how: ["프로젝트를 연 상태(탐색/스펙/빌드)에서 패널 맨 위 확인"], exp: "\"← 처음으로\"와 프로젝트 제목이 보임. 시작 화면에서는 숨겨짐" },
+    { id: "nav-home", t: "처음으로", how: ["\"← 처음으로\" 누르기"], exp: "시작 화면과 이전 프로젝트 목록으로 이동. 진행 중이던 프로젝트는 History에 그대로 남음", tag: "core" },
+    { id: "nav-reload", t: "처음으로 후 리로드", how: ["\"← 처음으로\" 뒤 Developer: Reload Window"], exp: "이전 프로젝트로 자동 복귀하지 않고 시작 화면 유지" },
+    { id: "nav-reopen", t: "History에서 다시 열기", how: ["이전 프로젝트 → \"이어서 보기\""], exp: "저장된 단계(후보·스펙·빌드)가 그대로 복원됨. 탐색 중이던 프로젝트는 저장된 후보가 표시됨" },
     { id: "ui-discovery", t: "Discovery 중에는 빌더가 안 보임", how: ["Discovery/Spec 단계 화면 확인"], exp: "빌더·도우미 영역이 아래에 붙지 않고, Discovery 화면이 패널 전체를 씀" },
     { id: "ui-build", t: "빌드 단계 화면", how: ["스펙 확정 후 화면 확인"], exp: "빌더(파랑)와 도우미(보라) 카드 표시. 예전 Builder/Helper 탭은 보이지 않음" },
     { id: "ui-style", t: "스타일", how: ["밝은/어두운 테마에서 모두 확인"], exp: "브라우저 기본 모양(큰 제목, 회색 버튼)이 없음. 빈 결정/질문 영역은 숨겨짐" },
@@ -180,8 +188,8 @@ const GROUPS = [
     { id: "h-readonly", t: "읽기 전용", how: ["도우미에게 코드 수정을 부탁해 보기"], exp: "파일을 수정하거나 명령을 실행하지 않음" },
   ]},
   { title: "생성 workspace와 결과 실행", desc: "", items: [
-    { id: "w-open", t: "생성 workspace 열기", how: ["패널에 버튼이 없음 (컨트롤러만 있고 UI 연결 누락)"], exp: "현재는 확인 불가. 누락으로 기록", tag: "known" },
-    { id: "w-launch", t: "결과 실행", how: ["패널에 버튼이 없음 (UI 연결 누락)"], exp: "현재는 확인 불가. 누락으로 기록", tag: "known" },
+    { id: "w-open", t: "작업 폴더 열기", how: ["빌더 영역의 \"작업 폴더 열기\" 누르기"], exp: "생성 프로젝트 폴더가 Kiro에서 열림. 패널·메시지에 절대경로가 보이지 않음" },
+    { id: "w-launch", t: "결과 실행", how: ["작업 완료 후 \"결과 실행\" 누르기"], exp: "http://127.0.0.1:<포트> 주소가 브라우저로 열리고 서비스가 동작. 실행 중이 아니면 안내 문구", tag: "core" },
   ]},
   { title: "Evidence와 개인화", desc: "사용자 본인의 행동만 이해 근거로 인정해야 합니다.", items: [
     { id: "e-read", t: "근거 불러오기", how: ["작업·결정·도우미 대화 후 \"근거 불러오기\""], exp: "개념 목록과 분석 상태가 표시됨" },
@@ -195,7 +203,7 @@ const GROUPS = [
   ]},
 ];
 
-const KEY = "live-test-checklist-v1";
+const KEY = "live-test-checklist-v2";
 let saved = {};
 try { saved = JSON.parse(localStorage.getItem(KEY) || "{}") || {}; } catch { saved = {}; }
 const persist = () => { try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch {} };

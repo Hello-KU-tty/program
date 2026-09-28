@@ -91,6 +91,11 @@ export interface FlowRenderCallbacks {
   /** The learner confirmed the spec, advancing to Build (Req 11). */
   onConfirmSpec(): void;
   /**
+   * "다른 주제로 돌아가기" from Spec review (BRIEF §8). Optional so views and
+   * tests that predate it keep compiling; the button hides without it.
+   */
+  onReturnToDiscovery?(): void;
+  /**
    * An unsent input field changed; reported so the host can restore it on
    * re-hydration (Req 13.2). Optional so views can omit draft reporting.
    */
@@ -1169,6 +1174,7 @@ export class SpecReview {
   private readonly refineButton: HTMLButtonElement;
   /** The confirm ("이걸로 시작") button. */
   private readonly confirmButton: HTMLButtonElement;
+  private readonly returnButton: HTMLButtonElement;
 
   /** True while a spec op is in flight (mirrors the last snapshot). */
   private specInProgress = false;
@@ -1230,6 +1236,17 @@ export class SpecReview {
     composer.appendChild(confirmButton);
     this.confirmButton = confirmButton;
 
+    // "다른 주제로 돌아가기" (BRIEF §8): back to Discovery without an Agent call.
+    const returnButton = this.el("button", "flow-spec-return") as HTMLButtonElement;
+    returnButton.type = "button";
+    returnButton.textContent = "다른 주제로 돌아가기";
+    returnButton.hidden = this.callbacks.onReturnToDiscovery === undefined;
+    returnButton.addEventListener("click", () => {
+      if (!this.returnButton.disabled) this.callbacks.onReturnToDiscovery?.();
+    });
+    composer.appendChild(returnButton);
+    this.returnButton = returnButton;
+
     container.appendChild(composer);
 
     root.appendChild(container);
@@ -1260,6 +1277,8 @@ export class SpecReview {
     this.refineInput.disabled = this.specInProgress;
     this.refineButton.disabled = this.specInProgress;
     this.confirmButton.disabled = this.specInProgress;
+    // Returning only needs a settled spec surface, not a ready spec draft.
+    this.returnButton.disabled = generating || snapshot.flowSupport.mode === "unavailable";
 
     this.rebuildContent(snapshot.spec);
   }

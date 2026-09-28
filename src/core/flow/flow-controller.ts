@@ -816,6 +816,65 @@ export class FlowController {
     );
   }
 
+  /**
+   * "다른 주제로 돌아가기" (BRIEF §8): leave Spec review for a fresh Discovery
+   * session on the same project. No Agent is called; the start form keeps the
+   * previous input, and a new preview starts only when the learner resubmits.
+   */
+  async returnToDiscovery(): Promise<void> {
+    const project = this.project;
+    const session = this.session;
+    if (project === null || session === null || project.status !== "SPEC_REVIEW") return;
+    const port = this.ports.spec.returnToDiscovery;
+    if (!port) {
+      this.emitNotice("spec", "error", "지금 연결에서는 탐색으로 돌아갈 수 없어요.");
+      this.notifyChange();
+      return;
+    }
+    await this.runOp(
+      "spec",
+      "returnToDiscovery",
+      (env) => port.call(this.ports.spec, { projectId: project.id, discoverySessionId: session.id }, env),
+      this.spec?.revision ?? 0,
+      (restored) => {
+        this.applyRestoredFlow(restored);
+        this.emitNotice("discovery", "info", "");
+      },
+      (error) => {
+        this.emitNotice("spec", "error", runtimeErrorMessage(error.message, "탐색으로 돌아가지 못했습니다. 다시 시도해 주세요."));
+      },
+    );
+  }
+
+  /**
+   * Leave the current project on screen only and show the start form with
+   * History. Core state is untouched: the project stays durable and can be
+   * reopened from History, and in-flight Core runs keep going.
+   */
+  async goToStart(): Promise<void> {
+    ++this.tokenCounter; // late results of the left project are ignored
+    this.stopRecovery();
+    for (const surface of ["discovery", "spec"] as const) {
+      const timer = this.inFlight[surface]?.timerId;
+      if (timer !== undefined && timer !== null) this.clock.clearTimeout(timer);
+      this.inFlight[surface] = null;
+    }
+    this.project = null;
+    this.lastSuccessfulStatus = "DISCOVERY";
+    this.session = null;
+    this.input = null;
+    this.previewRound = null;
+    this.rounds = [];
+    this.candidatesByRef.clear();
+    this.basket.clear();
+    this.selectedCandidate = null;
+    this.spec = null;
+    this.preparedTask = null;
+    this.emitNotice("discovery", "info", "");
+    this.notifyChange();
+    await this.loadHistory();
+  }
+
   // --- read-only History (guide §6/§10-2) ---
 
   /**
