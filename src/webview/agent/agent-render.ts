@@ -54,6 +54,7 @@ import type {
   EvidenceTraceView,
   FinalUpgradeCandidate,
 } from "../../../vendor/frontend-client";
+import { workerStatusGuidance } from "../../core/runtime-errors";
 
 /**
  * Callbacks the agent render layer invokes when the learner interacts with a
@@ -1151,7 +1152,10 @@ export class AgentSurfaceView {
     this.workerStatus.hidden = false;
     // Display-only: stage + role + raw code (no product branching, Req 12.1).
     const role = worker.role ? ` · ${worker.role}` : "";
-    this.workerStatus.textContent = `작업 상태: ${worker.stage}${role} (${worker.code})`;
+    const guidance = workerStatusGuidance(worker.code);
+    this.workerStatus.textContent = guidance
+      ? `${guidance} (${worker.code})`
+      : `작업 상태: ${worker.stage}${role} (${worker.code})`;
   }
 
   /** Renders the surface notice (code + message via `textContent`, Req 2.7). */

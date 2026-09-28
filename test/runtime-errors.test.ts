@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { toPortError } from "../src/adapter/flow/local-core-port";
 import { toAgentError } from "../src/adapter/agent/agent-error";
-import { runtimeErrorMessage } from "../src/core/runtime-errors";
+import { runtimeErrorMessage, workerStatusGuidance } from "../src/core/runtime-errors";
 import { FlowHostWebviewHarness } from "./support/flow-host-webview-harness";
 import type { HostToWebview } from "../src/webview/messages";
 
@@ -18,6 +18,10 @@ describe("safe runtime recovery guidance", () => {
     ["NATIVE_WORKSPACE_TRUST_REQUIRED", "trust_required", "Workspace Trust"],
     ["CORE_UPDATE_WAITING_FOR_OWNER_EXIT", "update_waiting", "정상적으로 닫은"],
     ["WORKSPACE_SWITCH_UNCONFIRMED", "workspace_switch_unconfirmed", "폴더 전환"],
+    ["NATIVE_ENDPOINT_AMBIGUOUS", "window_ambiguous", "하나만 남기고"],
+    ["NATIVE_ENDPOINT_MISSING", "window_missing", "같은 프로젝트에서 다시 시도"],
+    ["NATIVE_ENDPOINT_INVALID", "window_invalid", "Reload Window"],
+    ["NATIVE_WINDOW_ID_INVALID", "window_invalid", "Reload Window"],
   ];
   for (const [raw, code, text] of cases) {
     it(`${raw} is classified and explained without provider text`, () => {
@@ -84,5 +88,16 @@ describe("flow notices reach the real webview wiring", () => {
     expect(notice.textContent).toBe("다시 로그인해 주세요.");
     h.client.dispatch({ type: "hydrateFlow", snapshot: h.controller.snapshot() } as unknown as HostToWebview);
     expect(notice.hidden).toBe(true);
+  });
+});
+
+describe("native worker window guidance (display only)", () => {
+  it("explains the two window statuses", () => {
+    expect(workerStatusGuidance("WORKSPACE_WINDOW_AVAILABLE")).toContain("그 창에서 처리");
+    expect(workerStatusGuidance("WORKSPACE_ENDPOINTS_UNAVAILABLE")).toContain("Reload Window");
+  });
+  it("returns nothing for other statuses", () => {
+    expect(workerStatusGuidance("AGENT_RUNNING_DISCOVERY")).toBeUndefined();
+    expect(workerStatusGuidance("toString")).toBeUndefined();
   });
 });

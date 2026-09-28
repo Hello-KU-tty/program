@@ -1,7 +1,8 @@
 /** Fixed UI guidance only. Provider text, request IDs and paths never belong here. */
 export type RuntimeErrorCode = "quota_exceeded" | "auth_required" | "access_denied" |
   "model_unavailable" | "rate_limited" | "service_unavailable" | "trust_required" |
-  "update_waiting" | "workspace_switch_unconfirmed" | "credit_observation_required";
+  "update_waiting" | "workspace_switch_unconfirmed" | "credit_observation_required" |
+  "window_ambiguous" | "window_missing" | "window_invalid";
 
 const failures: Readonly<Record<string, { code: RuntimeErrorCode | "unknown"; message: string }>> = {
   NATIVE_QUOTA_EXCEEDED: { code: "quota_exceeded", message: "Kiro 사용량 한도에 도달했어요. Kiro에서 사용량을 확인하고 한도가 갱신된 뒤 다시 시도해 주세요." },
@@ -15,7 +16,25 @@ const failures: Readonly<Record<string, { code: RuntimeErrorCode | "unknown"; me
   NATIVE_WORKSPACE_TRUST_REQUIRED: { code: "trust_required", message: "현재 작업 폴더의 Workspace Trust 승인이 필요해요. Kiro에서 폴더를 확인하고 신뢰한 뒤 다시 시도해 주세요. 이전 프로젝트 기록은 계속 조회할 수 있어요." },
   CORE_UPDATE_WAITING_FOR_OWNER_EXIT: { code: "update_waiting", message: "이전 버전의 Core를 사용하는 Kiro 창이 종료되기를 기다리고 있어요. 작업을 저장하고 해당 창을 정상적으로 닫은 뒤 ‘Vibe Helper: Retry Core Connection’을 실행해 주세요." },
   WORKSPACE_SWITCH_UNCONFIRMED: { code: "workspace_switch_unconfirmed", message: "작업 폴더 전환이 확인되지 않았어요. 열린 폴더와 Kiro의 안내를 확인한 뒤 다시 시도해 주세요." },
+  // Native window binding (backend T19-F7 / B6). Never auto-reroute to another window.
+  NATIVE_ENDPOINT_AMBIGUOUS: { code: "window_ambiguous", message: "같은 생성 폴더를 연 Kiro 창을 하나만 남기고 다시 시도해 주세요. 다른 작업 창이나 도우미 창은 닫지 않아도 돼요." },
+  NATIVE_ENDPOINT_MISSING: { code: "window_missing", message: "현재 Kiro 창의 에이전트 연결이 아직 준비되지 않았어요. 이 창의 확장 준비 상태와 Workspace Trust를 확인한 뒤 같은 프로젝트에서 다시 시도해 주세요." },
+  NATIVE_ENDPOINT_INVALID: { code: "window_invalid", message: "Kiro 창 연결 정보를 확인할 수 없어요. 지원되는 Kiro 버전인지 확인하고 창을 다시 불러온 뒤(Reload Window) 다시 시도해 주세요." },
+  NATIVE_WINDOW_ID_INVALID: { code: "window_invalid", message: "Kiro 창 연결 정보를 확인할 수 없어요. 지원되는 Kiro 버전인지 확인하고 창을 다시 불러온 뒤(Reload Window) 다시 시도해 주세요." },
 };
+
+/**
+ * Progress/recovery guidance for native worker status codes. Display only:
+ * these never mean a job was claimed or a model call succeeded.
+ */
+const workerGuidance: Readonly<Record<string, string>> = {
+  WORKSPACE_WINDOW_AVAILABLE: "생성 폴더가 이미 다른 Kiro 창에 열려 있어요. 작업은 그 창에서 처리되니, 그 창의 패널 연결과 Workspace Trust를 확인해 주세요.",
+  WORKSPACE_ENDPOINTS_UNAVAILABLE: "Kiro 창 목록을 읽지 못했어요. 확장을 다시 불러온 뒤(Reload Window) 다시 시도해 주세요. 현재 폴더는 그대로 유지돼요.",
+};
+
+export function workerStatusGuidance(code: string): string | undefined {
+  return Object.prototype.hasOwnProperty.call(workerGuidance, code) ? workerGuidance[code] : undefined;
+}
 
 export function runtimeFailure(code: string): { code: RuntimeErrorCode | "unknown"; message: string } | undefined {
   return Object.prototype.hasOwnProperty.call(failures, code) ? failures[code] : undefined;

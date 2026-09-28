@@ -405,3 +405,18 @@ describe("honest evidence display (task 9.2, Req 10.2/10.4)", () => {
     restore();
   });
 });
+
+describe("native worker status line", () => {
+  it("shows Korean guidance for window statuses and the raw stage otherwise", () => {
+    const { root, view, restore } = mount();
+    try {
+      const status = () => byClass(root, "agent-worker-status")[0];
+      view.render({ ...initialAgentViewModel(), worker: { stage: "DIAGNOSTIC", role: null, code: "WORKSPACE_WINDOW_AVAILABLE" } } as AgentViewModel);
+      expect(status().hidden).toBe(false);
+      expect(status().textContent).toContain("그 창에서 처리");
+      expect(status().textContent).toContain("(WORKSPACE_WINDOW_AVAILABLE)");
+      view.render({ ...initialAgentViewModel(), worker: { stage: "AGENT_RUNNING", role: "DISCOVERY", code: "AGENT_RUNNING_DISCOVERY" } } as AgentViewModel);
+      expect(status().textContent).toBe("작업 상태: AGENT_RUNNING · DISCOVERY (AGENT_RUNNING_DISCOVERY)");
+    } finally { restore(); }
+  });
+});
