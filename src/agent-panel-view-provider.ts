@@ -150,6 +150,8 @@ export function wireWebviewMessaging(
   messageSubscription: vscode.Disposable;
   flowController: FlowController;
   flowDispatcher: FlowDispatcher;
+  /** Initial ports, durable screen restore and task projection (no new run). */
+  ready: Promise<void>;
   /**
    * The live agent controller/dispatcher, present ONLY in product mode (when
    * {@link options.managedHost} is set). Because the {@link ManagedAgentPort}
@@ -189,12 +191,13 @@ export function wireWebviewMessaging(
   // `onChange` triggers a full flow re-hydrate, so async/non-intent-driven
   // mutations (e.g. a timer-driven mock round settling) push a fresh snapshot.
   let flowDispatcher: FlowDispatcher;
+  let syncProject = () => {};
   const flowController = new FlowController(options.managedHost ? unavailableFlowPorts() : createFlowPorts(), {
     ...(options.managedHost ? { timeoutMs: 15 * 60_000,
       ids: { correlationId: () => "corr_" + randomUUID(), idempotencyKey: () => "idem_" + randomUUID(), id: (prefix: string) => prefix + "_" + randomUUID() } } : {}),
     clock: new SystemClock(),
-    onNotice: (n) => flowDispatcher.forwardNotice(n),
-    onChange: () => flowDispatcher.hydrateFlow(),
+    onNotice: (n) => { if (!disposed) flowDispatcher.forwardNotice(n); },
+    onChange: () => { if (!disposed) { syncProject(); flowDispatcher.hydrateFlow(); } },
   });
   flowDispatcher = new FlowDispatcher(flowController, (message) => {
     webview.postMessage(message);
@@ -230,6 +233,19 @@ export function wireWebviewMessaging(
   });
 
   let disposed = false;
+  let boundProjectId: string | undefined;
+  let projectBinding = Promise.resolve();
+  syncProject = () => {
+    const projectId = flowController.getSession()?.projectId;
+    if (disposed || !projectId || projectId !== flowController.getProject()?.id || projectId === boundProjectId) return;
+    boundProjectId = projectId;
+    agentHolder?.controller.bindProject(projectId);
+    projectBinding = projectBinding.then(async () => {
+      if (!disposed) await options.globalState?.update("bhlr.lastProjectId", projectId);
+    }).catch(() => {
+      if (!disposed) flowController.setFlowSupport({ mode: "unavailable", experimental: false, reason: "PROJECT_STATE_SAVE_FAILED" });
+    });
+  };
   let unsubscribeStatus: (() => void) | undefined;
   let unsubscribeRotation: (() => void) | undefined;
   const experimental = options.managedHost ? false : isNativeFlowSupported().experimental;
@@ -303,9 +319,26 @@ export function wireWebviewMessaging(
     // No Managed_Host (dev/tests): NOTHING agent-live is built (Req 14.4).
     resolveAgentReady(null);
   }
-  void refreshPorts();
+  const ready = refreshPorts().then(async () => {
+    if (!options.managedHost || disposed) return;
+    const projectId = options.globalState?.get("bhlr.lastProjectId");
+    if (projectId && !flowController.getProject()) await flowController.restoreSavedProject(projectId);
+    const agent = await agentReady;
+    if (disposed || !agent) return;
+    syncProject();
+    await projectBinding;
+    await agent.controller.refreshProject();
+    // Reattach only. recover never starts or replays a mutation.
+    if (!disposed) void agent.controller.recover();
+  });
 
-  const inboundSubscription = webview.onDidReceiveMessage((raw) => {
+  const inboundSubscription = webview.onDidReceiveMessage(async (raw) => {
+    // A message belongs to exactly one protocol. Do not let a rejected flow
+    // payload invoke an Agent action through a second discriminator.
+    if (typeof raw !== "object" || raw === null || Array.isArray(raw) ||
+      ("type" in raw && "kind" in raw)) return;
+    if (options.managedHost) { await ready; await projectBinding; }
+    if (disposed) return;
     // ---- LIVE agent routing (product mode only) ---------------------------
     //
     // In product mode (a Managed_Host is present), agent gestures reach the live
@@ -345,13 +378,19 @@ export function wireWebviewMessaging(
       // FlowDispatcher.handle applies the intent to the FlowController, whose
       // onChange (wired above) triggers flowDispatcher.hydrateFlow(), so the
       // webview re-hydrates automatically — no manual re-hydrate needed here.
-      void flowDispatcher.handle(flowIntent);
+      await flowDispatcher.handle(flowIntent);
+      await projectBinding;
+      if (!disposed && agentHolder) {
+        await agentHolder.controller.refreshProject();
+        if (flowIntent.type === "openHistoryProject") void agentHolder.controller.recover();
+      }
       return;
     }
     // Untrusted/malformed payload from the webview: drop it defensively.
   });
 
   const messageSubscription = { dispose() { disposed = true; inboundSubscription.dispose(); unsubscribeStatus?.(); unsubscribeRotation?.();
+    flowController.dispose();
     // Abort the live agent SSE subscription only (§B.8 abort ≠ cancel): dispose
     // never calls cancelRun, so the run keeps going in Core and recovery
     // re-watches on reactivation (Requirement 6.3).
@@ -362,7 +401,7 @@ export function wireWebviewMessaging(
   // `selectShellSurface` can decide the top-level surface (Req 12, 13).
   flowDispatcher.hydrateFlow();
 
-  return { controller, dispatcher, messageSubscription, flowController, flowDispatcher, agentReady };
+  return { controller, dispatcher, messageSubscription, flowController, flowDispatcher, agentReady, ready };
 }
 
 /**
@@ -394,7 +433,7 @@ export function buildWebviewHtml(
   nonce: string,
 ): string {
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="ko">
 <head>
   <meta charset="UTF-8" />
   <meta
@@ -2157,11 +2196,8 @@ export class AgentPanelViewProvider implements vscode.WebviewViewProvider {
     // project. This re-binds and replays the run from sequence 0 rather than
     // silently losing it after the window-switch reload. dispose is handled by
     // `messageSubscription.dispose()` (which aborts the SSE subscription only).
-    void agentReady.then((agent) => {
-      if (agent) {
-        void agent.controller.recover();
-      }
-    });
+    // wireWebviewMessaging restores the durable flow before reattaching Agent
+    // streams, so startup cannot race a new Discovery with the previous project.
 
     // On re-reveal after being hidden/disposed, push a fresh full hydrate so the
     // projection is restored from authoritative host state (Req 1.5), a fresh

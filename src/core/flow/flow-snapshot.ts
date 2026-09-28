@@ -88,8 +88,8 @@ export interface FlowSnapshot {
   selectedCandidate: CandidateRevisionReference | null;
   /** The current Learning Spec revision (draft/confirmed), if any. */
   spec: LearningSpecRevision | null;
-  /** The prepared Builder handoff task, once BUILDING. */
-  preparedTask: PreparedBuilderTask | null;
+  /** Safe handoff status only. Absolute workspace paths remain host-side. */
+  preparedTask: Pick<PreparedBuilderTask, "projectId" | "status"> | null;
   /** Whether a discovery-surface op is in flight (drives the Agent_Run_Banner). */
   discoveryInProgress: boolean;
   /** Whether a spec-surface op is in flight (drives the Agent_Run_Banner). */
@@ -162,7 +162,7 @@ export function buildFlowSnapshot(
     basket: [...state.basket],
     selectedCandidate: clone(state.selectedCandidate),
     spec: clone(state.spec),
-    preparedTask: clone(state.preparedTask),
+    preparedTask: state.preparedTask ? { projectId: state.preparedTask.projectId, status: state.preparedTask.status } : null,
     discoveryInProgress: state.discoveryInProgress,
     specInProgress: state.specInProgress,
     notice: lastNotice

@@ -71,4 +71,23 @@ describe("agent shell surface arbitration", () => {
     expect(shell("build-shell").hidden).toBe(true);
     expect(shell("flow-shell").hidden).toBe(true);
   });
+
+  it("clears project-bound Evidence, upgrade fields and drafts only on a project change", () => {
+    const snapshot: FlowSnapshot = { ...discoverySnapshot(), phase: "building", project: { id: "project_a", title: "A", learningGoal: "A", status: "BUILDING" } };
+    client.dispatch({ type: "hydrateFlow", snapshot });
+    client.dispatch({ kind: "agent/hydrate", vm: initialAgentViewModel() });
+    client.dispatch({ kind: "agent/evidence", view: { concepts: [], analysis: [], userUnderstandingTotal: 0, emptyReason: "old project evidence" } });
+    client.dispatch({ kind: "agent/finalUpgrade", candidates: [{ id: "old_trace", basisCount: 1, createdAt: "2026-09-28" }] as never });
+    const drafts = root.queryAll((element) => element.tagName === "TEXTAREA" && element.className.startsWith("agent-"));
+    expect(drafts.length).toBeGreaterThan(0);
+    for (const draft of drafts) draft.value = "previous project draft";
+    const oldSummary = shell("agent-evidence-summary");
+    client.dispatch({ type: "hydrateFlow", snapshot: { ...snapshot } });
+    expect(shell("agent-evidence-summary")).toBe(oldSummary);
+    expect(drafts.every((draft) => draft.value === "previous project draft")).toBe(true);
+    client.dispatch({ type: "hydrateFlow", snapshot: { ...snapshot, project: { ...snapshot.project!, id: "project_b" } } });
+    expect(root.queryAll((element) => element.className === "agent-evidence-summary")).toEqual([]);
+    expect(root.queryAll((element) => element.className === "agent-final-upgrade-candidate")).toEqual([]);
+    expect(drafts.every((draft) => draft.value === "")).toBe(true);
+  });
 });

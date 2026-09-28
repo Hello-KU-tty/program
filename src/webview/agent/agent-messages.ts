@@ -312,7 +312,8 @@ export function parseAgentAction(raw: unknown): AgentAction | null {
     }
 
     case "evidence/retry":
-      return isString(raw.analysisJobId) && isFiniteNumber(raw.expectedJobRevision)
+      return isString(raw.analysisJobId) && typeof raw.expectedJobRevision === "number" &&
+        Number.isSafeInteger(raw.expectedJobRevision) && raw.expectedJobRevision >= 0
         ? { kind, analysisJobId: raw.analysisJobId, expectedJobRevision: raw.expectedJobRevision }
         : null;
 

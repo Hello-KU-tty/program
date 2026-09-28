@@ -47,6 +47,8 @@ export interface BuilderTurnViewModel {
     | "START_ERROR";
   readonly taskId: string | null;
   readonly taskTitle: string | null;
+  /** Durable revision used to fill the existing upgrade form (never a path). */
+  readonly taskRevision?: number | null;
   /** Appended TEXT stream (Core-redacted). */
   readonly transcript: readonly TranscriptLine[];
   /** TOOL rows keyed by toolId (stable), newest last. */

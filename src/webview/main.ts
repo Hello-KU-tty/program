@@ -146,6 +146,18 @@ export function bootstrap(
   flowContainer.hidden = true;
   root.appendChild(flowContainer);
 
+  const flowNotice = root.ownerDocument.createElement("div");
+  flowNotice.className = "flow-notice agent-notice";
+  flowNotice.setAttribute("role", "status");
+  flowNotice.setAttribute("aria-live", "polite");
+  flowNotice.hidden = true;
+  flowContainer.appendChild(flowNotice);
+  const renderFlowNotice = (notice: { kind: string; message: string } | null): void => {
+    flowNotice.textContent = notice?.message ?? "";
+    flowNotice.hidden = !notice?.message;
+    flowNotice.setAttribute("data-kind", notice?.kind ?? "info");
+  };
+
   const flowCallbacks: FlowRenderCallbacks = {
     onStartDiscovery: (input) => {
       client.postFlow({ type: "startDiscovery", input });
@@ -214,18 +226,20 @@ export function bootstrap(
 
   // Flow host -> store -> render. `hydrateFlow` replaces the projection
   // wholesale, decides the surface, and renders all three views (each self-hides
-  // by phase). `flowNotice` has no dedicated notice sink on the flow views yet,
-  // so it is a documented no-op forward here (the next `hydrateFlow` snapshot
-  // carries the authoritative latest notice anyway).
+  // by phase). Notices use the same text-only sink for live messages and reload.
   client.onHostFlowMessage((message) => {
     if (message.type === "hydrateFlow") {
+      if (flowStore.current?.project?.id !== message.snapshot.project?.id) {
+        agentView.resetProject();
+      }
       flowStore.apply(message.snapshot);
       applySurface(flowStore.current);
       discoveryStart.render(message.snapshot);
       discoveryWorkspace.render(message.snapshot);
       specReview.render(message.snapshot);
+      renderFlowNotice(message.snapshot.notice);
     }
-    // message.type === "flowNotice": no-op (no flow-view notice API exists).
+    if (message.type === "flowNotice") renderFlowNotice(message);
   });
 
   // ---- Additive LIVE Builder/Helper agent surface (Req 13, 14) -------------

@@ -19,7 +19,7 @@
  *
  * Requirements: 1.1, 3.3, 4.3, 5.3, 6.2, 6.4, 6.6, 7.2, 8.3.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { AgentSurfaceController } from "../src/core/agent/agent-controller";
 import { ManagedAgentPort } from "../src/adapter/agent/managed-agent-port";
@@ -37,9 +37,212 @@ import {
   fakeNativeQuestion,
 } from "./support/fake-native-worker";
 import { FakeGlobalState } from "./support/fake-global-state";
+import { AgentDispatcher } from "../src/webview/agent/agent-dispatcher";
 
 const PROJECT_ID = "project_1";
 const TASK_ID = "task_1";
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
+const emptyTrace = { projectId: PROJECT_ID, concepts: [], analysis: [], personalization: [], emptyReason: "NO_EVIDENCE" };
+
+describe("project-bound actions ignore stale asynchronous work", () => {
+  it("does not call Core or mutate the view after disposal", async () => {
+    const h = buildHarness();
+    const execute = vi.spyOn(h.client, "execute");
+    const snapshot = vi.spyOn(h.client, "restoreProject");
+    const list = vi.spyOn(h.client, "listRuns");
+    h.controller.dispose();
+    const changes = h.changeCount();
+    h.controller.bindProject("project_other");
+    await Promise.all([
+      h.controller.recover(), h.controller.refreshProject(), h.controller.cancelActive(),
+      h.controller.startBuilder("build"), h.controller.startHelper({ message: "why", origin: "FREE_TEXT" }),
+      h.controller.resolveDecision({ decisionId: "decision_1", selection: { kind: "RECOMMENDATION" }, helperUsed: false }),
+      h.controller.submitNativeAnswerAction({ requestId: "request_1", nativeJobId: "native_job_1", answer: { action: "dismissed" } }),
+      h.controller.openGeneratedWorkspace(TASK_ID), h.controller.launchResult(), h.controller.readEvidence(),
+      h.controller.retryAnalysis("analysis_job_1", 1), h.controller.listFinalUpgradeCandidates(),
+      h.controller.prepareFinalUpgrade({ sourceTaskId: TASK_ID, expectedSourceTaskRevision: 1, personalizationTraceId: "trace_1", userGoal: "goal" }),
+    ]);
+    expect(execute).not.toHaveBeenCalled();
+    expect(snapshot).not.toHaveBeenCalled();
+    expect(list).not.toHaveBeenCalled();
+    expect(h.worker.submitted).toEqual([]);
+    expect(h.changeCount()).toBe(changes);
+  });
+
+  it.each(["evidence/read", "finalUpgrade/list"])("checks binding again before posting %s to the webview", async (kind) => {
+    const h = buildHarness();
+    const posted: unknown[] = [];
+    const dispatcher = new AgentDispatcher(h.controller, (message) => posted.push(message));
+    if (kind === "evidence/read") vi.spyOn(h.controller, "readEvidence").mockImplementation(async () => {
+      queueMicrotask(() => h.controller.bindProject("project_other"));
+      return { concepts: [], analysis: [], userUnderstandingTotal: 0, emptyReason: "OLD_PROJECT" };
+    });
+    else vi.spyOn(h.controller, "listFinalUpgradeCandidates").mockImplementation(async () => {
+      queueMicrotask(() => h.controller.bindProject("project_other"));
+      return [];
+    });
+    await dispatcher.handle({ kind });
+    expect(posted).toEqual([]);
+    h.controller.dispose();
+  });
+
+  for (const transition of ["switch", "switch back", "dispose"] as const) {
+    const invalidate = (controller: AgentSurfaceController) => {
+      if (transition === "dispose") controller.dispose();
+      else {
+        controller.bindProject("project_other");
+        if (transition === "switch back") controller.bindProject(PROJECT_ID);
+      }
+    };
+
+    it.each(["decision", "native answer", "upgrade list"] as const)(`stops %s after a snapshot delayed across ${transition}`, async (action) => {
+      const h = buildHarness({ worker: new FakeNativeWorker({ questions: [fakeNativeQuestion()] }), client: { executeResultByKind: { UI_READ_EVIDENCE_TRACE: { resolve: emptyTrace } } } });
+      const pending = deferred<ReturnType<typeof fakeSnapshot>>();
+      vi.spyOn(h.client, "restoreProject").mockImplementationOnce(() => pending.promise);
+      const posted: unknown[] = [];
+      const dispatcher = new AgentDispatcher(h.controller, (message) => posted.push(message));
+      const result = action === "decision"
+        ? h.controller.resolveDecision({ decisionId: "decision_1", selection: { kind: "OPTION", optionId: "option_a" }, helperUsed: false })
+        : action === "native answer"
+          ? h.controller.submitNativeAnswerAction({ requestId: "request_1", nativeJobId: "native_job_1", answer: { action: "dismissed" } })
+          : dispatcher.handle({ kind: "finalUpgrade/list" });
+      invalidate(h.controller);
+      const changes = h.changeCount();
+      pending.resolve(snapshotWithPendingDecision());
+      await result;
+      expect(h.client.executeKinds).toEqual([]);
+      expect(h.worker.submitted).toEqual([]);
+      expect(posted).toEqual([]);
+      expect(h.changeCount()).toBe(changes);
+      h.controller.dispose();
+    });
+
+    it.each(["workspace", "result", "evidence", "retry", "upgrade error", "decision", "upgrade trace"] as const)(`ignores %s completion after ${transition}`, async (action) => {
+      const h = buildHarness({ client: { restoreProjectResult: { resolve: snapshotWithPendingDecision() }, executeResultByKind: { UI_READ_EVIDENCE_TRACE: { resolve: emptyTrace } } } });
+      const pending = deferred<unknown>();
+      const execute = vi.spyOn(h.client, "execute").mockImplementationOnce(() => pending.promise as never);
+      const posted: unknown[] = [];
+      const dispatcher = new AgentDispatcher(h.controller, (message) => posted.push(message));
+      const result = action === "workspace" ? h.controller.openGeneratedWorkspace(TASK_ID)
+        : action === "result" ? h.controller.launchResult()
+          : action === "evidence" ? dispatcher.handle({ kind: "evidence/read" })
+            : action === "upgrade trace" ? dispatcher.handle({ kind: "finalUpgrade/list" })
+              : action === "decision" ? h.controller.resolveDecision({ decisionId: "decision_1", selection: { kind: "OPTION", optionId: "option_a" }, helperUsed: false })
+            : action === "retry" ? h.controller.retryAnalysis("analysis_job_1", 1)
+              : h.controller.prepareFinalUpgrade({ sourceTaskId: TASK_ID, expectedSourceTaskRevision: 1, personalizationTraceId: "trace_1", userGoal: "goal" });
+      await vi.waitFor(() => expect(execute).toHaveBeenCalledTimes(1));
+      invalidate(h.controller);
+      const changes = h.changeCount();
+      if (action === "upgrade error") pending.reject(clientError("FINAL_UPGRADE_TRACE_NOT_ELIGIBLE"));
+      else pending.resolve(action === "workspace" ? { workspaceDirectory: "/synthetic/previous-project" }
+        : action === "result" ? { status: "RUNNING", url: "http://127.0.0.1:43210/" }
+          : action === "evidence" || action === "upgrade trace" ? emptyTrace : {});
+      await result;
+      expect(h.openedFolders).toEqual([]);
+      expect(h.openedUrls).toEqual([]);
+      expect(posted).toEqual([]);
+      expect(execute).toHaveBeenCalledTimes(1);
+      expect(h.changeCount()).toBe(changes);
+      h.controller.dispose();
+    });
+  }
+});
+
+describe("durable project binding", () => {
+  it("projects the prepared upgrade task and clears previous completion without starting a run", async () => {
+    const h = buildHarness({ client: { restoreProjectResult: { resolve: completedSnapshot() } } });
+    await h.controller.recover();
+    const next = fakeSnapshot({ currentTask: { ...fakeSnapshot().currentTask!, id: "task_upgrade", revision: 3, status: "PENDING", title: "Upgrade" } });
+    vi.spyOn(h.client, "restoreProject").mockResolvedValue(next);
+    await h.controller.prepareFinalUpgrade({ sourceTaskId: TASK_ID, expectedSourceTaskRevision: 1, personalizationTraceId: "trace_1", userGoal: "show the filter steps" });
+    expect(h.controller.getViewModel().builder).toMatchObject({ taskId: "task_upgrade", taskRevision: 3, phase: "IDLE", completionReportId: null });
+    expect(h.startBuilderCount()).toBe(0);
+    expect(h.client.executeKinds).toEqual(["UI_PREPARE_FINAL_UPGRADE_TASK"]);
+    h.controller.dispose();
+  });
+
+  it("handles a cancelled SSE terminal arriving before the cancel response", async () => {
+    const h = buildHarness();
+    let respond!: (run: ReturnType<typeof fakeLocalRun>) => void;
+    vi.spyOn(h.client, "cancelRun").mockImplementation(() => new Promise(resolve => { respond = resolve; }));
+    const turn = h.controller.startBuilder("build");
+    await vi.waitFor(() => expect(h.client.isWatching).toBe(true));
+    const stopping = h.controller.cancelActive();
+    const terminal = fakeLocalRun({ status: "CANCELLED", outcome: "NONE" });
+    h.client.settle(terminal);
+    await turn;
+    expect(h.controller.getViewModel().builder.phase).toBe("CLEANUP");
+    respond(terminal);
+    await stopping;
+    expect(h.controller.getViewModel().builder.phase).toBe("CLEANUP");
+    h.controller.dispose();
+  });
+  it("duplicate Builder gestures share one in-flight request", async () => {
+    const h = buildHarness();
+    const first = h.controller.startBuilder("same");
+    const duplicate = h.controller.startBuilder("same");
+    expect(duplicate).toBe(first);
+    await vi.waitFor(() => expect(h.client.isWatching).toBe(true));
+    expect(h.builderStartRunCount()).toBe(1);
+    h.client.settle(fakeLocalRun({ status: "SUCCEEDED", outcome: "TURN_ENDED" }));
+    await first;
+    h.controller.dispose();
+  });
+
+  it("Builder stop still targets Builder while Helper has an independent watch", async () => {
+    const h = buildHarness();
+    const watches = new Map<string, { signal?: AbortSignal; settle: (run: ReturnType<typeof fakeLocalRun>) => void }>();
+    vi.spyOn(h.client, "startRun").mockImplementation(async input => fakeLocalRun({ id: `run_${input.kind}`, kind: input.kind }));
+    vi.spyOn(h.client, "watchRun").mockImplementation((id, _onEvent, options) =>
+      new Promise(resolve => { watches.set(id, { signal: options?.signal, settle: resolve }); }));
+    const cancel = vi.spyOn(h.client, "cancelRun");
+    const builder = h.controller.startBuilder("build");
+    await vi.waitFor(() => expect(watches.has("run_BUILDER")).toBe(true));
+    const helper = h.controller.startHelper({ message: "question", origin: "FREE_TEXT" });
+    await vi.waitFor(() => expect(watches.has("run_HELPER")).toBe(true));
+    await h.controller.cancelActive();
+    expect(cancel).toHaveBeenCalledWith("run_BUILDER");
+    expect(watches.get("run_HELPER")?.signal?.aborted).toBe(false);
+    h.controller.dispose();
+    for (const [id, watch] of watches) {
+      expect(watch.signal?.aborted).toBe(true);
+      watch.settle(fakeLocalRun({ id, status: "CANCELLED", outcome: "NONE" }));
+    }
+    await Promise.all([builder, helper]);
+  });
+
+  it("restores the task even when no Builder run is active", async () => {
+    const h = buildHarness();
+    await h.controller.recover();
+    expect(h.controller.getViewModel().builder.taskId).toBe(TASK_ID);
+    expect(h.client.isWatching).toBe(false);
+    h.controller.dispose();
+  });
+
+  it("switching projects detaches a running stream without cancelling or leaking old output", async () => {
+    const h = buildHarness();
+    const cancel = vi.spyOn(h.client, "cancelRun");
+    const turn = h.controller.startBuilder("synthetic");
+    await vi.waitFor(() => expect(h.client.isWatching).toBe(true));
+    h.controller.bindProject("project_other");
+    // The controllable fake does not settle on abort; deliver an old terminal
+    // afterwards to prove it cannot contaminate the newly bound surface.
+    h.client.settle(fakeLocalRun({ status: "SUCCEEDED", outcome: "TURN_ENDED" }));
+    await turn;
+    expect(h.client.lastWatchAborted).toBe(true);
+    expect(cancel).not.toHaveBeenCalled();
+    expect(h.controller.getViewModel().builder.taskId).toBeNull();
+    expect(h.controller.getViewModel().builder.phase).toBe("IDLE");
+    h.controller.dispose();
+  });
+});
 
 /** A COMPLETED task + matching completion report → the classifier yields TASK_COMPLETED. */
 function completedSnapshot() {
@@ -463,6 +666,38 @@ describe("AgentSurfaceController — window-switch reload recovery", () => {
 
     expect(h.controller.getViewModel().builder.phase).toBe("IDLE");
     expect(h.client.isWatching).toBe(false);
+  });
+
+  it("restores durable completion on reload without starting or watching an Agent", async () => {
+    const h = buildHarness({ client: { restoreProjectResult: { resolve: completedSnapshot() } } });
+    await h.controller.recover();
+    expect(h.controller.getViewModel().builder).toMatchObject({ phase: "TASK_COMPLETED", taskId: TASK_ID, completionReportId: "report_1" });
+    expect(h.client.isWatching).toBe(false);
+    expect(h.client.executeKinds).toEqual([]);
+    expect(h.startBuilderCount()).toBe(0);
+    h.controller.dispose();
+  });
+
+  it.each(["missing report", "different task", "unapplied decision"])("does not restore false completion: %s", async (condition) => {
+    const snapshot = completedSnapshot();
+    const h = buildHarness({ client: { restoreProjectResult: { resolve: {
+      ...snapshot,
+      completionReport: condition === "missing report" ? null : condition === "different task" ? { ...snapshot.completionReport!, taskId: "task_other" } : snapshot.completionReport,
+      decisions: condition === "unapplied decision" ? [{ request: snapshotWithPendingDecision().pendingDecisions[0], resolution: null, application: null }] : [],
+    } } } });
+    await h.controller.recover();
+    expect(h.controller.getViewModel().builder.phase).not.toBe("TASK_COMPLETED");
+    expect(h.controller.getViewModel().builder.completionReportId).toBeNull();
+    expect(h.startBuilderCount()).toBe(0);
+    h.controller.dispose();
+  });
+
+  it("restores a waiting Decision and its explicit resume action without resuming automatically", async () => {
+    const h = buildHarness({ client: { restoreProjectResult: { resolve: snapshotWithPendingDecision() } } });
+    await h.controller.recover();
+    expect(h.controller.getViewModel().builder.phase).toBe("DECISION_REQUIRED");
+    expect(h.startBuilderCount()).toBe(0);
+    h.controller.dispose();
   });
 });
 

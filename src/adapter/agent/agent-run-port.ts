@@ -27,6 +27,7 @@ import type {
   RunEventView,
   UiRequest,
 } from "../../../vendor/frontend-client";
+import type { RuntimeErrorCode } from "../../core/runtime-errors";
 
 /**
  * Normalized, transport-agnostic agent-port failure code (design §B.1). Raw
@@ -35,6 +36,7 @@ import type {
  * fallbacks.
  */
 export type AgentErrorCode =
+  | RuntimeErrorCode
   | "run_busy"
   | "stale_task_revision"
   | "task_already_completed"

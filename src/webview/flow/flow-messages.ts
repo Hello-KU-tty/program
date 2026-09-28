@@ -21,6 +21,7 @@
 
 import type { FlowSnapshot } from "../../core/flow/flow-snapshot";
 import type { CandidateRevisionReference, DiscoveryInput } from "../../core/flow/flow-types";
+import { MAX_DISCOVERY_CONTEXT_LENGTH } from "../../core/flow/flow-limits";
 
 /**
  * The composer refinement action the learner picked, mapped by the host to the
@@ -90,18 +91,48 @@ const HOST_TO_WEBVIEW_FLOW_TYPES: ReadonlySet<HostToWebviewFlow["type"]> = new S
   "flowNotice",
 ]);
 
-/** The set of valid {@link WebviewToHostFlow} discriminators. */
-const WEBVIEW_TO_HOST_FLOW_TYPES: ReadonlySet<WebviewToHostFlow["type"]> = new Set([
-  "startDiscovery",
-  "toggleBasket",
-  "submitRefinement",
-  "selectCandidate",
-  "refineSpec",
-  "confirmSpec",
-  "draftChangedFlow",
-  "refreshHistory",
-  "openHistoryProject",
-]);
+function isRecord(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function onlyKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  return Object.keys(value).every((key) => keys.includes(key));
+}
+
+function isText(value: unknown, max: number, allowEmpty = false): value is string {
+  return typeof value === "string" && value.length <= max &&
+    (allowEmpty || value.trim().length > 0);
+}
+
+// Both Core UUID-based ids and local deterministic mock ids are supported.
+// This is a wire-shape check, not an authorization or existence check.
+function isId(value: unknown): value is string {
+  return isText(value, 128) && /^[A-Za-z0-9_-]+$/.test(value);
+}
+
+function isReference(value: unknown): value is CandidateRevisionReference {
+  return isRecord(value) && onlyKeys(value, ["candidateId", "revision"]) &&
+    isId(value.candidateId) && typeof value.revision === "number" &&
+    Number.isSafeInteger(value.revision) && value.revision > 0;
+}
+
+function isDiscoveryInput(value: unknown): value is DiscoveryInput {
+  if (!isRecord(value) || !onlyKeys(value, [
+    "learningGoal", "personalNeed", "recentFriction", "interestAreas", "currentLevel", "freeContext",
+  ]) || !isText(value.learningGoal, 240)) return false;
+  for (const field of ["personalNeed", "recentFriction", "freeContext"] as const) {
+    if (value[field] !== undefined && !isText(value[field], MAX_DISCOVERY_CONTEXT_LENGTH)) return false;
+  }
+  if (value.currentLevel !== undefined && ![
+    "NEW", "BEGINNER", "FAMILIAR", "UNSPECIFIED",
+  ].includes(value.currentLevel as string)) return false;
+  return value.interestAreas === undefined || (
+    Array.isArray(value.interestAreas) && value.interestAreas.length <= 12 &&
+    Array.from(value.interestAreas).every((area) => isText(area, 120))
+  );
+}
 
 /**
  * Serializes a flow message to a JSON string for `postMessage`. The messages
@@ -116,22 +147,45 @@ export function serialize(message: HostToWebviewFlow | WebviewToHostFlow): strin
 /**
  * Narrows an unknown value received over the boundary to a
  * {@link WebviewToHostFlow} message, returning `null` when it does not match a
- * known intent. The webview is untrusted input from the host's perspective, so
- * the flow dispatcher validates the discriminator before acting on it. Like
- * {@link file://../messages.ts}, validation is kept at the discriminator level.
+ * known intent with a bounded, allowlisted payload. The webview is untrusted:
+ * TypeScript types do not validate messages at runtime. Domain semantics (such
+ * as feedback arity and current revision) remain controller/Core responsibilities.
  */
 export function parseWebviewToHostFlow(value: unknown): WebviewToHostFlow | null {
-  if (typeof value !== "object" || value === null) {
-    return null;
+  if (!isRecord(value)) return null;
+  let valid = false;
+  switch (value.type) {
+    case "startDiscovery":
+      valid = onlyKeys(value, ["type", "input"]) && isDiscoveryInput(value.input);
+      break;
+    case "toggleBasket":
+      valid = onlyKeys(value, ["type", "ref"]) && isReference(value.ref);
+      break;
+    case "selectCandidate":
+      valid = onlyKeys(value, ["type", "target"]) && isReference(value.target);
+      break;
+    case "submitRefinement":
+      valid = onlyKeys(value, ["type", "action", "text", "targets"]) &&
+        ["narrow", "merge", "new_direction", "show_more"].includes(value.action as string) &&
+        isText(value.text, 4000, true) && Array.isArray(value.targets) &&
+        value.targets.length <= 100 && Array.from(value.targets).every(isReference);
+      break;
+    case "refineSpec":
+      valid = onlyKeys(value, ["type", "message"]) && isText(value.message, 4000);
+      break;
+    case "confirmSpec":
+    case "refreshHistory":
+      valid = onlyKeys(value, ["type"]);
+      break;
+    case "draftChangedFlow":
+      valid = onlyKeys(value, ["type", "field", "text"]) &&
+        isText(value.field, 64) && isText(value.text, 4000, true);
+      break;
+    case "openHistoryProject":
+      valid = onlyKeys(value, ["type", "projectId"]) && isId(value.projectId);
+      break;
   }
-  const type = (value as { type?: unknown }).type;
-  if (
-    typeof type !== "string" ||
-    !WEBVIEW_TO_HOST_FLOW_TYPES.has(type as WebviewToHostFlow["type"])
-  ) {
-    return null;
-  }
-  return value as WebviewToHostFlow;
+  return valid ? value as WebviewToHostFlow : null;
 }
 
 /**

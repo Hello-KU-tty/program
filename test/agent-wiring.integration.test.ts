@@ -98,8 +98,8 @@ class FakeWebview implements MessagingWebview {
   }
 
   /** Simulate the webview posting a gesture to the host. */
-  send(message: unknown): void {
-    this.listener?.(message);
+  send(message: unknown): unknown {
+    return this.listener?.(message);
   }
 }
 
@@ -209,6 +209,18 @@ function agentMessages(posted: readonly PostedMessage[]): AgentHostMessage[] {
     ((m as { kind: string }).kind).startsWith("agent/"),
   );
 }
+
+it("drops mixed flow/agent discriminators without invoking either controller", async () => {
+  const { client, webview, wired } = await wire({});
+  try {
+    await wired.ready;
+    await webview.send({ type: "confirmSpec", kind: "builder/start", message: "must not run" });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(client.startRunInputs).toHaveLength(0);
+  } finally {
+    wired.messageSubscription.dispose();
+  }
+});
 
 /**
  * Assert the security boundary (Requirements 13.1, 14.3): serialize EVERY posted

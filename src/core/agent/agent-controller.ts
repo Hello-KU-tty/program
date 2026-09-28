@@ -30,6 +30,7 @@ import type {
   AgentRunPort,
 } from "../../adapter/agent/agent-run-port";
 import type { NativeInputPort } from "../../adapter/agent/native-input-port";
+import { runtimeErrorMessage } from "../runtime-errors";
 import {
   classifyNativeWorkerStatus,
   createDecisionResolutionRequest,
@@ -88,15 +89,18 @@ export interface AgentControllerDeps {
 
 /**
  * Host-side authoritative core for the agent surfaces. Owns the single
- * {@link AgentViewModel}, one live-watch {@link AbortController} at a time, and
+ * {@link AgentViewModel}, independent Builder/Helper live-watch abort handles, and
  * the worker status / user-input subscriptions established in the constructor.
  */
 export class AgentSurfaceController {
   /** The authoritative, host-owned projection (single source of truth). */
   private vm: AgentViewModel = initialAgentViewModel();
 
-  /** The one live Builder/Helper watch's abort handle (§3.4 abort ≠ cancel). */
-  private abort: AbortController | null = null;
+  /** Independent streams: Helper must never replace the Builder stop target. */
+  private readonly watches: Record<"builder" | "helper", AbortController | null> = { builder: null, helper: null };
+  private builderFlight: Promise<void> | null = null;
+  private helperFlight: Promise<void> | null = null;
+  private readonly analysisRetries = new Set<string>();
 
   /** Worker-status subscription teardown, established in the constructor. */
   private unsubStatus?: () => void;
@@ -125,6 +129,8 @@ export class AgentSurfaceController {
    * {@link refreshNativeQuestions} to scope `listUserInputs`. `null` until then.
    */
   private lastProjectId: string | null = null;
+  private disposed = false;
+  private bindingVersion = 0;
 
   constructor(private readonly deps: AgentControllerDeps) {
     // Worker status + user-input changes are async, non-intent-driven mutations
@@ -142,6 +148,36 @@ export class AgentSurfaceController {
   /** The current safe projection posted to the webview. */
   getViewModel(): AgentViewModel {
     return this.vm;
+  }
+
+  private isCurrentBinding(binding: number): boolean {
+    return !this.disposed && binding === this.bindingVersion;
+  }
+
+  /** Host-only guard for responses crossing one more await in the dispatcher. */
+  captureBinding(): () => boolean {
+    const binding = this.bindingVersion;
+    return () => this.isCurrentBinding(binding);
+  }
+
+  /** Detach a view from the previous project, without cancelling its Core run. */
+  bindProject(projectId: string): void {
+    if (this.disposed || projectId === this.lastProjectId) return;
+    this.bindingVersion++;
+    this.watches.builder?.abort();
+    this.watches.helper?.abort();
+    this.watches.builder = this.watches.helper = null;
+    this.builderFlight = this.helperFlight = null;
+    this.activeRunId = null;
+    this.cancelRequested = false;
+    this.lastProjectId = projectId;
+    this.vm = initialAgentViewModel();
+    this.refreshNativeQuestions();
+    this.deps.onChange();
+  }
+
+  async refreshProject(): Promise<void> {
+    if (!this.disposed && this.lastProjectId) await this.reprojectFromSnapshot(this.lastProjectId);
   }
 
   // --- BEHAVIORS (task 5.2): start a Builder run + supervise its stream ---
@@ -169,8 +205,18 @@ export class AgentSurfaceController {
    *  6. Otherwise record the run id and hand off to {@link superviseRun} with a
    *     full replay-from-start (`after: run.retainedFromSequence`).
    */
-  async startBuilder(message: string): Promise<void> {
-    const projectId = this.deps.globalState.get("bhlr.lastProjectId");
+  startBuilder(message: string): Promise<void> {
+    if (this.builderFlight) return this.builderFlight;
+    if (this.activeRunId || this.disposed) return Promise.resolve();
+    const flight = this.startBuilderTurn(message).finally(() => {
+      if (this.builderFlight === flight) this.builderFlight = null;
+    });
+    this.builderFlight = flight;
+    return flight;
+  }
+
+  private async startBuilderTurn(message: string): Promise<void> {
+    const projectId = this.lastProjectId ?? this.deps.globalState.get("bhlr.lastProjectId");
     if (!projectId) {
       this.lastProjectId = null;
       this.setBuilder({ phase: "START_ERROR" });
@@ -178,8 +224,10 @@ export class AgentSurfaceController {
       return;
     }
     this.lastProjectId = projectId;
+    const binding = this.bindingVersion;
 
     const prep = await this.deps.port.prepareBuilder(projectId);
+    if (this.disposed || binding !== this.bindingVersion) return;
     if (!prep.ok) {
       // prepareBuilder returns 'invalid' for CURRENT_TASK_REQUIRED (agent-error).
       this.setBuilder({ phase: "START_ERROR", errorCode: prep.error.code });
@@ -189,6 +237,7 @@ export class AgentSurfaceController {
 
     // Persist for §3.1 recovery (window-switch reload re-watches this project).
     await this.deps.globalState.update("bhlr.lastProjectId", projectId);
+    if (this.disposed || binding !== this.bindingVersion) return;
 
     this.setBuilder({
       phase: "STARTING",
@@ -203,6 +252,7 @@ export class AgentSurfaceController {
       expectedTaskRevision: prep.value.expectedTaskRevision,
       message,
     });
+    if (this.disposed || binding !== this.bindingVersion) return;
     if (!started.ok) {
       // On a stale revision, re-read durable truth before surfacing the error
       // so the task binding shown reflects the snapshot (Requirement 1.11).
@@ -253,7 +303,11 @@ export class AgentSurfaceController {
     taskId: string,
     surface: "builder" | "helper",
   ): Promise<void> {
-    this.abort = new AbortController();
+    const watchAbort = new AbortController();
+    this.watches[surface]?.abort();
+    this.watches[surface] = watchAbort;
+    const binding = this.bindingVersion;
+    const isCurrent = () => !this.disposed && !watchAbort.signal.aborted && binding === this.bindingVersion;
     if (surface === "builder") {
       this.setBuilder({ phase: "RUNNING" });
     }
@@ -261,18 +315,20 @@ export class AgentSurfaceController {
 
     const res = await this.deps.port.watch(runId, {
       after,
-      signal: this.abort.signal,
-      onEvent: (view) => this.applyEvent(surface, view),
+      signal: watchAbort.signal,
+      onEvent: (view) => { if (isCurrent()) this.applyEvent(surface, view); },
       onRun: (_run) => {
         // Keep last run STATE; phase/errorCode are decided at terminal via
         // classifyTurn. No projection needed mid-stream (design §B.5).
       },
     });
+    if (!isCurrent()) return;
+    if (surface === "builder" && this.activeRunId === runId) this.activeRunId = null;
 
     if (!res.ok) {
       // Abort (panel dispose) is NOT a cancel: leave the phase untouched and
       // let recovery re-watch on reactivation (§3.4 abort ≠ cancel).
-      if (this.abort?.signal.aborted) {
+      if (watchAbort.signal.aborted) {
         return;
       }
       if (surface === "builder") {
@@ -284,6 +340,7 @@ export class AgentSurfaceController {
 
     // Terminal: read the durable After_Snapshot for classification / read-back.
     const snap = await this.deps.port.snapshot(projectId);
+    if (!isCurrent()) return;
     if (!snap.ok) {
       if (surface === "builder") {
         this.setBuilder({ phase: "FAILED" });
@@ -299,6 +356,7 @@ export class AgentSurfaceController {
       // the terminal run's outcome (§B.6). Read-only: no Builder / decision
       // side effects (Requirement 4.2).
       await this.reprojectFromSnapshot(projectId);
+      if (!isCurrent()) return;
       this.applyHelperTerminal(res.value, snap.value, taskId);
       this.deps.onChange();
       return;
@@ -312,6 +370,9 @@ export class AgentSurfaceController {
     // same way (defensive: covers a Core-side cancel we didn't originate).
     if (this.cancelRequested || res.value.status === "CANCELLED") {
       this.cancelRequested = false;
+      // SSE can report cancellation before the cancel HTTP response arrives.
+      // A terminal cancellation must not leave the surface looking RUNNING.
+      this.setBuilder({ phase: this.vm.worker?.stage === "AGENT_ENDED" ? "IDLE" : "CLEANUP" });
       // Leave the phase as-is (CLEANUP set by cancelActive). Just re-project the
       // durable slices so decisions/conversations reflect the terminal snapshot.
       await this.reprojectFromSnapshot(projectId);
@@ -321,6 +382,7 @@ export class AgentSurfaceController {
     // Re-project decisions/conversations/task binding from the snapshot first so
     // the `applied` flags used by the completion gate below are current.
     await this.reprojectFromSnapshot(projectId);
+    if (!isCurrent()) return;
 
     const outcome = classifyTurn(res.value, snap.value, taskId);
     const phase = phaseFromOutcome(outcome);
@@ -341,6 +403,7 @@ export class AgentSurfaceController {
       }
     } else if (outcome.kind === "FAILED") {
       this.setBuilder({ phase, errorCode: outcome.errorCode });
+      this.notice("error", outcome.errorCode, runtimeErrorMessage(outcome.errorCode, "Builder 요청을 완료하지 못했어요. 저장된 상태를 확인한 뒤 다시 시도해 주세요."));
     } else {
       // RUNNING (should not occur post-terminal) / DECISION_REQUIRED (ids are
       // carried by the reprojected vm.decisions) / TURN_ENDED / CANCELLED.
@@ -376,13 +439,16 @@ export class AgentSurfaceController {
    *     panel-dispose abort to `superviseRun` and is unnecessary here.
    */
   async cancelActive(): Promise<void> {
+    if (this.disposed) return;
     const runId = this.currentRunId();
     if (!runId) {
       // Nothing is being supervised — nothing to cancel.
       return;
     }
 
+    const binding = this.bindingVersion;
     const res = await this.deps.port.cancel(runId);
+    if (this.disposed || binding !== this.bindingVersion) return;
     if (!res.ok) {
       this.notify(res.error);
       return;
@@ -392,7 +458,7 @@ export class AgentSurfaceController {
     // native ACK is not in the run result, so remain in CLEANUP until the worker
     // settles (AGENT_ENDED → IDLE via onWorkerStatus).
     this.setBuilder({ phase: "CANCELLED" });
-    this.setBuilder({ phase: "CLEANUP" });
+    this.setBuilder({ phase: this.vm.worker?.stage === "AGENT_ENDED" ? "IDLE" : "CLEANUP" });
 
     // The run is terminal; clear the supervised id but keep phase in CLEANUP.
     this.activeRunId = null;
@@ -434,21 +500,28 @@ export class AgentSurfaceController {
    * (Requirement 3.5).
    */
   async recover(): Promise<void> {
-    const projectId = this.deps.globalState.get("bhlr.lastProjectId");
+    if (this.disposed) return;
+    const projectId = this.lastProjectId ?? this.deps.globalState.get("bhlr.lastProjectId");
     if (!projectId) {
       // No persisted project → nothing to recover; leave the surface IDLE.
       return;
     }
     this.lastProjectId = projectId;
+    const binding = this.bindingVersion;
+    await this.reprojectFromSnapshot(projectId);
+    if (this.disposed || binding !== this.bindingVersion || this.activeRunId) return;
 
     const active = await this.deps.port.listActiveBuilderRun(projectId);
+    if (this.disposed || binding !== this.bindingVersion || this.activeRunId) return;
     if (!active.ok) {
       // Could not list runs; surface a notice and leave the phase IDLE.
       this.notify(active.error);
       return;
     }
     if (!active.value) {
-      // No active BUILDER run for this project → leave the surface IDLE.
+      // Restore durable completion/Decision state, never fabricate a run or
+      // restart an Agent. Read after the active-run check to avoid a stale task.
+      await this.reprojectFromSnapshot(projectId, true);
       return;
     }
 
@@ -457,6 +530,7 @@ export class AgentSurfaceController {
     this.deps.onChange();
 
     const task = await this.deps.port.prepareBuilder(projectId);
+    if (this.disposed || binding !== this.bindingVersion || this.activeRunId) return;
     if (!task.ok) {
       // Cannot re-read the durable task binding to rebind the run. Prefer
       // dropping back to IDLE with a notice over stranding it in RECOVERING.
@@ -507,7 +581,21 @@ export class AgentSurfaceController {
    *     full replay-from-start (`after: run.retainedFromSequence`); the terminal
    *     read-back is done by {@link applyHelperTerminal}.
    */
-  async startHelper(input: {
+  startHelper(input: {
+    message: string;
+    origin: "FREE_TEXT" | "QUICK_ACTION";
+    decisionId?: string;
+  }): Promise<void> {
+    if (this.helperFlight) return this.helperFlight;
+    if (this.disposed) return Promise.resolve();
+    const flight = this.startHelperTurn(input).finally(() => {
+      if (this.helperFlight === flight) this.helperFlight = null;
+    });
+    this.helperFlight = flight;
+    return flight;
+  }
+
+  private async startHelperTurn(input: {
     message: string;
     origin: "FREE_TEXT" | "QUICK_ACTION";
     decisionId?: string;
@@ -519,11 +607,13 @@ export class AgentSurfaceController {
       return;
     }
     this.lastProjectId = projectId;
+    const binding = this.bindingVersion;
 
     // Determine the current task from a fresh durable snapshot for correctness
     // (design §B.6: Helper binds to the current Task; prefer a fresh read over
     // the possibly-stale `vm.builder.taskId`).
     const snap = await this.deps.port.snapshot(projectId);
+    if (this.disposed || binding !== this.bindingVersion) return;
     if (!snap.ok) {
       this.fail("helper", snap.error.code, snap.error.raw);
       return;
@@ -551,6 +641,7 @@ export class AgentSurfaceController {
       message: input.message,
       origin: input.origin,
     });
+    if (this.disposed || binding !== this.bindingVersion) return;
     if (!started.ok) {
       // Requirement 4.6: DECISION_BINDING_MISMATCH / HELPER_EMPTY_RESPONSE /
       // NATIVE_ROLE_CATALOG_UNVERIFIED (and any other rejection) → FAILED.
@@ -559,7 +650,6 @@ export class AgentSurfaceController {
       return;
     }
 
-    this.activeRunId = started.value.id;
     // CRITICAL (Requirement 4.2): this must NEVER trigger startBuilder or a
     // UI_RESOLVE_DECISION — superviseRun('helper') only reads back via
     // applyHelperTerminal.
@@ -592,7 +682,7 @@ export class AgentSurfaceController {
     _after: ProjectSessionSnapshot,
     _taskId: string,
   ): void {
-    if (run.outcome === "HELPER_RECORDED") {
+    if (run.status === "SUCCEEDED" && run.outcome === "HELPER_RECORDED") {
       // Requirement 4.3: recorded. The conversations are projected from the
       // After_Snapshot by reprojectFromSnapshot (called in superviseRun before
       // this); clear any prior error.
@@ -602,6 +692,7 @@ export class AgentSurfaceController {
     // Not recorded (e.g. failed / cancelled): surface FAILED with the run's
     // error code when present (Requirement 4.6).
     this.setHelper({ phase: "FAILED", errorCode: run.errorCode ?? null });
+    this.notice("error", run.errorCode ?? "HELPER_NOT_RECORDED", runtimeErrorMessage(run.errorCode ?? "", "Helper 응답을 저장하지 못했어요. 상태를 확인한 뒤 다시 시도해 주세요."));
   }
 
   // --- BEHAVIOR (task 5.6): resolve a Decision + explicit Builder resume ---
@@ -649,6 +740,8 @@ export class AgentSurfaceController {
     rationale?: string;
     helperUsed: boolean;
   }): Promise<void> {
+    if (this.disposed) return;
+    const binding = this.bindingVersion;
     const projectId =
       this.lastProjectId ?? this.deps.globalState.get("bhlr.lastProjectId");
     if (!projectId) {
@@ -659,6 +752,7 @@ export class AgentSurfaceController {
 
     // Latest durable truth — the request is built against the freshest snapshot.
     const snap = await this.deps.port.snapshot(projectId);
+    if (!this.isCurrentBinding(binding)) return;
     if (!snap.ok) {
       this.notify(snap.error);
       return;
@@ -679,11 +773,13 @@ export class AgentSurfaceController {
     }
 
     const res = await this.deps.port.execute(request);
+    if (!this.isCurrentBinding(binding)) return;
     if (!res.ok) {
       // On DECISION_ALREADY_RESOLVED / LIVE_CONTEXT_STALE (and any rejection),
       // re-read durable truth and re-project BEFORE surfacing the notice so the
       // webview reflects the current resolution state (Requirement 5.6).
       await this.reprojectFromSnapshot(projectId);
+      if (!this.isCurrentBinding(binding)) return;
       this.notify(res.error);
       return;
     }
@@ -692,6 +788,7 @@ export class AgentSurfaceController {
     // it — reprojectFromSnapshot refreshes decisions (resolved:true) and
     // re-hydrates. NO auto-resume of Builder (Requirement 5.3 / Property 2).
     await this.reprojectFromSnapshot(projectId);
+    if (!this.isCurrentBinding(binding)) return;
     this.notice("info", "DECISION_RESOLVED", "");
   }
 
@@ -738,7 +835,9 @@ export class AgentSurfaceController {
     code: string,
     message: string,
   ): void {
-    this.vm = { ...this.vm, notice: { kind, code, message } };
+    if (this.disposed) return;
+    this.vm = { ...this.vm, notice: { kind, code,
+      message: runtimeErrorMessage(code, runtimeErrorMessage(message, message)) } };
     this.deps.onChange();
   }
 
@@ -799,6 +898,7 @@ export class AgentSurfaceController {
    * (Requirement 6.6 / §Correctness Property 5).
    */
   private onWorkerStatus(code: string): void {
+    if (this.disposed) return;
     const view = classifyNativeWorkerStatus(code);
     this.vm = { ...this.vm, worker: view };
     if (view?.stage === "AGENT_ENDED" && this.vm.builder.phase === "CLEANUP") {
@@ -831,6 +931,7 @@ export class AgentSurfaceController {
    * cross into the projection.
    */
   private refreshNativeQuestions(): void {
+    if (this.disposed) return;
     if (this.lastProjectId === null) {
       if (this.vm.nativeQuestions.length > 0) {
         this.vm = { ...this.vm, nativeQuestions: [] };
@@ -922,6 +1023,7 @@ export class AgentSurfaceController {
           readonly subOptionIndices: readonly number[];
         };
   }): Promise<void> {
+    if (this.disposed) return;
     const projectId =
       this.lastProjectId ?? this.deps.globalState.get("bhlr.lastProjectId");
     if (!projectId) {
@@ -943,6 +1045,12 @@ export class AgentSurfaceController {
   }
 
   async submitNativeAnswer(answer: NativeAnswer): Promise<void> {
+    if (this.disposed) return;
+    const binding = this.bindingVersion;
+    if (answer.projectId !== this.lastProjectId) {
+      this.notice("error", "NATIVE_USER_INPUT_STALE", "project binding changed");
+      return;
+    }
     // Locate the referenced question in the host's current in-memory list.
     const q = this.deps.port
       .listUserInputs(answer.projectId)
@@ -959,6 +1067,7 @@ export class AgentSurfaceController {
 
     // Validate the question's binding against the current durable snapshot.
     const snap = await this.deps.port.snapshot(answer.projectId);
+    if (!this.isCurrentBinding(binding)) return;
     if (!snap.ok) {
       this.notify(snap.error);
       return;
@@ -972,6 +1081,7 @@ export class AgentSurfaceController {
     // Submit exactly the user's answer — never auto-answer, never modify
     // (Requirement 7.5 / §Correctness Property 9). `answer` passes through as-is.
     const res = await this.deps.port.submit(answer);
+    if (!this.isCurrentBinding(binding)) return;
     if (!res.ok) {
       // NATIVE_USER_INPUT_STALE / NATIVE_USER_INPUT_RESPONSE_INVALID /
       // NATIVE_NOT_READY → mapped notice (Requirement 7.7).
@@ -1009,6 +1119,8 @@ export class AgentSurfaceController {
    *     `openFolder` (Requirement 8.3). Never message it.
    */
   async openGeneratedWorkspace(taskId: string): Promise<void> {
+    if (this.disposed) return;
+    const binding = this.bindingVersion;
     const projectId =
       this.lastProjectId ?? this.deps.globalState.get("bhlr.lastProjectId");
     if (!projectId) {
@@ -1019,6 +1131,7 @@ export class AgentSurfaceController {
 
     // Idle check (Requirement 8.1): must not open while a Builder run is active.
     const active = await this.deps.port.listActiveBuilderRun(projectId);
+    if (!this.isCurrentBinding(binding)) return;
     if (!active.ok) {
       this.notify(active.error);
       return;
@@ -1035,6 +1148,7 @@ export class AgentSurfaceController {
       projectId,
       taskId,
     });
+    if (!this.isCurrentBinding(binding)) return;
     if (!res.ok) {
       this.notify(res.error);
       return;
@@ -1062,6 +1176,8 @@ export class AgentSurfaceController {
    *     `RUNNING` → `openExternal(url)` host-side (Requirement 9.2).
    */
   async launchResult(): Promise<void> {
+    if (this.disposed) return;
+    const binding = this.bindingVersion;
     const projectId =
       this.lastProjectId ?? this.deps.globalState.get("bhlr.lastProjectId");
     if (!projectId) {
@@ -1076,6 +1192,7 @@ export class AgentSurfaceController {
       idempotencyKey: entityId("idem"),
       projectId,
     });
+    if (!this.isCurrentBinding(binding)) return;
     if (!res.ok) {
       // RESULT_* → result_unavailable (mapped by toAgentError).
       this.notify(res.error);
@@ -1110,6 +1227,8 @@ export class AgentSurfaceController {
    * error surfaces a notice and returns `null`.
    */
   async readEvidence(conceptId?: string): Promise<EvidenceTraceView | null> {
+    if (this.disposed) return null;
+    const binding = this.bindingVersion;
     const projectId =
       this.lastProjectId ?? this.deps.globalState.get("bhlr.lastProjectId");
     if (!projectId) {
@@ -1124,11 +1243,17 @@ export class AgentSurfaceController {
       projectId,
       ...(conceptId ? { conceptId } : {}),
     });
+    if (!this.isCurrentBinding(binding)) return null;
     if (!res.ok) {
       this.notify(res.error);
       return null;
     }
 
+    // Analysis can finish after the Helper run. An explicit evidence refresh
+    // also refreshes the recorded conversation badge, without polling or any
+    // Agent invocation. Do not combine old-project evidence with a new view.
+    await this.reprojectFromSnapshot(projectId);
+    if (!this.isCurrentBinding(binding)) return null;
     // The response is the raw ProjectEvidenceTrace; project it honestly.
     return summarizeEvidenceTrace(projectId, res.value);
   }
@@ -1143,11 +1268,14 @@ export class AgentSurfaceController {
   private async readEvidenceTraceRaw(
     projectId: string,
   ): Promise<ProjectEvidenceTrace | null> {
+    if (this.disposed || projectId !== this.lastProjectId) return null;
+    const binding = this.bindingVersion;
     const res = await this.deps.port.execute({
       ...uiMetadata(),
       kind: "UI_READ_EVIDENCE_TRACE",
       projectId,
     });
+    if (!this.isCurrentBinding(binding)) return null;
     if (!res.ok) {
       this.notify(res.error);
       return null;
@@ -1161,36 +1289,63 @@ export class AgentSurfaceController {
    * Non-throwing. Resolves the project id (absent → notice), `execute`s
    * `UI_RETRY_ANALYSIS` with a fresh Idempotency_Key and the caller's
    * `analysisJobId` / `expectedJobRevision`; on a port error surfaces a notice,
-   * and on success re-reads the evidence trace so the projected view reflects
-   * the retried job.
+   * and on success returns the re-read evidence trace for the dispatcher.
+   * Duplicate clicks for the same bound job revision are ignored while the
+   * mutation/read is pending; a failed attempt permits a new explicit retry.
    */
   async retryAnalysis(
     analysisJobId: string,
     expectedJobRevision: number,
-  ): Promise<void> {
+  ): Promise<EvidenceTraceView | null> {
+    if (this.disposed) return null;
+    const binding = this.bindingVersion;
     const projectId =
       this.lastProjectId ?? this.deps.globalState.get("bhlr.lastProjectId");
     if (!projectId) {
       this.notice("error", "PROJECT_REQUIRED", "no project bound");
-      return;
+      return null;
     }
     this.lastProjectId = projectId;
-
-    const res = await this.deps.port.execute({
-      ...uiMetadata(),
-      kind: "UI_RETRY_ANALYSIS",
-      idempotencyKey: entityId("idem"),
-      projectId,
-      analysisJobId,
-      expectedJobRevision,
-    });
-    if (!res.ok) {
-      this.notify(res.error);
-      return;
+    const key = JSON.stringify([binding, analysisJobId]);
+    if (this.analysisRetries.has(key)) return null;
+    this.analysisRetries.add(key);
+    try {
+      let revision = expectedJobRevision;
+      // The existing EvidenceTraceView omits revisions. Its button uses 0 to
+      // request a durable lookup; never send that sentinel to Core. Explicit
+      // positive revisions keep Core's optimistic concurrency check intact.
+      if (revision === 0) {
+        const jobs = await this.deps.port.execute({
+          ...uiMetadata(), kind: "UI_READ_ANALYSIS_JOBS", projectId,
+          status: "FAILED", limit: 100,
+        });
+        if (!this.isCurrentBinding(binding)) return null;
+        if (!jobs.ok) { this.notify(jobs.error); return null; }
+        const job = jobs.value.find((item) => item.id === analysisJobId && item.status === "FAILED");
+        if (!job) {
+          this.notice("error", "ANALYSIS_JOB_NOT_RETRYABLE", "재시도할 실패한 분석을 찾지 못했어요. 근거를 새로 조회해 주세요.");
+          return null;
+        }
+        revision = job.revision;
+      }
+      const res = await this.deps.port.execute({
+        ...uiMetadata(),
+        kind: "UI_RETRY_ANALYSIS",
+        idempotencyKey: entityId("idem"),
+        projectId,
+        analysisJobId,
+        expectedJobRevision: revision,
+      });
+      if (!this.isCurrentBinding(binding)) return null;
+      if (!res.ok) {
+        this.notify(res.error);
+        return null;
+      }
+      // The read checks the binding again, including project switch-and-back.
+      return await this.readEvidence();
+    } finally {
+      this.analysisRetries.delete(key);
     }
-
-    // On success re-read the trace so the projected analysis status refreshes.
-    await this.readEvidence();
   }
 
   /**
@@ -1202,9 +1357,12 @@ export class AgentSurfaceController {
    * every condition on prepare and rejects stale choices with `FINAL_UPGRADE_*`,
    * so this list is advisory (design §B.14 doc). Non-throwing: on any port error
    * or a missing trace it surfaces a notice (already done by the helpers) and
-   * returns `[]`.
+   * returns `[]`. A detached view returns `null` so the dispatcher does not
+   * clear a newly bound project's candidate list with this old response.
    */
-  async listFinalUpgradeCandidates(): Promise<FinalUpgradeCandidate[]> {
+  async listFinalUpgradeCandidates(): Promise<FinalUpgradeCandidate[] | null> {
+    if (this.disposed) return null;
+    const binding = this.bindingVersion;
     const projectId =
       this.lastProjectId ?? this.deps.globalState.get("bhlr.lastProjectId");
     if (!projectId) {
@@ -1214,12 +1372,14 @@ export class AgentSurfaceController {
     this.lastProjectId = projectId;
 
     const snap = await this.deps.port.snapshot(projectId);
+    if (!this.isCurrentBinding(binding)) return null;
     if (!snap.ok) {
       this.notify(snap.error);
       return [];
     }
 
     const trace = await this.readEvidenceTraceRaw(projectId);
+    if (!this.isCurrentBinding(binding)) return null;
     return trace ? eligibleFinalUpgradeTraces(snap.value, trace) : [];
   }
 
@@ -1241,6 +1401,8 @@ export class AgentSurfaceController {
     personalizationTraceId: string;
     userGoal: string;
   }): Promise<void> {
+    if (this.disposed) return;
+    const binding = this.bindingVersion;
     const projectId =
       this.lastProjectId ?? this.deps.globalState.get("bhlr.lastProjectId");
     if (!projectId) {
@@ -1259,13 +1421,18 @@ export class AgentSurfaceController {
       personalizationTraceId: input.personalizationTraceId,
       userGoal: input.userGoal,
     });
+    if (!this.isCurrentBinding(binding)) return;
     if (!res.ok) {
       // FINAL_UPGRADE_* → final_upgrade_rejected: refresh the candidate list
       // first, then surface the mapped notice (Requirement 11.3).
       await this.listFinalUpgradeCandidates();
+      if (!this.isCurrentBinding(binding)) return;
       this.notify(res.error);
       return;
     }
+    // Preparing a Task is not starting an Agent. Re-read the new current Task
+    // so the previous completion does not leave the next Builder input locked.
+    await this.reprojectFromSnapshot(projectId, true);
   }
 
   /**
@@ -1281,8 +1448,11 @@ export class AgentSurfaceController {
    * `ProjectSessionSnapshot` contract (`decisions[].request/resolution/
    * application`, `helperConversations`, `currentTask`).
    */
-  private async reprojectFromSnapshot(projectId: string): Promise<void> {
+  private async reprojectFromSnapshot(projectId: string, restoreIdleBuilder = false): Promise<void> {
+    if (this.disposed || projectId !== this.lastProjectId) return;
+    const binding = this.bindingVersion;
     const snap = await this.deps.port.snapshot(projectId);
+    if (this.disposed || binding !== this.bindingVersion || projectId !== this.lastProjectId) return;
     if (!snap.ok) {
       this.notify(snap.error);
       return;
@@ -1325,11 +1495,25 @@ export class AgentSurfaceController {
     const currentTask = s.currentTask;
     const taskId = currentTask?.id ?? this.vm.builder.taskId;
     const taskTitle = currentTask?.title ?? this.vm.builder.taskTitle;
+    const previousBuilder = taskId !== this.vm.builder.taskId && !this.activeRunId
+      ? initialAgentViewModel().builder : this.vm.builder;
+    let builder = { ...previousBuilder, taskId, taskTitle, taskRevision: currentTask?.revision ?? null };
+    if (restoreIdleBuilder && !this.activeRunId && !this.builderFlight) {
+      const unapplied = decisions.some(d => d.taskId === taskId && !d.applied) ||
+        s.pendingDecisions.some(d => d.taskId === taskId);
+      const completed = currentTask?.status === "COMPLETED" &&
+        s.completionReport?.taskId === currentTask.id && !unapplied;
+      builder = { ...builder,
+        phase: completed ? "TASK_COMPLETED" : unapplied ? "DECISION_REQUIRED" : "IDLE",
+        completionReportId: completed ? s.completionReport!.id : null,
+        errorCode: null,
+      };
+    }
 
     this.vm = {
       ...this.vm,
       decisions,
-      builder: { ...this.vm.builder, taskId, taskTitle },
+      builder,
       helper: { ...this.vm.helper, conversations },
     };
     this.deps.onChange();
@@ -1348,7 +1532,10 @@ export class AgentSurfaceController {
    * cancel). Called by the provider's `onDidDispose`.
    */
   dispose(): void {
-    this.abort?.abort();
+    this.disposed = true;
+    this.bindingVersion++;
+    this.watches.builder?.abort();
+    this.watches.helper?.abort();
     this.unsubStatus?.();
     this.unsubInputs?.();
   }

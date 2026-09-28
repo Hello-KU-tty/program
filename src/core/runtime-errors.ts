@@ -1,0 +1,36 @@
+/** Fixed UI guidance only. Provider text, request IDs and paths never belong here. */
+export type RuntimeErrorCode = "quota_exceeded" | "auth_required" | "access_denied" |
+  "model_unavailable" | "rate_limited" | "service_unavailable" | "trust_required" |
+  "update_waiting" | "workspace_switch_unconfirmed" | "credit_observation_required";
+
+const failures: Readonly<Record<string, { code: RuntimeErrorCode | "unknown"; message: string }>> = {
+  NATIVE_QUOTA_EXCEEDED: { code: "quota_exceeded", message: "Kiro 사용량 한도에 도달했어요. Kiro에서 사용량을 확인하고 한도가 갱신된 뒤 다시 시도해 주세요." },
+  NATIVE_CREDIT_OBSERVATION_REQUIRED: { code: "credit_observation_required", message: "검증용 모델 요청 전에 최신 계정 사용량과 승인된 한도를 다시 확인해야 해요. 검증 담당자가 사용량 관측을 갱신한 뒤 다시 시도해 주세요. 이전 기록은 계속 조회할 수 있어요." },
+  NATIVE_AUTH_REQUIRED: { code: "auth_required", message: "Kiro 로그인이 필요해요. 로그인 상태를 확인한 뒤 다시 시도해 주세요." },
+  NATIVE_ACCESS_DENIED: { code: "access_denied", message: "현재 Kiro 계정에 이 요청을 실행할 권한이 없어요. 계정 권한이나 조직 정책을 확인해 주세요." },
+  NATIVE_MODEL_UNAVAILABLE: { code: "model_unavailable", message: "현재 Kiro 모델을 사용할 수 없어요. Kiro의 모델 이용 상태를 확인한 뒤 다시 시도해 주세요." },
+  NATIVE_RATE_LIMITED: { code: "rate_limited", message: "Kiro 요청이 잠시 제한됐어요. 잠시 기다린 뒤 다시 시도해 주세요." },
+  NATIVE_SERVICE_UNAVAILABLE: { code: "service_unavailable", message: "Kiro 서비스에 일시적인 문제가 있어요. 잠시 기다린 뒤 다시 시도해 주세요." },
+  NATIVE_RPC_REJECTED: { code: "unknown", message: "Kiro가 요청을 거절했지만 자세한 원인은 확인되지 않았어요. Kiro 상태를 확인한 뒤 다시 시도해 주세요." },
+  NATIVE_WORKSPACE_TRUST_REQUIRED: { code: "trust_required", message: "현재 작업 폴더의 Workspace Trust 승인이 필요해요. Kiro에서 폴더를 확인하고 신뢰한 뒤 다시 시도해 주세요. 이전 프로젝트 기록은 계속 조회할 수 있어요." },
+  CORE_UPDATE_WAITING_FOR_OWNER_EXIT: { code: "update_waiting", message: "이전 버전의 Core를 사용하는 Kiro 창이 종료되기를 기다리고 있어요. 작업을 저장하고 해당 창을 정상적으로 닫은 뒤 ‘Vibe Helper: Retry Core Connection’을 실행해 주세요." },
+  WORKSPACE_SWITCH_UNCONFIRMED: { code: "workspace_switch_unconfirmed", message: "작업 폴더 전환이 확인되지 않았어요. 열린 폴더와 Kiro의 안내를 확인한 뒤 다시 시도해 주세요." },
+};
+
+export function runtimeFailure(code: string): { code: RuntimeErrorCode | "unknown"; message: string } | undefined {
+  return Object.prototype.hasOwnProperty.call(failures, code) ? failures[code] : undefined;
+}
+
+export function safeRuntimeCode(value: unknown): string {
+  return typeof value === "string" && /^[A-Z][A-Z0-9_]{0,99}$/.test(value) ? value : "UNKNOWN";
+}
+
+export function runtimeErrorMessage(code: string, fallback: string): string {
+  const known = runtimeFailure(code);
+  if (known) return known.message;
+  if (code === "CORE_PREPARING" || code === "STARTING" || code === "IDLE") return "Core 연결을 준비하고 있어요.";
+  if (code === "DISCOVERY_RUN_ACTIVE_STOP_OR_WAIT") return "이미 후보 생성 작업이 진행 중이에요. 완료를 기다리거나 작업을 중지한 뒤 다시 시도해 주세요.";
+  if (code === "RUN_NOT_FOUND_RESTORE_PROJECT" || code === "PREVIEW_ATTEMPT_UNKNOWN_RESTORE_PROJECT") return "이전 요청의 상태를 확인할 수 없어요. 저장된 프로젝트를 확인한 뒤 다시 시도해 주세요.";
+  if (code === "CANCELLED") return "후보 생성을 중지했어요. 같은 입력으로 다시 시도할 수 있어요.";
+  return fallback;
+}

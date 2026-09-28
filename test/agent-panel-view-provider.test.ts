@@ -162,6 +162,7 @@ describe("buildWebviewHtml", () => {
     );
 
     expect(html).toContain('<div id="app"></div>');
+    expect(html).toContain('<html lang="ko">');
     expect(html).toContain('src="vscode-webview://abc/dist/webview/main.js"');
     expect(html).toContain("Content-Security-Policy");
     expect(html).toContain("script-src 'nonce-TESTNONCE123'");

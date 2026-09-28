@@ -512,6 +512,14 @@ describe("parseAgentAction - evidence/retry (task 1.3)", () => {
     ).toBeNull();
   });
 
+  it.each([-1, 0.5, Number.MAX_SAFE_INTEGER + 1])("rejects unsafe retry revision %s", (revision) => {
+    expect(parseAgentAction({ kind: "evidence/retry", analysisJobId: "job-1", expectedJobRevision: revision })).toBeNull();
+  });
+
+  it("accepts revision 0 as the host lookup sentinel", () => {
+    expect(parseAgentAction({ kind: "evidence/retry", analysisJobId: "job-1", expectedJobRevision: 0 })).not.toBeNull();
+  });
+
   it("rejects a missing/non-finite expectedJobRevision", () => {
     expect(parseAgentAction({ kind: "evidence/retry", analysisJobId: "aj" })).toBeNull();
     expect(
