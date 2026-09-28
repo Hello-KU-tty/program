@@ -209,3 +209,10 @@ describe("classifyTurn", () => {
     }
   });
 });
+
+describe("reduceEvent — TOOL errorCode (B9)", () => {
+  it("carries the safe per-tool code into the row", () => {
+    const vm = reduceEvent(emptyTurn(), toolView({ tool: "read", status: "FAILED", errorCode: "NATIVE_FILE_NOT_FOUND" }));
+    expect(vm.toolRows[0]).toMatchObject({ status: "FAILED", errorCode: "NATIVE_FILE_NOT_FOUND" });
+  });
+});

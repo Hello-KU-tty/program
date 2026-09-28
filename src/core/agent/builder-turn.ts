@@ -62,6 +62,7 @@ export function reduceEvent(
         coreAction: view.coreAction,
         output: view.output,
         truncated: view.truncated,
+        errorCode: view.errorCode ?? null,
       };
       const idx = vm.toolRows.findIndex((r) => r.key === key);
       const toolRows =

@@ -78,6 +78,11 @@ export interface ToolRowViewModel {
   /** Bounded, Core-redacted output. Render as text only. */
   readonly output: string | null;
   readonly truncated: boolean;
+  /**
+   * Safe fixed code for this tool call, if any (e.g. `NATIVE_FILE_NOT_FOUND`
+   * for a read that found no file). The row status stays as reported.
+   */
+  readonly errorCode: string | null;
 }
 
 /** One appended transcript line, keyed by run event sequence. */

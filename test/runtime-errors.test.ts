@@ -101,3 +101,14 @@ describe("native worker window guidance (display only)", () => {
     expect(workerStatusGuidance("toString")).toBeUndefined();
   });
 });
+
+describe("backend B7/B8 worker guidance", () => {
+  it("distinguishes timeout and lockfile guard denials", () => {
+    expect(workerStatusGuidance("PERMISSION_GUARD_BUILDER_SHELL_TIMEOUT_INTEGER_REQUIRED")).toContain("제한 시간");
+    expect(workerStatusGuidance("PERMISSION_GUARD_BUILDER_SHELL_LOCKFILE_MANIFEST_MISSING")).toContain("의존성 준비");
+    expect(workerStatusGuidance("PERMISSION_GUARD_BUILDER_SHELL_OTHER")).toContain("안전 규칙");
+  });
+  it("explains a closed opening observer", () => {
+    expect(workerStatusGuidance("OPENING_OBSERVER_CLOSED_HELPER")).toContain("새로 시작");
+  });
+});

@@ -62,6 +62,7 @@ function toolRow(overrides: Partial<ToolRowViewModel> = {}): ToolRowViewModel {
     coreAction: null,
     output: null,
     truncated: false,
+    errorCode: null,
     ...overrides,
   };
 }
@@ -509,6 +510,38 @@ describe("next step after a Builder turn", () => {
       expect(hint().textContent).toContain("막힌 작업");
       view.render(vmWithBuilder({ phase: "TASK_COMPLETED" }));
       expect(hint().hidden).toBe(true);
+    } finally { restore(); }
+  });
+});
+
+describe("backend B8/B9 tool guidance", () => {
+  it("shows a missing file as 파일 없음 and does not count it as a failure", () => {
+    const { root, view, restore } = mount();
+    try {
+      view.render(vmWithBuilder({ toolRows: [
+        toolRow({ key: "a", tool: "read", status: "FAILED", errorCode: "NATIVE_FILE_NOT_FOUND" }),
+        toolRow({ key: "b", tool: "shell", status: "FAILED" }),
+      ] }));
+      const statuses = byClass(root, "agent-tool-row-status");
+      expect(statuses[0].textContent).toBe("파일 없음");
+      expect(statuses[0].dataset.status).toBe("NOT_FOUND");
+      expect(statuses[1].textContent).toBe("실패");
+      expect(byClass(root, "agent-tools-summary")[0].textContent).toBe("2개 · 실패 1");
+      expect(byClass(root, "agent-tool-row-hint")).toHaveLength(0);
+    } finally { restore(); }
+  });
+
+  it("names the new tool kinds and explains a refused completion", () => {
+    const { root, view, restore } = mount();
+    try {
+      view.render(vmWithBuilder({ toolRows: [
+        toolRow({ key: "a", tool: "unknown" }),
+        toolRow({ key: "b", tool: "user_input" }),
+        toolRow({ key: "c", tool: "core", relativePath: null, coreAction: "BUILDER_COMPLETE_TASK", status: "FAILED",
+          errorCode: "TASK_VALIDATION_NOT_RUN" }),
+      ] }));
+      expect(byClass(root, "agent-tool-row-tool").map((e) => e.textContent)).toEqual(["기타 도구", "사용자 확인", "Core 작업"]);
+      expect(byClass(root, "agent-tool-row-hint")[0].textContent).toContain("검증을 실행하지 않아");
     } finally { restore(); }
   });
 });

@@ -1989,6 +1989,7 @@ export function buildWebviewHtml(
       color: var(--vscode-descriptionForeground);
     }
     .agent-tool-row-status[data-status="FAILED"] { color: var(--vscode-errorForeground, #f14c4c); }
+    .agent-tool-row-status[data-status="NOT_FOUND"] { color: var(--vscode-descriptionForeground); font-style: italic; }
     .agent-tool-row-status[data-status="SUCCEEDED"] { color: var(--vscode-testing-iconPassed, #3fb950); }
     .agent-tool-row-path,
     .agent-tool-row-command,
@@ -2001,6 +2002,11 @@ export function buildWebviewHtml(
     }
     .agent-tool-row-path,
     .agent-tool-row-command { font-family: var(--vscode-editor-font-family, monospace); }
+    .agent-tool-row-hint {
+      flex: 1 0 100%;
+      font-size: 0.85em;
+      color: var(--vscode-editorWarning-foreground, #cca700);
+    }
     .agent-tool-row-output {
       flex: 1 0 100%;
       margin: 0;

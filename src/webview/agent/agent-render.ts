@@ -142,6 +142,10 @@ const TOOL_LABELS: Readonly<Record<string, string>> = {
   search: "검색",
   shell: "명령 실행",
   core: "Core 작업",
+  think: "생각 정리",
+  fetch: "웹 조회",
+  user_input: "사용자 확인",
+  unknown: "기타 도구",
 };
 
 /** Learner-facing names for Builder Core actions; unknown actions pass through. */
@@ -761,7 +765,8 @@ export class AgentSurfaceView {
    */
   private renderToolRows(rows: readonly ToolRowViewModel[]): void {
     this.lastToolRows = rows;
-    const failed = rows.filter((row) => row.status === "FAILED").length;
+    const failed = rows.filter((row) =>
+      row.status === "FAILED" && row.errorCode !== "NATIVE_FILE_NOT_FOUND").length;
     const collapsible = rows.length > COLLAPSED_TOOL_ROWS;
     const expanded = collapsible && this.toolsExpanded;
 
@@ -823,8 +828,12 @@ export class AgentSurfaceView {
     head.appendChild(tool);
 
     const status = this.el("span", "agent-tool-row-status");
-    status.textContent = TOOL_STATUS_LABELS[toolRow.status];
-    status.dataset.status = toolRow.status;
+    // A read that found no file is usually a probe, not a failure (B9). The
+    // status stays FAILED in the model; only the label and tone change here.
+    const fileMissing = toolRow.errorCode === "NATIVE_FILE_NOT_FOUND";
+    status.textContent = fileMissing ? "파일 없음" : TOOL_STATUS_LABELS[toolRow.status];
+    status.dataset.status = fileMissing ? "NOT_FOUND" : toolRow.status;
+    if (fileMissing) row.title = "프로젝트 구성을 확인하는 중 해당 파일을 찾지 못했어요. 파일이 아직 없을 수 있어요.";
     head.appendChild(status);
     row.appendChild(head);
 
@@ -859,6 +868,14 @@ export class AgentSurfaceView {
       // Bounded, Core-redacted output rendered as text only (Req 2.7).
       output.textContent = toolRow.output;
       row.appendChild(output);
+    }
+
+    // Fixed guidance for a known per-tool code (e.g. a refused completion).
+    const hint = toolRow.errorCode && !fileMissing ? errorGuidance(toolRow.errorCode) : undefined;
+    if (hint) {
+      const hintEl = this.el("div", "agent-tool-row-hint");
+      hintEl.textContent = hint;
+      row.appendChild(hintEl);
     }
 
     if (toolRow.truncated) {

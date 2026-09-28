@@ -99,7 +99,7 @@
 <body>
 <main>
   <h1>실측 체크리스트</h1>
-  <p class="lead">VSIX 0.0.8 · Kiro 1.1.70 / Agent 1.1.158 · Windows x64. 항목별로 <b>통과 / 실패 / 보류</b>를 누르세요. 실패나 보류를 고르면 메모 칸이 열립니다. 상태는 이 브라우저에 저장되고, 결과는 Markdown으로 복사해 백엔드 회신에 붙일 수 있습니다.</p>
+  <p class="lead">VSIX 0.0.9 · Kiro 1.1.70 / Agent 1.1.158 · Windows x64. 항목별로 <b>통과 / 실패 / 보류</b>를 누르세요. 실패나 보류를 고르면 메모 칸이 열립니다. 상태는 이 브라우저에 저장되고, 결과는 Markdown으로 복사해 백엔드 회신에 붙일 수 있습니다.</p>
 
   <div class="summary">
     <div class="bar" id="bar"></div>
@@ -125,7 +125,7 @@ const GROUPS = [
   { title: "사전 준비", desc: "하나라도 어긋나면 이후 단계가 전부 막힙니다.", items: [
     { id: "pre-version", t: "Kiro 1.1.70 / Agent 1.1.158 확인", how: ["Help → About에서 Kiro 버전 확인", "자동 업데이트가 켜져 있으면 1.1.71 이상으로 올라가 다시 막힘"], exp: "버전이 정확히 1.1.70. 다르면 NATIVE_INSTALLATION_* 오류" },
     { id: "pre-quota", t: "Kiro 크레딧이 남아 있는지 확인", how: ["Kiro 계정 사용량 화면에서 이번 달 사용량 확인"], exp: "사용량이 한도 미만. 초과 시 모든 run이 NATIVE_RPC_REJECTED로 실패" },
-    { id: "pre-vsix", t: "확장 0.0.8 설치 확인", how: ["Extensions 목록에서 Builder & Helper Agent Panel 버전 확인"], exp: "0.0.8" },
+    { id: "pre-vsix", t: "확장 0.0.9 설치 확인", how: ["Extensions 목록에서 Builder & Helper Agent Panel 버전 확인"], exp: "0.0.9" },
     { id: "pre-restart", t: "VSIX 설치 후 Kiro 완전 재시작", how: ["Kiro 창을 모두 닫고 1분 뒤 다시 실행", "Reload Window만으로는 이전 Core가 남음 (백엔드 결함 B2)"], exp: "이후 NATIVE_PACKAGED_ROLE_CONFIG_INVALID가 나오지 않음", tag: "known" },
     { id: "pre-window", t: "Kiro 창은 하나만", how: ["Kiro를 다시 연 뒤 창이 여러 개면 하나만 남기고 닫기", "core-data\\workspaces 창이 복원돼 있으면 그 창 하나에서 패널을 열어도 됨"], exp: "같은 폴더 창이 둘이면 NATIVE_ENDPOINT_AMBIGUOUS로 Discovery 실패 (백엔드 B6)", tag: "known" },
     { id: "pre-trust", t: "작업 폴더 두 곳 신뢰", how: ["vibe-test 폴더를 열고 Manage Workspace Trust → Trust", "같은 화면의 Add Folder로 core-data\\workspaces 폴더 추가"], exp: "하단 상태바에 Restricted Mode 없음" },
@@ -167,6 +167,11 @@ const GROUPS = [
     { id: "b-tools", t: "도구 실행 행", how: ["\"도구 실행\" 목록 확인"], exp: "파일은 상대경로로만 표시됨. C:\\… 같은 절대경로는 절대 보이지 않음. 긴 출력은 \"…출력이 잘렸어요\"" },
     { id: "b-classify", t: "완료 판정", how: ["run이 끝날 때 상태 변화 관찰"], exp: "\"결과를 확인하는 중…\"을 거쳐 완료 / 결정 필요 / 이번 차례 끝 / 문제 중 하나로 구분됨. 결정이 남았는데 완료로 표시되면 실패" },
     { id: "b-perm", t: "권한 거부 표시", how: ["거부된 도구가 있었다면 확인"], exp: "\"권한이 거부되어 일부 작업을 수행하지 못했어요.\" 배너" },
+    { id: "b-lang", t: "빌더 한국어 설명", how: ["빌더 진행 상황 읽기"], exp: "진행 설명이 한국어로 나오고 \"규칙 5번\"이나 도구 식별자로 설명하지 않음. 파일명·명령·오류 코드는 원문 유지 (백엔드 B11)", tag: "core" },
+    { id: "b-toollist", t: "도구 목록 접기", how: ["도구가 4개 이상 쌓인 뒤 \"도구 실행\" 영역 확인", "\"이전 N개 더 보기\" 눌렀다가 \"최근 기록만 보기\""], exp: "기본은 최근 3개와 \"N개 · 실패 k\" 요약. 펼치면 스크롤 영역 안에서만 늘어남. 도구 이름이 한글(파일 읽기, Core 작업 등)" },
+    { id: "b-notfound", t: "파일 없음 표시", how: ["빌더가 아직 없는 파일을 확인한 행 찾기"], exp: "빨간 \"실패\" 대신 회색 \"파일 없음\". 요약의 실패 개수에 포함되지 않음 (백엔드 B9)" },
+    { id: "b-validation", t: "검증 후 완료", how: ["빌더가 작업을 완료할 때까지 진행"], exp: "빌드·테스트 없이 완료하려 하면 거절되고 \"검증을 실행하지 않아 작업 완료가 거절됐어요\" 안내. 완료 표시는 검증 후에만 (백엔드 B8)" },
+    { id: "b-guard", t: "명령 차단 안내", how: ["빌더 명령이 막힌 경우 작업 상태 줄 확인"], exp: "제한 시간 형식·의존성 준비 등 원인별 안내가 뜨고, 빌더가 허용된 형식(.\\.kiro\\vibe-tools.cmd pnpm ...)으로 다시 시도" },
   ]},
   { title: "중단과 복원", desc: "중단(취소)과 화면 닫기는 다릅니다.", items: [
     { id: "r-stop", t: "중단", how: ["실행 중 \"중단\" 누르기"], exp: "\"중단했어요\" → \"정리하는 중…\" → \"대기 중\"" },

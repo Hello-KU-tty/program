@@ -36,8 +36,18 @@ export function workerStatusGuidance(code: string): string | undefined {
   if (Object.prototype.hasOwnProperty.call(workerGuidance, code)) return workerGuidance[code];
   // The tool guard denied one Builder command (e.g. lockfile prepare, timeout
   // shape). The run continues; the denial is not a run failure by itself.
+  if (code.startsWith("PERMISSION_GUARD_BUILDER_SHELL_TIMEOUT_")) {
+    return "빌더 명령의 제한 시간 형식이 규칙에 맞지 않아 막혔어요. 빌더는 허용된 형식으로 다시 시도해요.";
+  }
+  if (code.startsWith("PERMISSION_GUARD_BUILDER_SHELL_LOCKFILE_")) {
+    return "의존성 준비 명령이 안전 규칙에 막혔어요. 프로젝트 설정 파일 구성을 확인한 뒤 빌더가 허용된 방법으로 다시 시도해요.";
+  }
   if (code.startsWith("PERMISSION_GUARD_BUILDER_SHELL_")) {
     return "빌더의 명령 하나가 안전 규칙에 막혔어요. 빌더는 허용된 방법으로 계속 진행해요.";
+  }
+  // B7: a failed opening's session was closed; the next explicit request starts fresh.
+  if (code.startsWith("OPENING_OBSERVER_CLOSED_")) {
+    return "실패한 요청의 세션을 정리했어요. 다시 요청하면 새로 시작해요.";
   }
   return undefined;
 }
@@ -55,6 +65,8 @@ export function safeRuntimeCode(value: unknown): string {
  * raw message contract (see agent-error.ts); used by the webview error lines.
  */
 const displayOnlyGuidance: Readonly<Record<string, string>> = {
+  // Core refused a completion report without real validation results (B8).
+  TASK_VALIDATION_NOT_RUN: "빌드·테스트 같은 검증을 실행하지 않아 작업 완료가 거절됐어요. 빌더에게 테스트를 실행한 뒤 완료해 달라고 요청해 주세요.",
   // Rejected before any model call: the role's Core tools never appeared.
   NATIVE_ROLE_CATALOG_UNVERIFIED: "에이전트가 Core 도구를 준비하지 못해 요청을 보내지 않았어요(사용량은 차감되지 않아요). 진행 중인 작업이 없는지 확인하고, 도우미 창이 열려 있다면 닫은 뒤 다시 시도해 주세요.",
 };
