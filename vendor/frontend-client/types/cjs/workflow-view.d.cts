@@ -10,8 +10,8 @@ export type RunEventView = {
     readonly sequence: number;
     /** Stable per tool call within a run when the transport provides one. */
     readonly toolId: string | null;
-    /** `read` / `search` / `write` / `shell` / `core` or a transport title. */
-    readonly tool: string | null;
+    /** Display only: known category, legacy transport title, or explicit `unknown`. */
+    readonly tool: string;
     readonly status: ToolActivityStatus;
     readonly relativePath: string | null;
     readonly command: string | null;

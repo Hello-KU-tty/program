@@ -2865,7 +2865,9 @@ var localRunRequestSchema = import_zod17.z.discriminatedUnion("kind", [
     kind: import_zod17.z.literal("BUILDER"),
     taskId: taskIdSchema,
     expectedTaskRevision: expectedRevisionSchema,
-    message: nonEmptyTextSchema
+    // An explicit frontend start/resume may add no new instruction. The
+    // confirmed Task and durable Decision state still bind the Builder run.
+    message: import_zod17.z.string().trim().max(4e3)
   }),
   import_zod17.z.strictObject({
     ...metadata,

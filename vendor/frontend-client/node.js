@@ -2840,7 +2840,9 @@ var localRunRequestSchema = z17.discriminatedUnion("kind", [
     kind: z17.literal("BUILDER"),
     taskId: taskIdSchema,
     expectedTaskRevision: expectedRevisionSchema,
-    message: nonEmptyTextSchema
+    // An explicit frontend start/resume may add no new instruction. The
+    // confirmed Task and durable Decision state still bind the Builder run.
+    message: z17.string().trim().max(4e3)
   }),
   z17.strictObject({
     ...metadata,

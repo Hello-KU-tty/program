@@ -2929,7 +2929,9 @@ var localRunRequestSchema = z17.discriminatedUnion("kind", [
     kind: z17.literal("BUILDER"),
     taskId: taskIdSchema,
     expectedTaskRevision: expectedRevisionSchema,
-    message: nonEmptyTextSchema
+    // An explicit frontend start/resume may add no new instruction. The
+    // confirmed Task and durable Decision state still bind the Builder run.
+    message: z17.string().trim().max(4e3)
   }),
   z17.strictObject({
     ...metadata,
@@ -3135,14 +3137,23 @@ function projectRunEvent(event) {
   const update = event.update ?? {};
   const exitCode = typeof update.shellExitCode === "number" && Number.isSafeInteger(update.shellExitCode) ? update.shellExitCode : null;
   const coreAction = codeOrNull(update.coreAction) ?? stringOrNull(update.coreAction, 80);
-  const errorCode = codeOrNull(update.coreErrorCode) ?? codeOrNull(update.bridgeErrorCode);
+  const errorCode = codeOrNull(update.coreErrorCode) ?? codeOrNull(update.bridgeErrorCode) ?? (update.nativeErrorCode === "NATIVE_FILE_NOT_FOUND" && update.nativeStatus === "failed" && update.protocolKind === "read" ? "NATIVE_FILE_NOT_FOUND" : null);
   const failed = update.coreIsError === true || update.coreSuccess === false || errorCode !== null || exitCode !== null && exitCode !== 0;
   const toolName = stringOrNull(update.toolName, 40);
+  const categories = {
+    read: "read",
+    search: "search",
+    edit: "write",
+    execute: "shell",
+    think: "think",
+    fetch: "fetch"
+  };
+  const category = Object.hasOwn(categories, String(update.protocolKind)) ? categories[String(update.protocolKind)] : void 0;
   return {
     kind: "TOOL",
     sequence,
     toolId: stringOrNull(update.toolId, 80) ?? stringOrNull(update.toolCallId, 80),
-    tool: toolName ?? (coreAction !== null ? "core" : stringOrNull(update.title, 80)),
+    tool: toolName ?? (coreAction !== null ? "core" : update.nativeToolIdClass === "USER_INPUT" ? "user_input" : category ?? stringOrNull(update.title, 80) ?? "unknown"),
     status: update.summary === "TOOL_OUTPUT_TOO_LARGE" ? "UNKNOWN" : toolStatus(update, failed),
     relativePath: stringOrNull(update.relativePath, 200),
     command: stringOrNull(update.command, 200),

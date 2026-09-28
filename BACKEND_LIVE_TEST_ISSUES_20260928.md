@@ -151,6 +151,20 @@
 
 ---
 
+## B12. (2026-09-29) 프론트 확장 버전 업그레이드 때마다 `PROJECT_TOOLCHAIN_CHANGED_RESTART_REQUIRED`
+
+**현상.** 확장 0.0.6에서 만든 생성 프로젝트의 Builder가, 확장을 0.0.8로 올린 뒤 `PROJECT_TOOLCHAIN_CHANGED_RESTART_REQUIRED`로 실행되지 않습니다. 프로젝트의 `.kiro\vibe-tools.cmd`는 `…\.kiro\extensions\vibe-helper.builder-helper-agent-panel-0.0.6\portable\bin\project-tools.mjs`를 가리킵니다.
+
+**원인 (코드 근거).** `packages/runtime/src/project-toolchain.ts:472` `isProductResourceUpgrade`는 설치 폴더 이름이 `vibe-helper.vibe-helper-portable-core-X.Y.Z` 형식일 때만 업그레이드로 인정합니다. 실제 제품 확장의 폴더(`vibe-helper.builder-helper-agent-panel-X.Y.Z`)는 형식이 달라 항상 false가 되고, 575~578행에서 거절됩니다.
+
+**영향.** 프론트가 kit 적용이나 수정으로 VSIX 버전을 올릴 때마다 기존 모든 생성 프로젝트의 Builder가 막힙니다. 확장 ID를 바꾸면 globalStorage의 Core 데이터를 잃기 때문에 프론트에서 우회할 수 없습니다.
+
+**요청.**
+1. 같은 publisher·같은 확장 이름의 더 높은 버전(예: `vibe-helper.builder-helper-agent-panel-0.0.6` → `0.0.8`)을 업그레이드로 인정해 주세요. downgrade·다른 publisher·다른 설치 위치 거절은 유지하는 것이 좋습니다.
+2. 이 수정을 다음 kit에 포함해 주세요. 그 전까지 프론트는 버전 업그레이드 후 기존 프로젝트를 복구하려면 실행기와 descriptor를 수동으로 지워야 합니다.
+
+---
+
 ## 4. 실측 재개 조건과 질문
 
 - 이 PC의 Kiro 크레딧은 2026-10-01 리셋입니다. 그 전에 실측하려면 overage(유료)를 켜거나 다른 계정을 써야 합니다.
