@@ -90,6 +90,21 @@
 
 ---
 
+## B6. (추가 2026-09-29) 같은 폴더 창이 둘이면 `NATIVE_ENDPOINT_AMBIGUOUS`로 Discovery 실패 — 요청
+
+**현상.** 2026-09-28 22:58(13:58:55Z) Discovery가 `JOB_CLAIMED_DISCOVERY` 직후 `AGENT_FAILED_NATIVE_ENDPOINT_AMBIGUOUS`로 끝났습니다. Core에는 preview가 저장되지 않았습니다(`previewRound: null`, 후보 0). 따라서 PR #8(저장된 후보 재표시)과는 별개의 실패입니다.
+
+**원인 (추정 + 코드 근거).** `examples/kiro-native-host/native-client.cjs:179-189` `uniqueWorkspaceEndpoint`는 `core-data\workspaces`를 연 Kiro 창이 둘 이상이면 거부합니다. 재현 경로는 다음과 같습니다. 해당 세션의 Kiro 로그 파일이 비어 있어 창 목록은 직접 확인하지 못했습니다.
+1. 이전 실패 후 창이 `core-data\workspaces`에 남습니다(B4).
+2. 다음 Kiro 실행 때 그 창이 복원되고, 사용자는 작업 폴더 창을 따로 엽니다.
+3. "후보 만나기"를 누르면 작업 폴더 창도 `core-data\workspaces`로 전환됩니다. 같은 폴더 창이 2개가 되어 AMBIGUOUS가 납니다.
+
+**요청.**
+1. 이미 `core-data\workspaces`를 연 창이 있으면 전환하지 말고 그 창을 쓰거나, worker 자신의 `windowId`와 일치하는 endpoint를 우선 선택해 주세요.
+2. 막아야 한다면 "Kiro 창을 하나만 남기고 다시 시도해 주세요"로 안내할 수 있는 코드를 run `errorCode`에 실어 주세요. 현재 run 목록은 Core 재시작 후 사라져 사유가 남지 않습니다.
+
+---
+
 ## 4. 실측 재개 조건과 질문
 
 - 이 PC의 Kiro 크레딧은 2026-10-01 리셋입니다. 그 전에 실측하려면 overage(유료)를 켜거나 다른 계정을 써야 합니다.
