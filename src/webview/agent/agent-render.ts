@@ -169,6 +169,10 @@ export class AgentSurfaceView {
   private readonly builderSendButton: HTMLButtonElement;
   private readonly builderStopButton: HTMLButtonElement;
   private readonly builderResumeButton: HTMLButtonElement;
+  private readonly workspaceOpenButton: HTMLButtonElement;
+  private readonly resultLaunchButton: HTMLButtonElement;
+  private renderedTaskId: string | null = null;
+  private upgradeTaskKey: string | undefined;
 
   // --- Helper region -------------------------------------------------------
   private readonly helperPhase: HTMLElement;
@@ -182,6 +186,8 @@ export class AgentSurfaceView {
   // --- Decisions / native / worker / notice --------------------------------
   private readonly decisionsRegion: HTMLElement;
   private readonly nativeRegion: HTMLElement;
+  private decisionsRenderKey: string | undefined;
+  private nativeRenderKey: string | undefined;
   private readonly workerStatus: HTMLElement;
   private readonly notice: HTMLElement;
 
@@ -237,6 +243,7 @@ export class AgentSurfaceView {
     builder.appendChild(transcriptLabel);
 
     this.builderTranscript = this.el("div", "agent-transcript");
+    this.labelScrollable(this.builderTranscript, "빌더 진행 내용");
     builder.appendChild(this.builderTranscript);
 
     const toolsLabel = this.el("h2", "agent-section-label");
@@ -286,6 +293,25 @@ export class AgentSurfaceView {
     );
     builderControls.appendChild(this.builderResumeButton);
 
+    this.workspaceOpenButton = this.el("button", "agent-workspace-open") as HTMLButtonElement;
+    this.workspaceOpenButton.type = "button";
+    this.workspaceOpenButton.textContent = "작업 폴더 열기";
+    this.workspaceOpenButton.hidden = true;
+    this.workspaceOpenButton.addEventListener("click", () => {
+      if (this.renderedTaskId && !this.workspaceOpenButton.disabled)
+        this.callbacks.onOpenWorkspace(this.renderedTaskId);
+    });
+    builderControls.appendChild(this.workspaceOpenButton);
+    this.resultLaunchButton = this.el("button", "agent-result-launch") as HTMLButtonElement;
+    this.resultLaunchButton.type = "button";
+    this.resultLaunchButton.textContent = "결과 실행";
+    this.resultLaunchButton.hidden = true;
+    this.resultLaunchButton.addEventListener("click", () => {
+      if (!this.resultLaunchButton.hidden && !this.resultLaunchButton.disabled)
+        this.callbacks.onLaunchResult();
+    });
+    builderControls.appendChild(this.resultLaunchButton);
+
     builderComposer.appendChild(builderControls);
     builder.appendChild(builderComposer);
     container.appendChild(builder);
@@ -318,9 +344,11 @@ export class AgentSurfaceView {
     helper.appendChild(helperTranscriptLabel);
 
     this.helperTranscript = this.el("div", "agent-transcript");
+    this.labelScrollable(this.helperTranscript, "도우미 응답 내용");
     helper.appendChild(this.helperTranscript);
 
     this.helperConversations = this.el("div", "agent-helper-conversations");
+    this.labelScrollable(this.helperConversations, "저장된 도우미 대화");
     helper.appendChild(this.helperConversations);
 
     const helperComposer = this.el("div", "agent-composer");
@@ -482,6 +510,23 @@ export class AgentSurfaceView {
     this.renderNotice(vm.notice);
   }
 
+  /** Clear only project-bound local state when History changes project. */
+  resetProject(): void {
+    this.upgradeTaskKey = undefined;
+    this.renderedTaskId = null;
+    this.workspaceOpenButton.hidden = true;
+    this.resultLaunchButton.hidden = true;
+    this.decisionsRenderKey = undefined;
+    this.nativeRenderKey = undefined;
+    this.decisionsRegion.textContent = "";
+    this.nativeRegion.textContent = "";
+    this.evidenceRegion.textContent = "";
+    this.finalUpgradeList.textContent = "";
+    this.builderComposerInput.value = "";
+    this.helperComposerInput.value = "";
+    for (const input of Object.values(this.finalUpgradeInputs)) input.value = "";
+  }
+
   /**
    * Renders the evidence trace region honestly (Req 10.2 / 10.3 / 10.4):
    * - A concept whose `displayState === 'OBSERVED_ONLY'` is NEVER labelled as
@@ -539,6 +584,11 @@ export class AgentSurfaceView {
       return;
     }
 
+    // A single returned candidate is unambiguous. Filling is not submitting;
+    // an existing user choice and the user's goal are never overwritten.
+    if (candidates.length === 1 && !this.finalUpgradeInputs.personalizationTraceId.value)
+      this.finalUpgradeInputs.personalizationTraceId.value = candidates[0].id;
+
     for (const candidate of candidates) {
       const row = this.el("div", "agent-final-upgrade-candidate");
 
@@ -559,6 +609,15 @@ export class AgentSurfaceView {
   // ==========================================================================
 
   private renderBuilder(builder: BuilderTurnViewModel): void {
+    this.renderedTaskId = builder.taskId;
+    const upgradeTaskKey = JSON.stringify([builder.taskId, builder.taskRevision]);
+    if (upgradeTaskKey !== this.upgradeTaskKey) {
+      this.upgradeTaskKey = upgradeTaskKey;
+      this.finalUpgradeInputs.sourceTaskId.value = builder.taskId ?? "";
+      this.finalUpgradeInputs.expectedSourceTaskRevision.value = builder.taskRevision == null ? "" : String(builder.taskRevision);
+      this.finalUpgradeInputs.personalizationTraceId.value = "";
+      this.finalUpgradeList.textContent = "";
+    }
     this.builderPhase.textContent = BUILDER_PHASE_LABELS[builder.phase];
 
     // Task title.
@@ -621,8 +680,13 @@ export class AgentSurfaceView {
       builder.phase === "CLASSIFYING" ||
       builder.phase === "RECOVERING" ||
       builder.phase === "CLEANUP";
-    this.builderComposerInput.disabled = inFlight;
-    this.builderSendButton.disabled = inFlight;
+    const completed = builder.phase === "TASK_COMPLETED";
+    this.builderComposerInput.disabled = inFlight || completed;
+    this.builderSendButton.disabled = inFlight || completed;
+    this.workspaceOpenButton.hidden = !builder.taskId;
+    this.workspaceOpenButton.disabled = inFlight || !builder.taskId;
+    this.resultLaunchButton.hidden = !completed || !builder.taskId;
+    this.resultLaunchButton.disabled = inFlight || !builder.taskId;
   }
 
   /**
@@ -672,6 +736,7 @@ export class AgentSurfaceView {
 
     if (toolRow.output) {
       const output = this.el("pre", "agent-tool-row-output");
+      this.labelScrollable(output, "도구 실행 출력");
       // Bounded, Core-redacted output rendered as text only (Req 2.7).
       output.textContent = toolRow.output;
       row.appendChild(output);
@@ -784,6 +849,11 @@ export class AgentSurfaceView {
   // ==========================================================================
 
   private renderDecisions(decisions: readonly DecisionViewModel[]): void {
+    // Streaming Builder/Helper updates must not replace the focused inputs.
+    // Context revisions are host-validated and do not change this form's content.
+    const key = JSON.stringify(decisions.map(({ contextVersion: _version, ...form }) => form));
+    if (key === this.decisionsRenderKey) return;
+    this.decisionsRenderKey = key;
     this.decisionsRegion.textContent = "";
     for (const decision of decisions) {
       this.decisionsRegion.appendChild(this.buildDecision(decision));
@@ -823,6 +893,7 @@ export class AgentSurfaceView {
     const rationaleInput = this.el("textarea", "agent-decision-rationale") as HTMLTextAreaElement;
     rationaleInput.setAttribute("aria-label", "결정 이유");
     rationaleInput.rows = 2;
+    rationaleInput.disabled = decision.resolved;
     rationaleField.appendChild(rationaleLabel);
     rationaleField.appendChild(rationaleInput);
     block.appendChild(rationaleField);
@@ -849,7 +920,9 @@ export class AgentSurfaceView {
       const choose = this.el("button", "agent-decision-choose") as HTMLButtonElement;
       choose.type = "button";
       choose.textContent = "이걸로 정하기";
+      choose.disabled = decision.resolved;
       choose.addEventListener("click", () => {
+        if (decision.resolved) return;
         this.callbacks.onResolveDecision(
           decision.decisionId,
           { kind: "OPTION", optionId: option.id },
@@ -870,7 +943,9 @@ export class AgentSurfaceView {
     ) as HTMLButtonElement;
     acceptRecommended.type = "button";
     acceptRecommended.textContent = "추천대로 하기";
+    acceptRecommended.disabled = decision.resolved;
     acceptRecommended.addEventListener("click", () => {
+      if (decision.resolved) return;
       this.callbacks.onResolveDecision(
         decision.decisionId,
         { kind: "RECOMMENDATION" },
@@ -887,6 +962,7 @@ export class AgentSurfaceView {
     const customInput = this.el("textarea", "agent-decision-custom") as HTMLTextAreaElement;
     customInput.setAttribute("aria-label", "직접 제안");
     customInput.rows = 2;
+    customInput.disabled = decision.resolved;
     customField.appendChild(customLabel);
     customField.appendChild(customInput);
     block.appendChild(customField);
@@ -894,7 +970,9 @@ export class AgentSurfaceView {
     const customSubmit = this.el("button", "agent-decision-custom-submit") as HTMLButtonElement;
     customSubmit.type = "button";
     customSubmit.textContent = "직접 제안으로 정하기";
+    customSubmit.disabled = decision.resolved;
     customSubmit.addEventListener("click", () => {
+      if (decision.resolved) return;
       const proposal = customInput.value;
       if (proposal.trim().length === 0) {
         return;
@@ -931,6 +1009,9 @@ export class AgentSurfaceView {
   // ==========================================================================
 
   private renderNativeQuestions(questions: readonly NativeQuestionViewModel[]): void {
+    const key = JSON.stringify(questions);
+    if (key === this.nativeRenderKey) return;
+    this.nativeRenderKey = key;
     this.nativeRegion.textContent = "";
     for (const question of questions) {
       this.nativeRegion.appendChild(this.buildNativeQuestion(question));
@@ -1168,9 +1249,9 @@ export class AgentSurfaceView {
         : "분석에 실패했어요.";
       block.appendChild(status);
 
-      // Retry affordance (Req 10.5). The controller re-reads the current job
-      // revision; the view sends the last-known job id and revision 0 as the
-      // expected baseline — the host re-checks against the durable snapshot.
+      // Retry affordance (Req 10.5). The projection omits job revisions, so 0
+      // asks the controller to read the current failed job revision. Only that
+      // durable revision is sent to Core's optimistic concurrency check.
       const retry = this.el("button", "agent-evidence-retry") as HTMLButtonElement;
       retry.type = "button";
       retry.textContent = "분석 다시 시도";
@@ -1219,6 +1300,15 @@ export class AgentSurfaceView {
   // ==========================================================================
   // Shared helpers
   // ==========================================================================
+
+  /** Makes an existing scroll region reachable and identifiable by keyboard. */
+  private labelScrollable(element: HTMLElement, label: string): void {
+    element.setAttribute("role", "region");
+    element.setAttribute("aria-label", label);
+    element.setAttribute("tabindex", "0");
+    // Phase changes already use polite status. Do not repeatedly announce the
+    // entire transcript on every streaming render; it remains navigable here.
+  }
 
   /** Builds a labeled single-line text input, appends it, and returns it. */
   private buildTextInput(

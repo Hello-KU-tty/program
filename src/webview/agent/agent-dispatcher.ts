@@ -149,23 +149,27 @@ export class AgentDispatcher {
       }
       case "evidence/read": {
         // Read-style response: post the projected view when present.
+        const isCurrent = this.controller.captureBinding();
         const view = await this.controller.readEvidence(action.conceptId);
-        if (view) {
+        if (view && isCurrent()) {
           this.post({ kind: "agent/evidence", view });
         }
         return;
       }
       case "evidence/retry": {
-        await this.controller.retryAnalysis(
+        const isCurrent = this.controller.captureBinding();
+        const view = await this.controller.retryAnalysis(
           action.analysisJobId,
           action.expectedJobRevision,
         );
+        if (view && isCurrent()) this.post({ kind: "agent/evidence", view });
         return;
       }
       case "finalUpgrade/list": {
         // Read-style response: post the eligible candidate list.
+        const isCurrent = this.controller.captureBinding();
         const candidates = await this.controller.listFinalUpgradeCandidates();
-        this.post({ kind: "agent/finalUpgrade", candidates });
+        if (candidates !== null && isCurrent()) this.post({ kind: "agent/finalUpgrade", candidates });
         return;
       }
       case "finalUpgrade/prepare": {

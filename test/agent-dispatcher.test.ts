@@ -46,6 +46,7 @@ interface RecordedCall {
  * exact routing without a live Core.
  */
 class StubController {
+  captureBinding(): () => boolean { return () => true; }
   readonly calls: RecordedCall[] = [];
   private vm: AgentViewModel = initialAgentViewModel();
 
@@ -110,8 +111,9 @@ class StubController {
   async retryAnalysis(
     analysisJobId: string,
     expectedJobRevision: number,
-  ): Promise<void> {
+  ): Promise<EvidenceTraceView | null> {
     this.record("retryAnalysis", analysisJobId, expectedJobRevision);
+    return this.evidenceView;
   }
 
   async listFinalUpgradeCandidates(): Promise<FinalUpgradeCandidate[]> {

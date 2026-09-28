@@ -70,7 +70,7 @@ describe("toAgentError — exact codes via duck-typed client error", () => {
       const err = toAgentError({ code: raw, message: "detail here" });
       expect(err.code).toBe(expected);
       expect(err.raw).toBe(raw);
-      expect(err.message).toBe(`${raw}: detail here`);
+      expect(err.message).toBe(raw);
     });
   }
 });
@@ -224,14 +224,14 @@ describe("toAgentError — generic Error", () => {
     const err = toAgentError(abort);
     expect(err.code).toBe("timeout");
     expect(err.raw).toBe("AbortError");
-    expect(err.message).toBe("The operation was aborted");
+    expect(err.message).toBe("agent operation failed");
   });
 
   it("free-text Error with default name → unknown, raw UNKNOWN", () => {
     const err = toAgentError(new Error("something odd happened"));
     expect(err.code).toBe("unknown");
     expect(err.raw).toBe("UNKNOWN");
-    expect(err.message).toBe("something odd happened");
+    expect(err.message).toBe("agent operation failed");
   });
 
   it("empty-message Error → unknown with fallback message", () => {

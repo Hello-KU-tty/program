@@ -151,6 +151,29 @@ describe("SpecReview (task 12.3)", () => {
     restore();
   });
 
+  it.each([
+    { spec: null },
+    { discoveryInProgress: true },
+    { flowSupport: { mode: "unavailable" as const, experimental: false } },
+  ])("keeps refinement drafts and blocks actions while Spec is not usable: %j", state => {
+    view.render(snapshot());
+    const input = byClass(root, "flow-spec-refine-input")[0];
+    input.value = "보내지 않은 초안";
+    view.render(snapshot(state));
+    expect(input.disabled).toBe(true);
+    expect(byClass(root, "flow-spec-refine-button")[0].disabled).toBe(true);
+    expect(byClass(root, "flow-spec-confirm")[0].disabled).toBe(true);
+    byClass(root, "flow-spec-refine-button")[0].click();
+    byClass(root, "flow-spec-confirm")[0].click();
+    expect(callbacks.refined).toHaveLength(0);
+    expect(callbacks.confirmCount).toBe(0);
+    expect(input.value).toBe("보내지 않은 초안");
+    view.render(snapshot());
+    expect(input.disabled).toBe(false);
+    expect(input.value).toBe("보내지 않은 초안");
+    restore();
+  });
+
   it("renders the product purpose as a prominent one-liner (Req 9.1)", () => {
     view.render(snapshot());
     expect(byClass(root, "flow-spec-purpose")[0].textContent).toBe("할 일을 쉽게 관리하는 앱");

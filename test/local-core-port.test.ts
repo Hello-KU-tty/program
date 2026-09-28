@@ -1,4 +1,6 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+import { FlowController } from "../src/core/flow/flow-controller";
+import { FakeClock } from "./support/fake-clock";
 
 import { LocalCoreDiscoveryPort } from "../src/adapter/flow/local-core-port";
 import type { LocalCoreClient } from "../vendor/frontend-client";
@@ -43,6 +45,313 @@ const INPUT: DiscoveryInput = {
   personalNeed: "매일 쓰는 습관 도구",
   currentLevel: "BEGINNER",
 };
+
+// The same project survives a failed PREVIEW. Only an explicit retry may ask
+// Core for a new run; reads and watch failures must never spend another call.
+function retryHarness() {
+  let snapshot = contractSnapshot({});
+  const runs = [{ id: "run_failed", kind: "DISCOVERY", phase: "PREVIEW",
+    projectId: "project_1", discoverySessionId: "discovery_session_1",
+    status: "FAILED", outcome: "NONE", errorCode: "NATIVE_QUOTA_EXCEEDED" }];
+  const startRun = vi.fn(async (_request: unknown) => {
+    const run = { ...runs[0], id: "run_retry", status: "RUNNING", errorCode: "" };
+    runs.push(run);
+    return run;
+  });
+  const watchRun = vi.fn(async (id: string) => {
+    const run = runs.find(item => item.id === id);
+    if (!run) throw clientError("RUN_NOT_FOUND_RESTORE_PROJECT");
+    if (run.status === "RUNNING") {
+      snapshot = contractSnapshot({ previewRound: contractPreviewRound() });
+      run.status = "SUCCEEDED";
+      run.outcome = "DURABLE_RESULT";
+    }
+    return run;
+  });
+  const startDiscovery = vi.fn(async () => ({ projectId: "project_1", run: runs[0] }));
+  const client = fakeClient({
+    startDiscovery, startRun, watchRun,
+    restoreProject: async () => snapshot,
+    listRuns: async () => runs,
+    getRun: async (id: string) => {
+      const run = runs.find(item => item.id === id);
+      if (!run) throw clientError("RUN_NOT_FOUND_RESTORE_PROJECT");
+      return run;
+    },
+  });
+  return { client, runs, startDiscovery, startRun, watchRun,
+    setSnapshot: (value: ReturnType<typeof contractSnapshot>) => { snapshot = value; } };
+}
+
+describe("read-only in-flight Discovery recovery after a window reload", () => {
+  function harness(phase = "PREVIEW") {
+    const run = { id: "run_pending", projectId: "project_1", kind: "DISCOVERY", phase,
+      status: "RUNNING", outcome: "PENDING", errorCode: null as string | null };
+    let saved = contractSnapshot({});
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    let signal: AbortSignal | undefined;
+    const watchRun = vi.fn(async (_id: string, _event: unknown, options: { signal?: AbortSignal }) => {
+      signal = options.signal;
+      await gate;
+      return { ...run };
+    });
+    const startRun = vi.fn();
+    const startDiscovery = vi.fn();
+    const execute = vi.fn();
+    const cancelRun = vi.fn();
+    const listRuns = vi.fn(async () => [{ ...run }]);
+    const restoreProject = vi.fn(async () => saved);
+    const port = new LocalCoreDiscoveryPort(fakeClient({ watchRun, startRun, startDiscovery, execute,
+      cancelRun, listRuns, restoreProject, getRun: async () => ({ ...run }) }));
+    const clock = new FakeClock();
+    const controller = new FlowController({ discovery: port, spec: port, restore: port }, { clock });
+    return { run, port, controller, clock, watchRun, listRuns, restoreProject,
+      signal: () => signal,
+      finish: () => { saved = contractSnapshot({ previewRound: contractPreviewRound() });
+        run.status = "SUCCEEDED"; run.outcome = "DURABLE_RESULT"; release(); },
+      fail: (status: string, error: string) => { run.status = status; run.errorCode = error; release(); },
+      assertReadOnly: () => { for (const call of [startRun, startDiscovery, execute, cancelRun]) expect(call).not.toHaveBeenCalled(); },
+    };
+  }
+
+  it.each(["PREVIEW", "ENRICH_SELECTED", "ENRICH_ALL", "ROUND", "MERGE", "SPEC"])(
+    "reattaches %s without replaying the previous intent or starting another run", async phase => {
+      const h = harness(phase);
+      expect(await h.controller.restoreSavedProject("project_1")).toBe(true);
+      expect(h.controller.isInProgress(phase === "SPEC" ? "spec" : "discovery")).toBe(true);
+      await h.controller.startDiscovery(INPUT);
+      const beforeFeedback = h.controller.snapshot();
+      expect(await h.controller.submitFeedback({ intent: "SELECT", targets: [{ candidateId: "candidate_1", revision: 1 }] }))
+        .toEqual({ accepted: false });
+      expect(h.controller.snapshot()).toEqual(beforeFeedback);
+      h.assertReadOnly();
+      await vi.waitFor(() => expect(h.watchRun).toHaveBeenCalledOnce());
+      expect(JSON.stringify(h.controller.snapshot())).not.toContain("run_pending");
+      h.finish();
+      await vi.waitFor(() => expect(h.controller.getPreviewRound()?.previews).toHaveLength(10));
+      expect(h.controller.snapshot().discoveryInProgress).toBe(false);
+      expect(h.controller.snapshot().specInProgress).toBe(false);
+      h.assertReadOnly();
+      h.controller.dispose();
+    });
+
+  it("reads active runs before the snapshot so a completing run cannot strand the old screen", async () => {
+    const h = harness();
+    h.listRuns.mockImplementationOnce(async () => {
+      const observed = { ...h.run };
+      h.finish();
+      return [observed];
+    });
+    await h.controller.restoreSavedProject("project_1");
+    expect(h.listRuns.mock.invocationCallOrder[0]).toBeLessThan(h.restoreProject.mock.invocationCallOrder[0]);
+    await vi.waitFor(() => expect(h.controller.getPreviewRound()?.previews).toHaveLength(10));
+    h.assertReadOnly();
+    h.controller.dispose();
+  });
+
+  it.each(["FAILED", "CANCELLED"])("surfaces %s and never auto-retries", async status => {
+    const h = harness();
+    await h.controller.restoreSavedProject("project_1");
+    await vi.waitFor(() => expect(h.watchRun).toHaveBeenCalledOnce());
+    h.fail(status, status === "FAILED" ? "NATIVE_QUOTA_EXCEEDED" : "CANCELLED");
+    await vi.waitFor(() => expect(h.controller.snapshot().notice?.kind).toBe("error"));
+    expect(h.controller.snapshot().discoveryInProgress).toBe(false);
+    expect(h.controller.getProject()?.id).toBe("project_1");
+    h.assertReadOnly();
+    h.controller.dispose();
+  });
+
+  it("aborts its read on dispose and ignores late completion, without cancelling Core", async () => {
+    const h = harness();
+    await h.controller.restoreSavedProject("project_1");
+    await vi.waitFor(() => expect(h.watchRun).toHaveBeenCalledOnce());
+    h.controller.dispose();
+    expect(h.signal()?.aborted).toBe(true);
+    h.finish();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(h.controller.getPreviewRound()).toBeNull();
+    h.assertReadOnly();
+  });
+
+  it("bounds the read-watch and ignores a completion after timeout", async () => {
+    const h = harness();
+    await h.controller.restoreSavedProject("project_1");
+    await vi.waitFor(() => expect(h.watchRun).toHaveBeenCalledOnce());
+    h.clock.advance(30_001);
+    expect(h.signal()?.aborted).toBe(true);
+    expect(h.controller.snapshot().discoveryInProgress).toBe(false);
+    expect(h.controller.snapshot().notice?.message).toContain("시간");
+    h.finish();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(h.controller.getPreviewRound()).toBeNull();
+    h.assertReadOnly();
+  });
+
+  it("project switches abort the old read and a late result cannot overwrite the new project", async () => {
+    const h = harness();
+    await h.controller.restoreSavedProject("project_1");
+    await vi.waitFor(() => expect(h.watchRun).toHaveBeenCalledOnce());
+    h.listRuns.mockResolvedValue([]);
+    const old = h.port.restoreFlow.bind(h.port);
+    h.port.restoreFlow = async (id, env) => {
+      const result = await old(id, env);
+      if (result.ok) result.value.project.id = id;
+      return result;
+    };
+    await h.controller.restoreSavedProject("project_new");
+    expect(h.signal()?.aborted).toBe(true);
+    h.finish();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(h.controller.getProject()?.id).toBe("project_new");
+    expect(h.controller.getPreviewRound()).toBeNull();
+    h.assertReadOnly();
+    h.controller.dispose();
+  });
+});
+
+describe("PREVIEW recovery on the existing project", () => {
+  const request = { discoverySessionId: "discovery_session_1", retry: true };
+
+  it("restores the existing Discovery screen with safe mapped fields and no model call", async () => {
+    const h = retryHarness();
+    h.setSnapshot(contractSnapshot({ previewRound: contractPreviewRound() }));
+    const port = new LocalCoreDiscoveryPort(h.client);
+    const controller = new FlowController({ discovery: port, spec: port, restore: port });
+    expect(await controller.restoreSavedProject("project_1")).toBe(true);
+    expect(controller.snapshot().phase).toBe("discovery_workspace");
+    expect(controller.getProject()?.id).toBe("project_1");
+    expect(controller.getPreviewRound()?.previews).toHaveLength(10);
+    expect(h.startRun).not.toHaveBeenCalled();
+    expect(h.startDiscovery).not.toHaveBeenCalled();
+    expect(JSON.stringify(controller.snapshot())).not.toMatch(/workspacePath|connectionFile|Bearer|token/);
+  });
+
+  it("a late restore cannot overwrite a newer project selection", async () => {
+    const h = retryHarness();
+    const port = new LocalCoreDiscoveryPort(h.client);
+    const original = port.restoreFlow.bind(port);
+    let release!: () => void;
+    port.restoreFlow = async (id, env) => {
+      const result = await original(id, env);
+      if (id === "old") await new Promise<void>(resolve => { release = resolve; });
+      if (result.ok) result.value.project.id = id;
+      return result;
+    };
+    const controller = new FlowController({ discovery: port, spec: port, restore: port });
+    const old = controller.restoreSavedProject("old");
+    await vi.waitFor(() => expect(release).toBeDefined());
+    expect(await controller.restoreSavedProject("new")).toBe(true);
+    release();
+    expect(await old).toBe(false);
+    expect(controller.getProject()?.id).toBe("new");
+  });
+
+  it("reproduces failure, retries with latest revision, and replaces the old cached run", async () => {
+    const h = retryHarness();
+    const port = new LocalCoreDiscoveryPort(h.client);
+    await port.startDiscovery({ projectId: "ignored", input: INPUT }, ENV);
+    expect((await port.generatePreviewRound({ discoverySessionId: request.discoverySessionId }, ENV)).ok).toBe(false);
+    h.setSnapshot(contractSnapshot({ discoverySession: contractSession({ revision: 9 }) }));
+    const result = await port.generatePreviewRound(request, { ...ENV, idempotencyKey: "idem_retry" });
+    expect(result.ok).toBe(true);
+    expect(h.startRun).toHaveBeenCalledOnce();
+    expect(h.startRun.mock.calls[0][0]).toMatchObject({ phase: "PREVIEW", projectId: "project_1",
+      discoverySessionId: request.discoverySessionId, expectedSessionRevision: 9, idempotencyKey: "idem_retry" });
+    expect(h.watchRun).toHaveBeenLastCalledWith("run_retry", expect.anything(), expect.anything());
+    expect((await port.generatePreviewRound(request, ENV)).ok).toBe(true);
+    expect(h.startRun).toHaveBeenCalledOnce();
+  });
+
+  it("shares concurrent clicks and never creates two requests", async () => {
+    const h = retryHarness();
+    const port = new LocalCoreDiscoveryPort(h.client);
+    await port.restoreProject("project_1", ENV);
+    const results = await Promise.all([port.generatePreviewRound(request, ENV),
+      port.generatePreviewRound(request, { ...ENV, idempotencyKey: "idem_second_click" })]);
+    expect(results.every(result => result.ok)).toBe(true);
+    expect(h.startRun).toHaveBeenCalledOnce();
+  });
+
+  it("attaches to an active PREVIEW after reload without starting another run", async () => {
+    const h = retryHarness();
+    h.runs[0].status = "RUNNING";
+    const port = new LocalCoreDiscoveryPort(h.client);
+    await port.restoreProject("project_1", ENV);
+    expect((await port.generatePreviewRound(request, ENV)).ok).toBe(true);
+    expect(h.startRun).not.toHaveBeenCalled();
+  });
+
+  it("does not automatically retry a failed, cancelled, or evicted run on read", async () => {
+    for (const status of ["FAILED", "CANCELLED", "EVICTED"]) {
+      const h = retryHarness();
+      h.runs[0].status = status;
+      const port = new LocalCoreDiscoveryPort(h.client);
+      await port.restoreProject("project_1", ENV);
+      if (status === "EVICTED") h.runs.splice(0);
+      expect((await port.generatePreviewRound({ discoverySessionId: request.discoverySessionId }, ENV)).ok).toBe(false);
+      expect(h.startRun).not.toHaveBeenCalled();
+    }
+  });
+
+  it("recovers a durable preview saved by another request despite a cached failure", async () => {
+    const h = retryHarness();
+    const port = new LocalCoreDiscoveryPort(h.client);
+    await port.startDiscovery({ projectId: "ignored", input: INPUT }, ENV);
+    h.setSnapshot(contractSnapshot({ previewRound: contractPreviewRound() }));
+    expect((await port.generatePreviewRound(request, ENV)).ok).toBe(true);
+    expect(h.startRun).not.toHaveBeenCalled();
+  });
+
+  it("never resends a lost acceptance response and recovers on the next user attempt", async () => {
+    const h = retryHarness();
+    const start = h.startRun.getMockImplementation()!;
+    h.startRun.mockImplementationOnce(async (value) => {
+      await start(value);
+      throw clientError("REQUEST_TIMEOUT");
+    });
+    const port = new LocalCoreDiscoveryPort(h.client);
+    await port.restoreProject("project_1", ENV);
+    expect((await port.generatePreviewRound(request, ENV)).ok).toBe(false);
+    expect(h.startRun).toHaveBeenCalledOnce();
+    expect((await port.generatePreviewRound(request, { ...ENV, idempotencyKey: "idem_user_retry" })).ok).toBe(true);
+    expect(h.startRun).toHaveBeenCalledOnce();
+  });
+
+  it("requires both terminal success and a durable result", async () => {
+    const h = retryHarness();
+    h.watchRun.mockImplementation(async (id) => ({ ...h.runs[0], id, status: "SUCCEEDED", outcome: "DURABLE_RESULT" }));
+    const port = new LocalCoreDiscoveryPort(h.client);
+    await port.restoreProject("project_1", ENV);
+    expect((await port.generatePreviewRound(request, ENV)).ok).toBe(false);
+  });
+
+  it("does not retry PREVIEW once a spec exists or a different discovery phase is active", async () => {
+    for (const block of ["spec", "active", "selected"]) {
+      const h = retryHarness();
+      if (block === "spec") h.setSnapshot(contractSnapshot({ learningSpec: contractSpec(2, "CONFIRMED") }));
+      if (block === "selected") h.setSnapshot(contractSnapshot({ discoverySession: contractSession({ status: "SELECTED" }) }));
+      if (block === "active") Object.assign(h.runs[0], { phase: "SPEC", status: "RUNNING" });
+      const port = new LocalCoreDiscoveryPort(h.client);
+      await port.restoreProject("project_1", ENV);
+      expect((await port.generatePreviewRound(request, ENV)).ok).toBe(false);
+      expect(h.startRun).not.toHaveBeenCalled();
+    }
+  });
+
+  it("controller resubmission retains the project and session with the same input", async () => {
+    const h = retryHarness();
+    const port = new LocalCoreDiscoveryPort(h.client);
+    const controller = new FlowController({ discovery: port, spec: port, history: port });
+    await controller.startDiscovery(INPUT);
+    expect(controller.getPreviewRound()).toBeNull();
+    await controller.startDiscovery({ ...INPUT });
+    expect(controller.getPreviewRound()?.previews).toHaveLength(10);
+    expect(h.startDiscovery).toHaveBeenCalledOnce();
+    expect(h.startRun).toHaveBeenCalledOnce();
+    expect(controller.getProject()?.id).toBe("project_1");
+  });
+});
 
 // --- contract-shaped fixture builders (only the fields the mappers read) ---
 

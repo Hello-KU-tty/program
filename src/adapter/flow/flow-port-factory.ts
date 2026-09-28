@@ -147,7 +147,7 @@ export async function createFlowPortsAsync(
     const port = new LocalCoreDiscoveryPort(client);
     // LocalCoreDiscoveryPort implements DiscoveryPort + SpecPort + HistoryPort,
     // so the same instance backs all three roles (guide §6/§10-2).
-    return { ports: { discovery: port, spec: port, history: port }, mode: "live" };
+    return { ports: { discovery: port, spec: port, history: port, restore: port }, mode: "live" };
   } catch (e) {
     // Never throw out of the factory; fall back to the mock with a reason.
     const code = errorCodeOf(e);
@@ -190,7 +190,7 @@ export async function createManagedFlowPorts(hostPromise: Promise<import("../../
     await host.prepare();
     const port = new LocalCoreDiscoveryPort(host.client);
     const status = host.getStatus();
-    return { ports: { discovery: port, spec: port, history: port },
+    return { ports: { discovery: port, spec: port, history: port, restore: port },
       mode: status.native === "WORKER_READY" ? "live" : "unavailable",
       reason: status.nativeErrorCode ?? undefined };
   } catch (error) {

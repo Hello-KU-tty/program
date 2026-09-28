@@ -177,9 +177,8 @@ export class FlowDispatcher {
         return;
       }
       case "openHistoryProject": {
-        // Read-only (guide §6/§10-2): restore a safe summary only. No run is
-        // started, nothing is mutated, discovery is NOT auto-triggered.
-        await this.controller.restoreHistoryProject(msg.projectId);
+        // Read-only Core operation: restore the existing screen, never a run.
+        await this.controller.restoreSavedProject(msg.projectId);
         return;
       }
       default: {

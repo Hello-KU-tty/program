@@ -38,6 +38,7 @@ import {
   LocalClientError,
 } from "../../../vendor/frontend-client";
 import type { LocalCoreClient } from "../../../vendor/frontend-client";
+import { runtimeFailure, safeRuntimeCode } from "../../core/runtime-errors";
 import type {
   CandidateRevisionReference,
   CandidateRound,
@@ -67,6 +68,7 @@ import type {
   PortError,
   PortResult,
   RequestEnvelope,
+  RestoredFlow,
   SpecPort,
 } from "./discovery-port";
 
@@ -110,6 +112,8 @@ type CoreClient = Pick<LocalCoreClient, "health" | "execute" | "startDiscovery" 
 export class LocalCoreDiscoveryPort implements DiscoveryPort, SpecPort, HistoryPort {
   private readonly projects = new Map<string, string>();
   private readonly previews = new Map<string, string>();
+  private readonly previewFlights = new Map<string, Promise<PortResult<PreviewRound>>>();
+  private readonly previewAttemptKeys = new Map<string, string>();
   constructor(private readonly client: CoreClient) {}
 
   private remember(snapshot: Snapshot): Snapshot {
@@ -154,11 +158,48 @@ export class LocalCoreDiscoveryPort implements DiscoveryPort, SpecPort, HistoryP
       return ok(contractToProgramSession(snapshot.discoverySession));
     } catch (e) { return err(...classify(e, "startDiscovery failed")); }
   }
-  async generatePreviewRound(req: { discoverySessionId: string }, _env: RequestEnvelope): Promise<PortResult<PreviewRound>> {
+  generatePreviewRound(req: { discoverySessionId: string; retry?: boolean }, env: RequestEnvelope): Promise<PortResult<PreviewRound>> {
+    const existing = this.previewFlights.get(req.discoverySessionId);
+    if (existing) return existing;
+    const flight = this.readOrRetryPreview(req, env).finally(() => {
+      if (this.previewFlights.get(req.discoverySessionId) === flight) this.previewFlights.delete(req.discoverySessionId);
+    });
+    this.previewFlights.set(req.discoverySessionId, flight);
+    return flight;
+  }
+  private async readOrRetryPreview(req: { discoverySessionId: string; retry?: boolean }, env: RequestEnvelope): Promise<PortResult<PreviewRound>> {
     try {
-      const runId = this.previews.get(req.discoverySessionId);
-      if (runId) await this.wait(runId);
-      const snapshot = await this.forSession(req.discoverySessionId);
+      let snapshot = await this.forSession(req.discoverySessionId);
+      const runs = await this.client.listRuns(snapshot.project.id);
+      const active = runs.find(r => r.kind === "DISCOVERY" && ["ACCEPTED", "RUNNING"].includes(r.status));
+      if (active && active.phase !== "PREVIEW") throw new Error("DISCOVERY_RUN_ACTIVE_STOP_OR_WAIT");
+      // Saved results take precedence over an old failed run cache. An active
+      // PREVIEW still has to reach a successful terminal state before display.
+      if (!active && snapshot.discoveryContext?.previewRound) {
+        this.previews.delete(req.discoverySessionId);
+        return ok(contractToProgramPreviewRound(snapshot.discoveryContext.previewRound));
+      }
+      let runId = active?.id;
+      if (!runId && req.retry) {
+        const session = snapshot.discoverySession!;
+        if (session.status !== "ACTIVE" || snapshot.learningSpec || snapshot.selectedCandidate || snapshot.currentTask || snapshot.activeTask)
+          throw new Error("PREVIEW_RETRY_NOT_AVAILABLE_RESTORE_PROJECT");
+        // Mark before dispatch: a lost response must never cause the same
+        // attempt to be re-sent, even after Core evicts its transient key map.
+        if (this.previewAttemptKeys.get(session.id) === env.idempotencyKey)
+          throw new Error("PREVIEW_ATTEMPT_UNKNOWN_RESTORE_PROJECT");
+        this.previewAttemptKeys.set(session.id, env.idempotencyKey);
+        const accepted = await this.client.startRun({ kind: "DISCOVERY", phase: "PREVIEW",
+          projectId: snapshot.project.id, discoverySessionId: session.id,
+          expectedSessionRevision: session.revision, idempotencyKey: env.idempotencyKey,
+          enrichAfterPreview: false });
+        runId = accepted.id;
+      }
+      runId ??= this.previews.get(req.discoverySessionId);
+      if (!runId) throw new Error("PREVIEW_RETRY_REQUIRED");
+      this.previews.set(req.discoverySessionId, runId);
+      await this.wait(runId);
+      snapshot = await this.forSession(req.discoverySessionId);
       if (!snapshot.discoveryContext?.previewRound) throw new Error("PREVIEW_NOT_DURABLE");
       return ok(contractToProgramPreviewRound(snapshot.discoveryContext.previewRound));
     } catch (e) { return err(...classify(e, "generatePreviewRound failed")); }
@@ -249,6 +290,52 @@ export class LocalCoreDiscoveryPort implements DiscoveryPort, SpecPort, HistoryP
     try { return ok(contractToProgramRestoredProject(await this.snapshot(projectId))); }
     catch (e) { return err(...classify(e, "restoreProject failed")); }
   }
+  async restoreFlow(projectId: string, _env?: RequestEnvelope): Promise<PortResult<RestoredFlow>> {
+    try {
+      // Read runs FIRST: if a run completes between these two reads, the
+      // snapshot is already current and watchRun can replay its terminal state.
+      // Snapshot-first can lose the only hint that a refresh is still needed.
+      const pending = (await this.client.listRuns(projectId)).find(r =>
+        r.projectId === projectId && r.kind === "DISCOVERY" && ["ACCEPTED", "RUNNING"].includes(r.status));
+      const s = await this.snapshot(projectId);
+      const candidates = new Map<string, ProjectCandidateRevision>();
+      for (const c of [
+        ...(s.discoveryContext?.candidates ?? []),
+        ...(s.discoveryContext?.candidateEnrichments ?? []).map(e => e.candidate),
+        ...(s.selectedCandidate ? [s.selectedCandidate] : []),
+      ]) candidates.set(`${c.id}:${c.revision}`, contractToProgramCandidate(c));
+      return ok({
+        ...(pending ? { pendingDiscovery: { runId: pending.id, phase: pending.phase } } : {}),
+        // Core may retain SPEC_REVIEW until the first Builder output. A prepared
+        // durable Task already makes its suggested surface BUILD; do not send
+        // the user back through confirmation or prepare another Task on reload.
+        project: { id: s.project.id, title: s.project.title, learningGoal: s.project.learningGoal,
+          status: s.suggestedSurface === "BUILD" && s.currentTask && s.project.status !== "COMPLETED" ? "BUILDING" : s.project.status },
+        session: s.discoverySession ? contractToProgramSession(s.discoverySession) : null,
+        previewRound: s.discoveryContext?.previewRound ? contractToProgramPreviewRound(s.discoveryContext.previewRound) : null,
+        rounds: (s.discoveryContext?.rounds ?? []).map(contractToProgramRound),
+        candidates: [...candidates.values()],
+        selectedCandidate: s.selectedCandidate ? { candidateId: s.selectedCandidate.id, revision: s.selectedCandidate.revision } : null,
+        spec: s.learningSpec ? contractToProgramSpec(s.learningSpec) : null,
+      });
+    } catch (e) { return err(...classify(e, "restoreFlow failed")); }
+  }
+
+  async watchDiscovery(projectId: string, runId: string, signal: AbortSignal): Promise<PortResult<RestoredFlow>> {
+    try {
+      signal.throwIfAborted();
+      const run = await this.client.getRun(runId);
+      if (run.projectId !== projectId || run.kind !== "DISCOVERY") throw new Error("RUN_BINDING_MISMATCH");
+      signal.throwIfAborted();
+      const finished = await this.client.watchRun(runId, () => {}, {
+        signal: AbortSignal.any([signal, AbortSignal.timeout(10 * 60_000)]),
+      });
+      signal.throwIfAborted();
+      if (finished.status !== "SUCCEEDED" || finished.outcome !== "DURABLE_RESULT")
+        throw new Error(finished.errorCode ?? (finished.status === "SUCCEEDED" ? "DURABLE_RESULT_REQUIRED" : finished.status));
+      return this.restoreFlow(projectId);
+    } catch (e) { return err(...classify(e, "restoreFlow watch failed")); }
+  }
 }
 
 // --- ok/err constructors ---
@@ -280,20 +367,18 @@ function classify(e: unknown, fallbackMessage: string): [PortError["code"], stri
 /** Map an unknown error to a {@link PortError}. Exported for unit tests. */
 export function toPortError(e: unknown, fallbackMessage: string): PortError {
   if (e instanceof LocalClientError) {
-    return { code: mapClientCode(e.code, e.status), message: `${e.code}: ${e.message}` };
+    const code = safeRuntimeCode(e.code);
+    return { code: mapClientCode(code, e.status), message: code };
   }
   // Duck-typed LocalClientError-like (e.g. cross-realm or fake in tests).
   if (isClientErrorLike(e)) {
-    const message =
-      typeof e.message === "string" && e.message.length > 0
-        ? `${e.code}: ${e.message}`
-        : String(e.code);
+    const message = safeRuntimeCode(e.code);
     return { code: mapClientCode(e.code, e.status), message };
   }
   if (e instanceof Error) {
     // Timeouts surfaced as AbortError / DOMException.
     if (/timeout|timed out|abort/i.test(e.message) || e.name === "AbortError") {
-      return { code: "timeout", message: e.message };
+      return { code: "timeout", message: "REQUEST_TIMEOUT" };
     }
     return { code: mapClientCode(e.message), message: /^[A-Z][A-Z0-9_]{0,99}$/.test(e.message) ? e.message : fallbackMessage };
   }
@@ -318,6 +403,8 @@ function isClientErrorLike(e: unknown): e is ClientErrorLike {
 /** Map a string SDK error code (+ optional HTTP status) to a PortError code. */
 function mapClientCode(code: string, status?: number): PortError["code"] {
   const c = code.toUpperCase();
+  const runtime = runtimeFailure(c);
+  if (runtime) return runtime.code;
   if (status === 409 || c.includes("STALE") || c.includes("REVISION") || c.includes("CONFLICT")) {
     return "revision_conflict";
   }
@@ -635,4 +722,3 @@ function latestRound(snapshot: Snapshot): ContractRound | undefined {
   if (rounds.length === 0) return undefined;
   return rounds.reduce((a, b) => (b.roundIndex > a.roundIndex ? b : a));
 }
-

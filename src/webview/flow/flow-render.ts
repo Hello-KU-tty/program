@@ -24,6 +24,7 @@
  */
 
 import type { FlowSnapshot } from "../../core/flow/flow-snapshot";
+import { runtimeErrorMessage } from "../../core/runtime-errors";
 import type {
   CandidatePreview,
   CandidateRevisionReference,
@@ -37,6 +38,7 @@ import type {
   SpecScopeEntry,
 } from "../../core/flow/flow-types";
 import { refKey } from "../../core/flow/flow-types";
+import { MAX_DISCOVERY_CONTEXT_LENGTH, MAX_FEEDBACK_TARGETS } from "../../core/flow/flow-limits";
 import type { HistoryProjectView } from "../../core/flow/history-types";
 import type { RefinementAction } from "./flow-messages";
 
@@ -179,6 +181,9 @@ export class DiscoveryStartView {
 
   /** True while a discovery op is in flight (mirrors the last snapshot). */
   private discoveryInProgress = false;
+  private unavailable = false;
+
+  private lastInputKey?: string;
 
   constructor(root: HTMLElement, callbacks: FlowRenderCallbacks) {
     this.doc = root.ownerDocument;
@@ -193,6 +198,13 @@ export class DiscoveryStartView {
     const intro = this.el("p", "flow-start-intro");
     intro.textContent = "배우고 싶은 목표를 적어 주세요. 함께 만들 프로젝트 후보를 찾아드릴게요.";
     container.appendChild(intro);
+
+    const dataNotice = this.el("p", "flow-start-intro");
+    dataNotice.setAttribute("id", "flow-data-notice");
+    dataNotice.setAttribute("role", "note");
+    dataNotice.setAttribute("aria-label", "데이터 수집 및 저장 안내");
+    dataNotice.textContent = "학습 활동 기록은 기본 활성화되어 있습니다. 목표·질문·Decision 선택과 이유·작업 및 분석 요약은 Core 전용 폴더의 data/vibe-helper.sqlite에, 생성 코드는 workspaces에 로컬 저장됩니다. 모델 호출 시 필요한 입력과 코드 문맥이 Kiro로 전달됩니다. 알려진 비밀정보는 가리지만 완벽하지 않으므로 토큰·비밀번호·개인정보를 입력하지 마세요. 현재 자동 삭제 및 초기화·내보내기 기능은 제공하지 않습니다.";
+    container.appendChild(dataNotice);
 
     // Native-support banner (guide §10-1) — a small caption near the top. Hidden
     // until a verdict is applied; populated by render() from snapshot.flowSupport
@@ -258,6 +270,7 @@ export class DiscoveryStartView {
     goalLabel.textContent = "학습 목표 (필수)";
     const goalInput = this.el("textarea", "flow-goal-input") as HTMLTextAreaElement;
     goalInput.setAttribute("aria-label", "학습 목표");
+    goalInput.setAttribute("aria-describedby", "flow-data-notice");
     goalInput.setAttribute("placeholder", "예: 리액트로 나만의 할 일 앱을 만들어 보고 싶어요");
     goalInput.rows = 3;
     goalInput.maxLength = MAX_LEARNING_GOAL * 4; // allow over-typing so Req 4.3 notice can show.
@@ -340,28 +353,33 @@ export class DiscoveryStartView {
       return;
     }
 
-    // Restore the retained input on (re-)hydration (Req 13 draft restore). Only
-    // overwrite when out of sync so it does not fight active typing.
-    const input = snapshot.input;
-    const goal = input?.learningGoal ?? "";
-    if (this.goalInput.value !== goal) {
-      this.goalInput.value = goal;
-    }
-    const personalNeed = input?.personalNeed ?? "";
-    if (this.personalNeedInput.value !== personalNeed) {
-      this.personalNeedInput.value = personalNeed;
-    }
-    const friction = input?.recentFriction ?? "";
-    if (this.frictionInput.value !== friction) {
-      this.frictionInput.value = friction;
-    }
-    const level = input?.currentLevel ?? "UNSPECIFIED";
-    if (this.levelSelect.value !== level) {
-      this.levelSelect.value = level;
+    // Worker/History refreshes do not replace an unsent local draft. Restore
+    // only when the durable input or selected project actually changed.
+    const inputKey = JSON.stringify([snapshot.project?.id ?? null, snapshot.input]);
+    if (inputKey !== this.lastInputKey) {
+      this.lastInputKey = inputKey;
+      const input = snapshot.input;
+      const goal = input?.learningGoal ?? "";
+      if (this.goalInput.value !== goal) {
+        this.goalInput.value = goal;
+      }
+      const personalNeed = input?.personalNeed ?? "";
+      if (this.personalNeedInput.value !== personalNeed) {
+        this.personalNeedInput.value = personalNeed;
+      }
+      const friction = input?.recentFriction ?? "";
+      if (this.frictionInput.value !== friction) {
+        this.frictionInput.value = friction;
+      }
+      const level = input?.currentLevel ?? "UNSPECIFIED";
+      if (this.levelSelect.value !== level) {
+        this.levelSelect.value = level;
+      }
     }
 
     // Agent_Run_Banner + submit lock while a discovery op is in flight (Req 4.6).
     this.discoveryInProgress = snapshot.discoveryInProgress;
+    this.unavailable = snapshot.flowSupport.mode === "unavailable";
     this.agentBanner.hidden = !this.discoveryInProgress;
 
     // Native-support banner (guide §10-1) from the non-sensitive verdict.
@@ -437,7 +455,8 @@ export class DiscoveryStartView {
     const support = snapshot.flowSupport;
     if (support.mode === "unavailable") {
       this.supportBanner.hidden = false;
-      this.supportBanner.textContent = "실제 연결 준비/오류: " + (support.reason ?? "CORE_PREPARING") + " · 명령 팔레트에서 Vibe Helper: Retry Core Connection";
+      this.supportBanner.textContent = runtimeErrorMessage(support.reason ?? "CORE_PREPARING",
+        "Core에 연결할 수 없어요. 명령 팔레트에서 ‘Vibe Helper: Retry Core Connection’을 실행해 주세요.");
       return;
     }
     if (support.mode === "live") {
@@ -477,6 +496,7 @@ export class DiscoveryStartView {
     input.setAttribute("aria-label", ariaLabel);
     input.addEventListener("input", () => {
       this.callbacks.onDraftChanged?.(field, input.value);
+      this.refreshValidation();
     });
     wrap.appendChild(label);
     wrap.appendChild(input);
@@ -496,16 +516,23 @@ export class DiscoveryStartView {
     const trimmedLength = value.trim().length;
     const overLimit = value.length > MAX_LEARNING_GOAL;
     const emptyOrWhitespace = trimmedLength === 0;
+    const oversizedContext = [
+      { label: "개인적인 필요", value: this.personalNeedInput.value.trim() },
+      { label: "최근의 어려움", value: this.frictionInput.value.trim() },
+    ].find((field) => field.value.length > MAX_DISCOVERY_CONTEXT_LENGTH);
 
     if (overLimit) {
       this.lengthIndicator.hidden = false;
       this.lengthIndicator.textContent = `학습 목표는 최대 ${MAX_LEARNING_GOAL}자까지 입력할 수 있어요. (현재 ${value.length}자)`;
+    } else if (oversizedContext) {
+      this.lengthIndicator.hidden = false;
+      this.lengthIndicator.textContent = `${oversizedContext.label} 입력은 최대 ${MAX_DISCOVERY_CONTEXT_LENGTH}자까지 입력할 수 있어요. (현재 ${oversizedContext.value.length}자)`;
     } else {
       this.lengthIndicator.hidden = true;
       this.lengthIndicator.textContent = "";
     }
 
-    this.submitButton.disabled = emptyOrWhitespace || overLimit || this.discoveryInProgress;
+    this.submitButton.disabled = emptyOrWhitespace || overLimit || !!oversizedContext || this.discoveryInProgress || this.unavailable;
   }
 
   /**
@@ -514,6 +541,7 @@ export class DiscoveryStartView {
    * omitted when blank; `currentLevel` is omitted when left `UNSPECIFIED`.
    */
   private attemptSubmit(): void {
+    this.refreshValidation();
     if (this.submitButton.disabled) {
       return;
     }
@@ -593,6 +621,17 @@ export class DiscoveryWorkspace {
   private snapshot: FlowSnapshot | null = null;
   /** True while a discovery op is in flight (mirrors the last snapshot). */
   private discoveryInProgress = false;
+  private unavailable = false;
+
+  private roundsDisplayKey: string | null = null;
+  private roundsScopeKey: string | null = null;
+  private readonly controlOccurrences = new Map<string, number>();
+  private readonly candidateControls: {
+    key: string;
+    reference: string;
+    toggle: HTMLButtonElement;
+    select: HTMLButtonElement;
+  }[] = [];
 
   constructor(root: HTMLElement, callbacks: FlowRenderCallbacks) {
     this.doc = root.ownerDocument;
@@ -678,6 +717,7 @@ export class DiscoveryWorkspace {
    */
   render(snapshot: FlowSnapshot): void {
     this.snapshot = snapshot;
+    this.unavailable = snapshot.flowSupport.mode === "unavailable";
     const visible = snapshot.phase === "discovery_workspace";
     this.container.hidden = !visible;
     if (!visible) {
@@ -690,10 +730,36 @@ export class DiscoveryWorkspace {
     // Disable composer + select controls while a discovery op is in flight
     // (Req 5.5, 7.11); re-enable otherwise (Req 7.12).
     for (const button of this.actionButtons) {
-      button.disabled = this.discoveryInProgress;
+      button.disabled = this.discoveryInProgress || this.unavailable;
     }
 
-    this.rebuildRounds(snapshot);
+    const scopeKey = JSON.stringify([snapshot.project?.id ?? null, snapshot.previewRound?.discoverySessionId ?? null]);
+    const displayKey = JSON.stringify([scopeKey, snapshot.previewRound, snapshot.rounds, snapshot.enrichedCandidates]);
+    const active = this.doc.activeElement;
+    const focused = this.roundsScopeKey === scopeKey
+      ? this.candidateControls.find(control => control.toggle === active || control.select === active)
+      : undefined;
+    const focusedAction = focused?.toggle === active ? "toggle" : "select";
+    const rebuilt = displayKey !== this.roundsDisplayKey;
+    if (rebuilt) {
+      this.rebuildRounds(snapshot);
+      this.roundsDisplayKey = displayKey;
+      this.roundsScopeKey = scopeKey;
+    }
+    // Basket/worker-only refreshes must not detach the keyboard target. Keep
+    // the controls and update their state in place, without reordering cards.
+    const basket = new Set(snapshot.basket);
+    for (const control of this.candidateControls) {
+      const selected = basket.has(control.reference);
+      control.toggle.textContent = selected ? "바구니에서 빼기" : "바구니에 담기";
+      control.toggle.setAttribute("aria-pressed", selected ? "true" : "false");
+      control.toggle.disabled = this.discoveryInProgress;
+      control.select.disabled = this.discoveryInProgress || this.unavailable;
+    }
+    if (rebuilt && focused) {
+      const replacement = this.candidateControls.find(control => control.key === focused.key)?.[focusedAction];
+      if (replacement && !replacement.disabled) replacement.focus({ preventScroll: true });
+    }
   }
 
   /**
@@ -704,6 +770,8 @@ export class DiscoveryWorkspace {
    */
   private rebuildRounds(snapshot: FlowSnapshot): void {
     this.roundsRegion.textContent = "";
+    this.candidateControls.length = 0;
+    this.controlOccurrences.clear();
 
     const enrichedById = new Map<string, ProjectCandidateRevision>();
     for (const enriched of snapshot.enrichedCandidates) {
@@ -899,11 +967,16 @@ export class DiscoveryWorkspace {
     const select = this.el("button", "flow-select-button") as HTMLButtonElement;
     select.type = "button";
     select.textContent = "이걸로 진행";
-    select.disabled = this.discoveryInProgress;
+    select.disabled = this.discoveryInProgress || this.unavailable;
     select.addEventListener("click", () => {
       this.callbacks.onSelectCandidate({ candidateId: ref.candidateId, revision: ref.revision });
     });
     controls.appendChild(select);
+
+    const reference = refKey(ref);
+    const occurrence = this.controlOccurrences.get(reference) ?? 0;
+    this.controlOccurrences.set(reference, occurrence + 1);
+    this.candidateControls.push({ key: JSON.stringify([reference, occurrence]), reference, toggle, select });
 
     return controls;
   }
@@ -963,7 +1036,7 @@ export class DiscoveryWorkspace {
    * cleared optimistically.
    */
   private attemptRefinement(action: RefinementAction): void {
-    if (this.discoveryInProgress) {
+    if (this.discoveryInProgress || this.unavailable) {
       return;
     }
     const snapshot = this.snapshot;
@@ -982,6 +1055,10 @@ export class DiscoveryWorkspace {
       // Req 7.5: merge requires 2 or more selected candidates.
       if (selection.length < 2) {
         this.showComposerMessage("합치기는 후보를 2개 이상 선택해야 해요.");
+        return;
+      }
+      if (selection.length > MAX_FEEDBACK_TARGETS) {
+        this.showComposerMessage(`합치기는 후보를 최대 ${MAX_FEEDBACK_TARGETS}개까지 선택할 수 있어요.`);
         return;
       }
       targets = selection;
@@ -1174,8 +1251,9 @@ export class SpecReview {
       return;
     }
 
-    this.specInProgress = snapshot.specInProgress;
-    this.agentBanner.hidden = !this.specInProgress;
+    const generating = snapshot.specInProgress || snapshot.discoveryInProgress;
+    this.specInProgress = generating || snapshot.spec === null || snapshot.flowSupport.mode === "unavailable";
+    this.agentBanner.hidden = !generating;
 
     // Disable the refine + confirm controls while a spec op is in flight
     // (Req 10.4, 11.6); re-enable otherwise.

@@ -29,6 +29,7 @@ import {
   type DiscoveryFeedbackIntent,
   refKey,
 } from "./flow-types";
+import { MAX_FEEDBACK_TARGETS } from "./flow-limits";
 
 /** The result of {@link validateFeedback}: accepted, or rejected with a reason. */
 export type FeedbackValidation =
@@ -78,6 +79,9 @@ export function validateFeedback(input: DiscoveryFeedbackInput): FeedbackValidat
 
   const targets = input.targets ?? [];
   const targetCount = targets.length;
+  if (targetCount > MAX_FEEDBACK_TARGETS) {
+    return { ok: false, reason: `후보는 최대 ${MAX_FEEDBACK_TARGETS}개까지 대상으로 지정할 수 있습니다.` };
+  }
 
   // Duplicate identity+revision targets are never allowed (Req 3.6).
   const keys = targets.map(refKey);

@@ -136,6 +136,64 @@ describe("DiscoveryWorkspace (task 12.2)", () => {
     restore();
   });
 
+  it("preserves candidate DOM and keyboard focus across basket and worker-only updates", () => {
+    try {
+      view.render(snapshot());
+      const toggle = byClass(root, "flow-basket-toggle")[3];
+      toggle.focus();
+      view.render(snapshot({ basket: ["cand-4:1"], historyLoading: true }));
+      expect(byClass(root, "flow-basket-toggle")[3]).toBe(toggle);
+      expect(root.ownerDocument.activeElement).toBe(toggle);
+      expect(toggle.textContent).toBe("바구니에서 빼기");
+      expect(toggle.attributes["aria-pressed"]).toBe("true");
+      view.render(snapshot({ basket: [], flowSupport: { mode: "unavailable", experimental: true } }));
+      expect(root.ownerDocument.activeElement).toBe(toggle);
+      expect(toggle.textContent).toBe("바구니에 담기");
+      expect(byClass(root, "flow-select-button")[3].disabled).toBe(true);
+    } finally { restore(); }
+  });
+
+  it("restores the same candidate control after enrichment without stealing composer focus", () => {
+    try {
+      view.render(snapshot());
+      byClass(root, "flow-select-button")[3].focus();
+      view.render(snapshot({ enrichedCandidates: [enriched("cand-4")] }));
+      expect(root.ownerDocument.activeElement).toBe(byClass(root, "flow-select-button")[3]);
+      const input = byClass(root, "flow-composer-input")[0];
+      input.value = "유지할 초안"; input.focus();
+      view.render(snapshot({ enrichedCandidates: [enriched("cand-5")] }));
+      expect(root.ownerDocument.activeElement).toBe(input);
+      expect(input.value).toBe("유지할 초안");
+    } finally { restore(); }
+  });
+
+  it("does not restore candidate focus into another project or onto a removed reference", () => {
+    try {
+      view.render(snapshot({ project: { id: "project_a", title: "A", learningGoal: "A", status: "DISCOVERY" } }));
+      byClass(root, "flow-select-button")[3].focus();
+      view.render(snapshot({ project: { id: "project_b", title: "B", learningGoal: "B", status: "DISCOVERY" } }));
+      expect(root.ownerDocument.activeElement).toBeNull();
+      byClass(root, "flow-select-button")[3].focus();
+      view.render(snapshot({ previewRound: null }));
+      expect(root.ownerDocument.activeElement).toBeNull();
+    } finally { restore(); }
+  });
+
+  it("updates busy controls in place and does not restore focus to a disabled rebuilt control", () => {
+    try {
+      view.render(snapshot());
+      const select = byClass(root, "flow-select-button")[3];
+      view.render(snapshot({ discoveryInProgress: true }));
+      expect(byClass(root, "flow-select-button")[3]).toBe(select);
+      expect(select.disabled).toBe(true);
+      view.render(snapshot());
+      expect(select.disabled).toBe(false);
+      select.focus();
+      view.render(snapshot({ enrichedCandidates: [enriched("cand-4")], discoveryInProgress: true }));
+      expect(root.ownerDocument.activeElement).toBeNull();
+    } finally { restore(); }
+  });
+
   it("renders exactly 10 preview cards with rationale + round header (Req 5.1/5.2)", () => {
     view.render(snapshot());
     expect(byClass(root, "flow-candidate-card")).toHaveLength(10);
@@ -236,6 +294,25 @@ describe("DiscoveryWorkspace (task 12.2)", () => {
     expect(callbacks.refinements).toHaveLength(1);
     expect(callbacks.refinements[0].action).toBe("merge");
     expect(callbacks.refinements[0].targets).toHaveLength(2);
+    restore();
+  });
+
+  it("keeps a merge draft above 8 targets and allows correction to exactly 8", () => {
+    const basket = Array.from({ length: 9 }, (_, i) => refKey({ candidateId: `cand-${i + 1}`, revision: 1 }));
+    view.render(snapshot({ basket }));
+    const composer = byClass(root, "flow-composer-input")[0];
+    const merge = byClass(root, "flow-composer-action").find((b) => b.dataset.action === "merge")!;
+    composer.value = "합치기 초안을 보존합니다.";
+    merge.click();
+    expect(callbacks.refinements).toHaveLength(0);
+    expect(composer.value).toBe("합치기 초안을 보존합니다.");
+    expect(byClass(root, "flow-composer-message")[0].textContent).toContain("8");
+    view.render(snapshot({ basket: basket.slice(0, 8) }));
+    merge.click();
+    expect(callbacks.refinements).toHaveLength(1);
+    expect(callbacks.refinements[0].targets).toHaveLength(8);
+    expect(callbacks.refinements[0].text).toBe("합치기 초안을 보존합니다.");
+    expect(composer.value).toBe("");
     restore();
   });
 

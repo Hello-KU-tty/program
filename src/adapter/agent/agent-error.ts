@@ -24,6 +24,7 @@
 
 import { LocalClientError } from "../../../vendor/frontend-client";
 import type { AgentError, AgentErrorCode } from "./agent-run-port";
+import { runtimeFailure, runtimeErrorMessage, safeRuntimeCode } from "../../core/runtime-errors";
 
 /** Exact raw-code → {@link AgentErrorCode} table (checked first). */
 const EXACT: Readonly<Record<string, AgentErrorCode>> = {
@@ -51,6 +52,8 @@ const EXACT: Readonly<Record<string, AgentErrorCode>> = {
  */
 export function mapAgentCode(code: string, status?: number): AgentErrorCode {
   const c = code.toUpperCase();
+  const runtime = runtimeFailure(c);
+  if (runtime) return runtime.code;
 
   // 1) Exact-string matches (must precede any broad bucket).
   const exact = EXACT[c];
@@ -118,21 +121,20 @@ export function toAgentError(raw: unknown, fallbackMessage?: string): AgentError
 
   // Real LocalClientError (the class the flow adapter also imports).
   if (raw instanceof LocalClientError) {
+    const code = safeRuntimeCode(raw.code);
     return {
-      code: mapAgentCode(raw.code, raw.status),
-      raw: raw.code,
-      message: raw.message.length > 0 ? `${raw.code}: ${raw.message}` : raw.code,
+      code: mapAgentCode(code, raw.status),
+      raw: code,
+      message: runtimeErrorMessage(code, code === "UNKNOWN" ? fallback : code),
     };
   }
 
   // Duck-typed LocalClientError-like ({ code, status?, message? }); e.g.
   // cross-realm instances or hand-written fakes in tests.
   if (isClientErrorLike(raw)) {
-    const message =
-      typeof raw.message === "string" && raw.message.length > 0
-        ? `${raw.code}: ${raw.message}`
-        : raw.code;
-    return { code: mapAgentCode(raw.code, raw.status), raw: raw.code, message };
+    const code = safeRuntimeCode(raw.code);
+    return { code: mapAgentCode(code, raw.status), raw: code,
+      message: runtimeErrorMessage(code, code === "UNKNOWN" ? fallback : code) };
   }
 
   // Generic Error: an all-caps token message is itself a raw code; otherwise
@@ -141,20 +143,20 @@ export function toAgentError(raw: unknown, fallbackMessage?: string): AgentError
     const isCodeMessage = /^[A-Z][A-Z0-9_]{0,99}$/.test(raw.message);
     const rawCode = isCodeMessage
       ? raw.message
-      : raw.name && raw.name !== "Error"
-        ? raw.name
+      : raw.name === "AbortError"
+        ? "AbortError"
         : "UNKNOWN";
     return {
       code: mapAgentCode(isCodeMessage ? raw.message : raw.name),
       raw: rawCode,
-      message: raw.message.length > 0 ? raw.message : fallback,
+      message: runtimeErrorMessage(rawCode, isCodeMessage ? rawCode : fallback),
     };
   }
 
   // Raw string code.
   if (typeof raw === "string") {
-    const code = raw.length > 0 ? raw : "UNKNOWN";
-    return { code: mapAgentCode(code), raw: code, message: raw.length > 0 ? raw : fallback };
+    const code = safeRuntimeCode(raw);
+    return { code: mapAgentCode(code), raw: code, message: runtimeErrorMessage(code, code === "UNKNOWN" ? fallback : code) };
   }
 
   // Any other primitive / object (number, boolean, null, plain object).

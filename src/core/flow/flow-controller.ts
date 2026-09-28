@@ -24,11 +24,13 @@
  */
 
 import { type Clock, SystemClock, type TimerId } from "../../core/clock";
+import { runtimeErrorMessage } from "../runtime-errors";
 import type {
   FlowPorts,
   PortError,
   PortResult,
   RequestEnvelope,
+  RestoredFlow,
 } from "../../adapter/flow/discovery-port";
 import { validateFeedback } from "./feedback-validation";
 import {
@@ -166,6 +168,12 @@ const TIMEOUT_MESSAGE = "시간이 초과되었습니다. 다시 시도해 주�
  * and orchestrates the {@link FlowPorts} behind a single-flight, timeout-guarded
  * runner.
  */
+function discoveryInputValues(input: DiscoveryInput | null): unknown[] {
+  return [input?.learningGoal.trim() ?? "", input?.personalNeed?.trim() ?? "",
+    input?.recentFriction?.trim() ?? "", input?.interestAreas ?? [],
+    input?.currentLevel ?? "UNSPECIFIED", input?.freeContext?.trim() ?? ""];
+}
+
 export class FlowController {
   /**
    * The active port pair. NOT `readonly`: {@link FlowController.setPorts} /
@@ -196,6 +204,12 @@ export class FlowController {
     spec: null,
   };
   private readonly _notices: FlowNotice[] = [];
+  private recovery: {
+    abort: AbortController;
+    surface: FlowSurface;
+    timerId: TimerId | null;
+    token: number;
+  } | null = null;
 
   // --- read-only History slice (guide §6/§10-2), independent of the state
   // machine above. Populated by loadHistory(); never starts a run or mutates.
@@ -340,7 +354,7 @@ export class FlowController {
 
   /** Whether a discovery-surface op is currently in flight. */
   isInProgress(surface: FlowSurface): boolean {
-    return this.inFlight[surface] !== null;
+    return this.inFlight[surface] !== null || this.recovery?.surface === surface;
   }
 
   /** Raw authoritative state for the snapshot builder (Req 13.1). */
@@ -357,8 +371,8 @@ export class FlowController {
       selectedCandidate: this.selectedCandidate,
       spec: this.spec,
       preparedTask: this.preparedTask,
-      discoveryInProgress: this.inFlight.discovery !== null,
-      specInProgress: this.inFlight.spec !== null,
+      discoveryInProgress: this.isInProgress("discovery"),
+      specInProgress: this.isInProgress("spec"),
       history: [...this.history],
       historyLoading: this.historyLoading,
     };
@@ -372,6 +386,17 @@ export class FlowController {
    */
   snapshot(): FlowSnapshot {
     return buildFlowSnapshot(this.toState(), this.notices, this.flowSupport);
+  }
+
+  /** Drop local callbacks on panel disposal; never cancel or replay Core work. */
+  dispose(): void {
+    ++this.tokenCounter;
+    this.stopRecovery();
+    for (const surface of ["discovery", "spec"] as const) {
+      const timer = this.inFlight[surface]?.timerId;
+      if (timer !== undefined && timer !== null) this.clock.clearTimeout(timer);
+      this.inFlight[surface] = null;
+    }
   }
 
   // --- notice / change plumbing ---
@@ -399,6 +424,16 @@ export class FlowController {
     };
   }
 
+  private canMutate(surface: FlowSurface): boolean {
+    // A reattached Discovery owns the existing intent on either surface. Only
+    // reads/project selection may proceed; do not replay a lost select/refine.
+    if (this.recovery !== null) return false;
+    if (this.flowSupport.mode !== "unavailable") return true;
+    this.emitNotice(surface, "error", runtimeErrorMessage(this.flowSupport.reason ?? "", "Core 연결이 준비되지 않았어요. 연결 상태를 확인하고 다시 시도해 주세요."));
+    this.notifyChange();
+    return false;
+  }
+
   // --- shared single-flight, timeout-guarded runner ---
 
   /**
@@ -418,6 +453,7 @@ export class FlowController {
     onOk: (value: T) => void | Promise<void>,
     onErr: (error: PortError) => void,
   ): Promise<boolean> {
+    if (!this.canMutate(surface)) return false;
     // Single-flight: refuse a same-surface op while one is already active.
     if (this.inFlight[surface] !== null) {
       return false;
@@ -474,7 +510,16 @@ export class FlowController {
    * re-enable the surface (Req 4.7, 4.8, 4.9).
    */
   async startDiscovery(input: DiscoveryInput): Promise<void> {
+    if (!this.canMutate("discovery")) return;
     if (this.inFlight.discovery !== null) {
+      return;
+    }
+
+    // The existing submit button is also the explicit retry gesture. Preserve
+    // Core identity when a failed preview is resubmitted with unchanged input.
+    if (this.session && !this.previewRound && !this.spec && !this.selectedCandidate &&
+        JSON.stringify(discoveryInputValues(this.input)) === JSON.stringify(discoveryInputValues(input))) {
+      await this.generateFirstPreview(true);
       return;
     }
 
@@ -485,6 +530,14 @@ export class FlowController {
       status: "DISCOVERY",
     };
     this.project = project;
+    this.session = null;
+    this.previewRound = null;
+    this.rounds = [];
+    this.candidatesByRef.clear();
+    this.basket.clear();
+    this.selectedCandidate = null;
+    this.spec = null;
+    this.preparedTask = null;
     this.lastSuccessfulStatus = "DISCOVERY";
     this.input = input;
     this.notifyChange();
@@ -503,15 +556,15 @@ export class FlowController {
         // single-flight. See design.md note on legitimate chaining.
         await this.generateFirstPreview();
       },
-      (_error) => {
+      (error) => {
         // Retain input for resubmission; status stays DISCOVERY (Req 4.7).
-        this.emitNotice("discovery", "error", "디스커버리를 시작하지 못했습니다. 다시 시도해 주세요.");
+        this.emitNotice("discovery", "error", runtimeErrorMessage(error.message, "디스커버리를 시작하지 못했습니다. 다시 시도해 주세요."));
       },
     );
   }
 
   /** Request the first preview round for the current session (Req 4.5, 4.8). */
-  private async generateFirstPreview(): Promise<void> {
+  private async generateFirstPreview(retry = false): Promise<void> {
     const session = this.session;
     if (session === null) {
       return;
@@ -520,14 +573,15 @@ export class FlowController {
       "discovery",
       "generatePreviewRound",
       (env) =>
-        this.ports.discovery.generatePreviewRound({ discoverySessionId: session.id }, env),
+        this.ports.discovery.generatePreviewRound({ discoverySessionId: session.id, ...(retry ? { retry: true } : {}) }, env),
       session.revision,
       (round) => {
         this.previewRound = round;
+        this.emitNotice("discovery", "info", "");
       },
-      (_error) => {
+      (error) => {
         // Retain input for resubmission (Req 4.8).
-        this.emitNotice("discovery", "error", "후보를 생성하지 못했습니다. 다시 시도해 주세요.");
+        this.emitNotice("discovery", "error", runtimeErrorMessage(error.message, "후보를 생성하지 못했습니다. 같은 입력으로 다시 시도할 수 있어요."));
       },
     );
   }
@@ -554,6 +608,7 @@ export class FlowController {
    * intents append the resulting round while preserving the basket.
    */
   async submitFeedback(feedbackInput: DiscoveryFeedbackInput): Promise<{ accepted: boolean }> {
+    if (!this.canMutate("discovery")) return { accepted: false };
     const validation = validateFeedback(feedbackInput);
     if (!validation.ok) {
       // Req 3.9: notice only; do NOT touch session/basket/rounds or call a port.
@@ -596,13 +651,13 @@ export class FlowController {
         async () => {
           await this.generateSpecDraft(selected);
         },
-        (_error) => {
+        (error) => {
           // Restore prior status; keep selection recorded for retry.
           if (this.project !== null) {
             this.project.status = priorStatus;
           }
           this.lastSuccessfulStatus = priorStatus;
-          this.emitNotice("discovery", "error", "선택을 처리하지 못했습니다. 다시 시도해 주세요.");
+          this.emitNotice("discovery", "error", runtimeErrorMessage(error.message, "선택을 처리하지 못했습니다. 다시 시도해 주세요."));
         },
       );
       return { accepted: true };
@@ -621,9 +676,9 @@ export class FlowController {
         this.rounds.push(round);
         this.rounds.sort((a, b) => a.roundIndex - b.roundIndex);
       },
-      (_error) => {
+      (error) => {
         // Abort the round request; retain basket + input (Req 7.10).
-        this.emitNotice("discovery", "error", "요청을 처리하지 못했습니다. 다시 시도해 주세요.");
+        this.emitNotice("discovery", "error", runtimeErrorMessage(error.message, "요청을 처리하지 못했습니다. 다시 시도해 주세요."));
       },
     );
     return { accepted: true };
@@ -647,8 +702,8 @@ export class FlowController {
       (spec) => {
         this.spec = spec;
       },
-      (_error) => {
-        this.emitNotice("spec", "error", "스펙 초안을 생성하지 못했습니다. 다시 시도해 주세요.");
+      (error) => {
+        this.emitNotice("spec", "error", runtimeErrorMessage(error.message, "스펙 초안을 생성하지 못했습니다. 다시 시도해 주세요."));
       },
     );
   }
@@ -677,9 +732,9 @@ export class FlowController {
       (rev) => {
         this.spec = rev;
       },
-      (_error) => {
+      (error) => {
         // Retain the prior revision (Req 10.5).
-        this.emitNotice("spec", "error", "스펙을 다듬지 못했습니다. 다시 시도해 주세요.");
+        this.emitNotice("spec", "error", runtimeErrorMessage(error.message, "스펙을 다듬지 못했습니다. 다시 시도해 주세요."));
       },
     );
   }
@@ -724,7 +779,7 @@ export class FlowController {
           this.project.status = priorStatus;
         }
         this.lastSuccessfulStatus = priorStatus;
-        this.emitNotice("spec", "error", "스펙을 확정하지 못했습니다. 다시 시도해 주세요.");
+        this.emitNotice("spec", "error", runtimeErrorMessage(error.message, "스펙을 확정하지 못했습니다. 다시 시도해 주세요."));
       },
     );
   }
@@ -748,7 +803,7 @@ export class FlowController {
       (task) => {
         this.preparedTask = task;
       },
-      (_error) => {
+      (error) => {
         // Restore to the prior successful status (Req 11.7). At this point the
         // last successful status before confirm was recorded; fall back to
         // SPEC_REVIEW so the confirm control is retryable.
@@ -756,7 +811,7 @@ export class FlowController {
           this.project.status = "SPEC_REVIEW";
         }
         this.lastSuccessfulStatus = "SPEC_REVIEW";
-        this.emitNotice("spec", "error", "빌더 작업을 준비하지 못했습니다. 다시 시도해 주세요.");
+        this.emitNotice("spec", "error", runtimeErrorMessage(error.message, "빌더 작업을 준비하지 못했습니다. 다시 시도해 주세요."));
       },
     );
   }
@@ -803,6 +858,98 @@ export class FlowController {
     );
     this.notifyChange();
     return null;
+  }
+
+  /** Restore durable display state only; late reads cannot replace a new intent. */
+  async restoreSavedProject(projectId: string): Promise<boolean> {
+    if (this.inFlight.discovery || this.inFlight.spec) return false;
+    if (!this.ports.restore) {
+      await this.restoreHistoryProject(projectId);
+      return false;
+    }
+    const token = ++this.tokenCounter;
+    this.stopRecovery();
+    const result = await this.ports.restore.restoreFlow(projectId, this.envelope(0));
+    if (token !== this.tokenCounter) return false;
+    if (!result.ok) {
+      this.emitNotice("history", "error", runtimeErrorMessage(result.error.message, "이전 프로젝트를 불러오지 못했습니다. 다시 시도해 주세요."));
+      this.notifyChange();
+      return false;
+    }
+    this.applyRestoredFlow(result.value);
+    this.emitNotice("history", "info", "");
+    this.resumeDiscoveryRead(result.value, token);
+    this.notifyChange();
+    return true;
+  }
+
+  private applyRestoredFlow(s: RestoredFlow): void {
+    this.project = s.project;
+    this.lastSuccessfulStatus = s.project.status;
+    this.session = s.session;
+    this.input = s.session?.input ?? null;
+    this.previewRound = s.previewRound;
+    this.rounds = s.rounds;
+    this.candidatesByRef.clear();
+    for (const c of s.candidates) this.candidatesByRef.set(refKey(c), c);
+    this.basket.clear();
+    this.selectedCandidate = s.selectedCandidate;
+    this.spec = s.spec;
+    this.preparedTask = null;
+  }
+
+  private stopRecovery(): void {
+    const current = this.recovery;
+    this.recovery = null;
+    if (!current) return;
+    if (current.timerId !== null) this.clock.clearTimeout(current.timerId);
+    current.abort.abort(); // Unsubscribe only. Never cancel the Core run.
+  }
+
+  private resumeDiscoveryRead(initial: RestoredFlow, token: number): void {
+    const port = this.ports.restore;
+    if (!initial.pendingDiscovery || !port?.watchDiscovery) return;
+    const current = { abort: new AbortController(), token,
+      surface: (initial.pendingDiscovery.phase === "SPEC" ? "spec" : "discovery") as FlowSurface,
+      timerId: null as TimerId | null };
+    this.recovery = current;
+    const isCurrent = () => this.recovery === current && token === this.tokenCounter && !current.abort.signal.aborted;
+    current.timerId = this.clock.setTimeout(() => {
+      if (!isCurrent()) return;
+      this.stopRecovery();
+      this.emitNotice(current.surface, "error", TIMEOUT_MESSAGE);
+      this.notifyChange();
+    }, this.timeoutMs);
+    void (async () => {
+      let restored = initial;
+      const seen = new Set<string>();
+      try {
+        while (restored.pendingDiscovery && isCurrent()) {
+          const pending = restored.pendingDiscovery;
+          if (seen.has(pending.runId)) throw new Error("RESTORE_RUN_NOT_TERMINAL");
+          seen.add(pending.runId);
+          current.surface = pending.phase === "SPEC" ? "spec" : "discovery";
+          const result = await port.watchDiscovery!(initial.project.id, pending.runId, current.abort.signal);
+          if (!isCurrent()) return;
+          if (!result.ok) {
+            this.emitNotice(current.surface, "error", runtimeErrorMessage(result.error.message,
+              "진행 중이던 작업 결과를 불러오지 못했습니다. History에서 다시 확인해 주세요."));
+            return;
+          }
+          restored = result.value;
+          this.applyRestoredFlow(restored);
+          this.notifyChange();
+        }
+      } catch {
+        if (isCurrent()) this.emitNotice(current.surface, "error",
+          "진행 중이던 작업 결과를 불러오지 못했습니다. History에서 다시 확인해 주세요.");
+      } finally {
+        if (isCurrent()) {
+          this.stopRecovery();
+          this.notifyChange();
+        }
+      }
+    })();
   }
 
   async loadHistory(): Promise<void> {

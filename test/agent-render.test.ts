@@ -6,6 +6,7 @@ import {
   type AgentViewModel,
   type BuilderTurnViewModel,
   type ToolRowViewModel,
+  type DecisionViewModel,
 } from "../src/core/agent/agent-view-model";
 import type { EvidenceTraceView } from "../vendor/frontend-client";
 import { installFakeDom, type FakeElement } from "./support/fake-dom";
@@ -81,16 +82,157 @@ function byClass(root: FakeElement, className: string): FakeElement[] {
 }
 
 /** Builds a view against a fresh fake DOM; caller must call `restore`. */
-function mount(): {
+function mount(callbacks = noopCallbacks()): {
   root: FakeElement;
   view: AgentSurfaceView;
   restore: () => void;
 } {
   const dom = installFakeDom();
   const root = dom.createElement("div") as unknown as FakeElement;
-  const view = new AgentSurfaceView(root as unknown as HTMLElement, noopCallbacks());
+  const view = new AgentSurfaceView(root as unknown as HTMLElement, callbacks);
   return { root, view, restore: dom.restore };
 }
+
+function pendingDecision(): DecisionViewModel {
+  return { decisionId: "decision_synthetic", taskId: "task_synthetic", category: "PRODUCT_BEHAVIOR", question: "Choose data source",
+    options: [{ id: "sample", label: "Sample", description: "Local sample" }], recommendedOptionId: "sample",
+    resolved: false, applied: false, contextVersion: 1 };
+}
+
+describe("generated workspace and result actions", () => {
+  it("labels scrollable transcripts and saved conversations for keyboard access without announcing every token", () => {
+    const { root, restore } = mount();
+    try {
+      const transcripts = byClass(root, "agent-transcript");
+      expect(transcripts.map(el => el.attributes["aria-label"])).toEqual(["빌더 진행 내용", "도우미 응답 내용"]);
+      for (const el of [...transcripts, ...byClass(root, "agent-helper-conversations")]) {
+        expect(el.attributes.role).toBe("region");
+        expect(el.attributes.tabindex).toBe("0");
+        expect(el.attributes["aria-live"]).toBeUndefined();
+      }
+      expect(byClass(root, "agent-builder-phase")[0].attributes["aria-live"]).toBe("polite");
+      expect(byClass(root, "agent-helper-error")[0].attributes.role).toBe("alert");
+    } finally { restore(); }
+  });
+
+  it("makes bounded tool output independently keyboard-scrollable with a readable label", () => {
+    const { root, view, restore } = mount();
+    try {
+      view.render(vmWithBuilder({ toolRows: [toolRow({ output: "bounded synthetic output" })] }));
+      const output = byClass(root, "agent-tool-row-output")[0];
+      expect(output.attributes).toMatchObject({ role: "region", tabindex: "0", "aria-label": "도구 실행 출력" });
+      expect(output.textContent).toBe("bounded synthetic output");
+    } finally { restore(); }
+  });
+
+  it("fills durable upgrade references while preserving the user's goal and explicit trace choice", () => {
+    const { root, view, restore } = mount();
+    try {
+      const vm = vmWithBuilder({ phase: "TASK_COMPLETED", taskId: "task_source", taskRevision: 7 });
+      view.render(vm);
+      const source = byClass(root, "agent-input source-task-id")[0];
+      const revision = byClass(root, "agent-input expected-source-task-revision")[0];
+      const trace = byClass(root, "agent-input personalization-trace-id")[0];
+      const goal = byClass(root, "agent-final-upgrade-goal")[0];
+      expect(source.value).toBe("task_source"); expect(revision.value).toBe("7");
+      goal.value = "my unfinished goal";
+      view.renderFinalUpgrade([{ id: "trace_one", basisCount: 1, createdAt: "2026-09-28T00:00:00Z" }]);
+      expect(trace.value).toBe("trace_one");
+      trace.value = "trace_user_choice";
+      view.render(vm);
+      view.renderFinalUpgrade([{ id: "trace_two", basisCount: 2, createdAt: "2026-09-28T00:01:00Z" }]);
+      expect(trace.value).toBe("trace_user_choice"); expect(goal.value).toBe("my unfinished goal");
+      view.render(vmWithBuilder({ taskId: "task_upgrade", taskRevision: 1 }));
+      expect(source.value).toBe("task_upgrade"); expect(revision.value).toBe("1"); expect(trace.value).toBe("");
+      expect(goal.value).toBe("my unfinished goal");
+    } finally { restore(); }
+  });
+
+  it("exposes explicit actions for the current task without leaking a path or running the Builder", () => {
+    const opened: string[] = []; let launches = 0; let starts = 0;
+    const { root, view, restore } = mount({ ...noopCallbacks(), onOpenWorkspace: id => opened.push(id), onLaunchResult: () => launches++, onBuilderStart: () => starts++ });
+    try {
+      view.render(vmWithBuilder({ phase: "TASK_COMPLETED", taskId: "task_synthetic", completionReportId: "report_synthetic" }));
+      const workspace = byClass(root, "agent-workspace-open")[0];
+      const result = byClass(root, "agent-result-launch")[0];
+      expect(workspace.hidden).toBe(false); expect(workspace.disabled).toBe(false);
+      expect(result.hidden).toBe(false); expect(result.disabled).toBe(false);
+      workspace.click(); result.click();
+      expect(opened).toEqual(["task_synthetic"]); expect(launches).toBe(1); expect(starts).toBe(0);
+      expect(byClass(root, "agent-builder-send")[0].disabled).toBe(true);
+      view.resetProject(); view.render(initialAgentViewModel());
+      workspace.click(); result.click();
+      expect(opened).toEqual(["task_synthetic"]); expect(launches).toBe(1);
+    } finally { restore(); }
+  });
+
+  it("does not expose workspace switching or launch while a Builder turn is active", () => {
+    const { root, view, restore } = mount();
+    try {
+      view.render(vmWithBuilder({ phase: "RUNNING", taskId: "task_synthetic" }));
+      expect(byClass(root, "agent-workspace-open")[0].disabled).toBe(true);
+      expect(byClass(root, "agent-result-launch")[0].hidden).toBe(true);
+    } finally { restore(); }
+  });
+});
+
+describe("Decision/native form stability during stream hydration", () => {
+  it("keeps the same Decision input nodes and exact drafts on unrelated stream updates", () => {
+    const { root, view, restore } = mount();
+    try {
+      const vm = { ...initialAgentViewModel(), decisions: [pendingDecision()] };
+      view.render(vm);
+      const rationale = byClass(root, "agent-decision-rationale")[0];
+      const custom = byClass(root, "agent-decision-custom")[0];
+      rationale.value = "  unfinished reason  "; custom.value = "unfinished proposal";
+      view.render({ ...vm, builder: builder({ phase: "RUNNING", transcript: [{ sequence: 1, text: "tick" }] }) });
+      expect(byClass(root, "agent-decision-rationale")[0]).toBe(rationale);
+      expect(byClass(root, "agent-decision-custom")[0]).toBe(custom);
+      expect(rationale.value).toBe("  unfinished reason  ");
+      expect(custom.value).toBe("unfinished proposal");
+      view.render({ ...vm, decisions: [{ ...pendingDecision(), contextVersion: 2 }] });
+      expect(byClass(root, "agent-decision-rationale")[0]).toBe(rationale);
+      expect(rationale.value).toBe("  unfinished reason  ");
+      view.resetProject(); view.render(vm);
+      expect(byClass(root, "agent-decision-rationale")[0].value).toBe("");
+      expect(byClass(root, "agent-decision-custom")[0].value).toBe("");
+    } finally { restore(); }
+  });
+
+  for (const applied of [false, true]) it(`resolved Decision cannot submit again (applied=${applied})`, () => {
+    let resolutions = 0; let helpers = 0;
+    const { root, view, restore } = mount({ ...noopCallbacks(), onResolveDecision: () => resolutions++, onHelperStart: () => helpers++ });
+    try {
+      view.render({ ...initialAgentViewModel(), decisions: [{ ...pendingDecision(), resolved: true, applied }] });
+      for (const name of ["agent-decision-rationale", "agent-decision-custom", "agent-decision-choose", "agent-decision-accept-recommended", "agent-decision-custom-submit"]) {
+        const control = byClass(root, name)[0];
+        expect(control.disabled).toBe(true);
+        control.value = "synthetic proposal"; control.click();
+      }
+      expect(resolutions).toBe(0);
+      byClass(root, "agent-decision-ask-helper")[0].click();
+      expect(helpers).toBe(1);
+    } finally { restore(); }
+  });
+
+  it("keeps native answer drafts and sub-option state until the question changes", () => {
+    const { root, view, restore } = mount();
+    try {
+      const vm: AgentViewModel = { ...initialAgentViewModel(), nativeQuestions: [{ requestId: "request_synthetic", nativeJobId: "job_synthetic", role: "BUILDER", status: "WAITING", question: "Choose", options: [{ title: "A", recommended: true, subOptions: [{ title: "A1" }] }] }] };
+      view.render(vm);
+      const answer = byClass(root, "agent-native-question-freetext")[0];
+      const checkbox = root.queryAll(e => e.type === "checkbox")[0] as FakeElement & { checked: boolean };
+      answer.value = "  unfinished answer  "; checkbox.checked = true;
+      view.render({ ...vm, helper: { ...vm.helper, phase: "RUNNING" } });
+      expect(byClass(root, "agent-native-question-freetext")[0]).toBe(answer);
+      expect(answer.value).toBe("  unfinished answer  ");
+      expect(root.queryAll(e => e.type === "checkbox")[0]).toBe(checkbox);
+      expect(checkbox.checked).toBe(true);
+      view.resetProject(); view.render(vm);
+      expect(byClass(root, "agent-native-question-freetext")[0].value).toBe("");
+    } finally { restore(); }
+  });
+});
 
 describe("agent text is rendered as text, never markup (task 9.2, Req 2.7)", () => {
   it("renders a transcript line's HTML-looking string literally with no child nodes", () => {

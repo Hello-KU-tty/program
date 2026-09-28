@@ -31,12 +31,14 @@ import type {
   LearningSpecRevision,
   PreparedBuilderTask,
   PreviewRound,
+  Project,
   ProjectCandidateRevision,
 } from "../../core/flow/flow-types";
 import type {
   ProjectHistoryView,
   RestoredProjectView,
 } from "../../core/flow/history-types";
+import type { RuntimeErrorCode } from "../../core/runtime-errors";
 
 /** Metadata every port call carries so a backend swap is seamless (Req 1.6). */
 export interface RequestEnvelope {
@@ -54,7 +56,7 @@ export interface RequestEnvelope {
 
 /** Normalized, transport-agnostic port failure (mirrors AdapterError). */
 export interface PortError {
-  code: "timeout" | "revision_conflict" | "unavailable" | "invalid" | "unknown";
+  code: RuntimeErrorCode | "timeout" | "revision_conflict" | "unavailable" | "invalid" | "unknown";
   message: string;
 }
 
@@ -74,9 +76,9 @@ export interface DiscoveryPort {
     env: RequestEnvelope,
   ): Promise<PortResult<DiscoverySession>>;
 
-  /** Request the first / next Preview_Round of 10 candidates (Req 1.1, 4.5). */
+  /** Read/watch a preview. Only a user's explicit retry may start a new run. */
   generatePreviewRound(
-    req: { discoverySessionId: string },
+    req: { discoverySessionId: string; retry?: boolean },
     env: RequestEnvelope,
   ): Promise<PortResult<PreviewRound>>;
 
@@ -160,4 +162,23 @@ export interface FlowPorts {
    * present the controller can populate the read-only History list.
    */
   history?: HistoryPort;
+  /** Read-only projection for restoring an existing screen. Never starts a run. */
+  restore?: {
+    restoreFlow(projectId: string, env: RequestEnvelope): Promise<PortResult<RestoredFlow>>;
+    /** Reattach to an already accepted run. Never starts, retries, or cancels it. */
+    watchDiscovery?(projectId: string, runId: string, signal: AbortSignal): Promise<PortResult<RestoredFlow>>;
+  };
+}
+
+/** Explicit allow-list: no Core connection, workspace paths, or raw snapshot. */
+export interface RestoredFlow {
+  /** Host-only read-watch hint; deliberately omitted from FlowSnapshot. */
+  pendingDiscovery?: { runId: string; phase: string };
+  project: Project;
+  session: DiscoverySession | null;
+  previewRound: PreviewRound | null;
+  rounds: CandidateRound[];
+  candidates: ProjectCandidateRevision[];
+  selectedCandidate: CandidateRevisionReference | null;
+  spec: LearningSpecRevision | null;
 }

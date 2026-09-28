@@ -46,7 +46,14 @@ export class FakeElement {
   }
   set textContent(value: string) {
     this._textContent = value;
+    if (this.children.some(child => child.queryAll(el => el === this.ownerDocument.activeElement).length > 0)) {
+      this.ownerDocument.activeElement = null;
+    }
     this.children.length = 0;
+  }
+
+  focus(): void {
+    if (!this.disabled) this.ownerDocument.activeElement = this;
   }
 
   readonly classList = {
@@ -130,6 +137,7 @@ export class FakeElement {
 
 /** A minimal document that creates {@link FakeElement}s. */
 export class FakeDocument {
+  activeElement: FakeElement | null = null;
   createElement(tag: string): FakeElement {
     return new FakeElement(tag, this);
   }

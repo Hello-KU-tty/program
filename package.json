@@ -7,7 +7,7 @@
   "publisher": "vibe-helper",
   "engines": {
     "vscode": "^1.131.0",
-    "node": ">=18.0.0"
+    "node": "24.19.0"
   },
   "categories": [
     "Other"
@@ -61,13 +61,13 @@
   "devDependencies": {
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.90.0",
-    "esbuild": "^0.21.5",
+    "esbuild": "0.28.2",
     "fast-check": "^3.19.0",
     "typescript": "^5.4.5",
-    "vitest": "^1.6.0"
+    "vitest": "4.1.11"
   },
   "allowScripts": {
-    "esbuild@0.21.5": true
+    "esbuild@0.28.2": true
   },
   "dependencies": {
     "zod": "4.4.3"
