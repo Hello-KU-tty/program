@@ -497,3 +497,18 @@ describe("error lines explain known codes", () => {
     } finally { restore(); }
   });
 });
+
+describe("next step after a Builder turn", () => {
+  it("tells the learner the task continues on their next instruction", () => {
+    const { root, view, restore } = mount();
+    try {
+      const hint = () => byClass(root, "agent-builder-next")[0];
+      view.render(vmWithBuilder({ phase: "TURN_ENDED", permissionDenied: true }));
+      expect(hint().hidden).toBe(false);
+      expect(hint().textContent).toContain("아직 끝나지 않았어요");
+      expect(hint().textContent).toContain("막힌 작업");
+      view.render(vmWithBuilder({ phase: "TASK_COMPLETED" }));
+      expect(hint().hidden).toBe(true);
+    } finally { restore(); }
+  });
+});

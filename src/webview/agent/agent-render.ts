@@ -185,6 +185,7 @@ export class AgentSurfaceView {
   private readonly builderPhase: HTMLElement;
   private readonly builderTaskTitle: HTMLElement;
   private readonly builderCompletion: HTMLElement;
+  private readonly builderNextHint: HTMLElement;
   private readonly builderError: HTMLElement;
   private readonly builderPermissionDenied: HTMLElement;
   private readonly builderTranscript: HTMLElement;
@@ -256,6 +257,12 @@ export class AgentSurfaceView {
     this.builderCompletion = this.el("div", "agent-builder-completion");
     this.builderCompletion.hidden = true;
     builder.appendChild(this.builderCompletion);
+
+    // Next-step hint when a turn ends without completing the Task: the Builder
+    // waits for the learner's next instruction; nothing resumes on its own.
+    this.builderNextHint = this.el("div", "agent-builder-next");
+    this.builderNextHint.hidden = true;
+    builder.appendChild(this.builderNextHint);
 
     this.builderError = this.el("div", "agent-builder-error");
     this.builderError.setAttribute("role", "alert");
@@ -687,6 +694,16 @@ export class AgentSurfaceView {
     } else {
       this.builderCompletion.hidden = true;
       this.builderCompletion.textContent = "";
+    }
+
+    if (builder.phase === "TURN_ENDED") {
+      this.builderNextHint.hidden = false;
+      this.builderNextHint.textContent =
+        "작업은 아직 끝나지 않았어요. 빌더가 다음 지시를 기다리고 있어요. 아래 '빌더에게 요청하기'에 이어서 할 일을 적어 보내 주세요." +
+        (builder.permissionDenied ? " 막힌 명령이 있었다면 '막힌 작업을 허용된 방법으로 이어서 해 줘'처럼 요청할 수 있어요." : "");
+    } else {
+      this.builderNextHint.hidden = true;
+      this.builderNextHint.textContent = "";
     }
 
     // Error indicator (FAILED / START_ERROR carry an errorCode).

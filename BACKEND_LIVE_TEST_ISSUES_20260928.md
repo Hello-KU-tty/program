@@ -143,6 +143,14 @@
 
 ---
 
+## B11. (2026-09-29) Builder가 진행 상황을 영어로 작성
+
+**현상.** 한국어 Learning Goal·Spec·요청("로그인 화면부터 만들어주세요")으로 진행한 Builder 턴의 진행 상황(TEXT)이 모두 영어로 표시됐습니다(예: "I'll start by reading the current Builder Task…", "Per Build-first rule 5, …"). 내부 규칙 번호나 도구 이름(`request_user_decision`)도 그대로 노출됩니다. `docs/agent-prompts/builder.md`(1.3.x)에는 응답 언어 규칙이 없습니다.
+
+**요청.** Builder prompt에 "사용자에게 보이는 서술은 사용자의 입력 언어(이 제품은 한국어 우선)로 쓰고, 내부 규칙 번호·도구 식별자는 설명에 노출하지 않는다"는 규칙을 추가하고 평가 fixture로 확인해 주세요. Helper 응답은 이미 한국어로 나옵니다.
+
+---
+
 ## 4. 실측 재개 조건과 질문
 
 - 이 PC의 Kiro 크레딧은 2026-10-01 리셋입니다. 그 전에 실측하려면 overage(유료)를 켜거나 다른 계정을 써야 합니다.

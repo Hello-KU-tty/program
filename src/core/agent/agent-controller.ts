@@ -30,7 +30,7 @@ import type {
   AgentRunPort,
 } from "../../adapter/agent/agent-run-port";
 import type { NativeInputPort } from "../../adapter/agent/native-input-port";
-import { runtimeErrorMessage } from "../runtime-errors";
+import { errorGuidance, runtimeErrorMessage } from "../runtime-errors";
 import {
   classifyNativeWorkerStatus,
   createDecisionResolutionRequest,
@@ -692,7 +692,8 @@ export class AgentSurfaceController {
     // Not recorded (e.g. failed / cancelled): surface FAILED with the run's
     // error code when present (Requirement 4.6).
     this.setHelper({ phase: "FAILED", errorCode: run.errorCode ?? null });
-    this.notice("error", run.errorCode ?? "HELPER_NOT_RECORDED", runtimeErrorMessage(run.errorCode ?? "", "Helper 응답을 저장하지 못했어요. 상태를 확인한 뒤 다시 시도해 주세요."));
+    this.notice("error", run.errorCode ?? "HELPER_NOT_RECORDED",
+      errorGuidance(run.errorCode ?? "") ?? runtimeErrorMessage(run.errorCode ?? "", "Helper 응답을 저장하지 못했어요. 상태를 확인한 뒤 다시 시도해 주세요."));
   }
 
   // --- BEHAVIOR (task 5.6): resolve a Decision + explicit Builder resume ---

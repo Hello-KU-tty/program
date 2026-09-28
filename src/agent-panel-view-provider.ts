@@ -1842,6 +1842,7 @@ export function buildWebviewHtml(
       line-height: 1.4;
     }
     .agent-builder-completion,
+    .agent-builder-next,
     .agent-builder-error,
     .agent-builder-permission,
     .agent-helper-window,
@@ -1859,6 +1860,11 @@ export function buildWebviewHtml(
       color: var(--vscode-testing-iconPassed, #3fb950);
       background: color-mix(in srgb, var(--vscode-testing-iconPassed, #3fb950) 12%, transparent);
       border-color: color-mix(in srgb, var(--vscode-testing-iconPassed, #3fb950) 35%, transparent);
+    }
+    .agent-builder-next {
+      color: var(--vscode-foreground);
+      background: color-mix(in srgb, var(--accent) 10%, transparent);
+      border-color: color-mix(in srgb, var(--accent) 35%, transparent);
     }
     .agent-builder-error,
     .agent-helper-error {

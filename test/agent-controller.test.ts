@@ -484,6 +484,26 @@ describe("AgentSurfaceController — helper turn read-back", () => {
     expect(h.builderStartRunCount()).toBe(0);
   });
 
+  it("a Helper run rejected before the model call explains the tool-catalog recovery", async () => {
+    const h = buildHarness({
+      client: {
+        restoreProjectResult: { resolve: helperRecordedSnapshot() },
+        startRunResult: { resolve: fakeLocalRun({ kind: "HELPER" }) },
+      },
+    });
+    const started = h.controller.startHelper({ message: "질문", origin: "FREE_TEXT" });
+    await waitForWatch(h.client);
+    h.client.settle(fakeLocalRun({ kind: "HELPER", status: "FAILED", outcome: "NONE",
+      errorCode: "NATIVE_ROLE_CATALOG_UNVERIFIED" }));
+    await started;
+
+    const vm = h.controller.getViewModel();
+    expect(vm.helper.phase).toBe("FAILED");
+    expect(vm.notice?.code).toBe("NATIVE_ROLE_CATALOG_UNVERIFIED");
+    expect(vm.notice?.message).toContain("도우미 창이 열려 있다면 닫은 뒤");
+    expect(vm.notice?.message).not.toContain("저장하지 못했어요");
+  });
+
   it("a helper start rejection maps to helper FAILED with the mapped code (Requirement 4.6)", async () => {
     const h = buildHarness({
       client: {
