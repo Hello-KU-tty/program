@@ -132,6 +132,14 @@ const HELPER_PHASE_LABELS: Readonly<Record<HelperViewModel["phase"], string>> = 
 };
 
 /** Korean labels for a tool row status. */
+/** Short local date/time for display; the raw value is kept when unparsable. */
+function formatDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getMonth() + 1}/${date.getDate()} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
 /** Rows kept visible while the tool list is collapsed (most recent last). */
 const COLLAPSED_TOOL_ROWS = 3;
 
@@ -228,6 +236,10 @@ export class AgentSurfaceView {
   // --- Read-style regions --------------------------------------------------
   private readonly evidenceRegion: HTMLElement;
   private readonly finalUpgradeList: HTMLElement;
+  /** Shown only after the current Task completes, as an optional suggestion. */
+  private readonly finalUpgradeSection: HTMLElement;
+  /** Task id whose upgrade candidates were already requested once. */
+  private finalUpgradeListedFor: string | null = null;
   private readonly finalUpgradeInputs: {
     readonly sourceTaskId: HTMLInputElement;
     readonly expectedSourceTaskRevision: HTMLInputElement;
@@ -485,11 +497,15 @@ export class AgentSurfaceView {
     container.appendChild(evidence);
 
     // ---- Final upgrade (read-style) ---------------------------------------
+    // Offered only after the Task completes (renderBuilder toggles it): an
+    // optional next step, not a form to fill in from the start.
     const finalUpgrade = this.el("section", "agent-final-upgrade");
-    finalUpgrade.setAttribute("aria-label", "마지막 업그레이드");
+    finalUpgrade.setAttribute("aria-label", "마지막 개선 제안");
+    finalUpgrade.hidden = true;
+    this.finalUpgradeSection = finalUpgrade;
     const finalUpgradeHeader = this.el("div", "agent-final-upgrade-header");
     const finalUpgradeLabel = this.el("h1", "agent-section-heading");
-    finalUpgradeLabel.textContent = "마지막 업그레이드";
+    finalUpgradeLabel.textContent = "한 단계 더 발전시켜 볼까요?";
     finalUpgradeHeader.appendChild(finalUpgradeLabel);
     const finalUpgradeRefresh = this.el(
       "button",
@@ -501,28 +517,39 @@ export class AgentSurfaceView {
     finalUpgradeHeader.appendChild(finalUpgradeRefresh);
     finalUpgrade.appendChild(finalUpgradeHeader);
 
+    const finalUpgradeIntro = this.el("p", "agent-final-upgrade-intro");
+    finalUpgradeIntro.textContent =
+      "이번 작업을 마쳤어요. 지금까지의 대화와 선택을 바탕으로 마지막 개선 작업을 이어서 할 수 있어요. 원하지 않으면 건너뛰어도 괜찮아요.";
+    finalUpgrade.appendChild(finalUpgradeIntro);
+
     this.finalUpgradeList = this.el("div", "agent-final-upgrade-list");
     finalUpgrade.appendChild(this.finalUpgradeList);
 
-    // Prepare control (Req 11.2): the four required inputs + a prepare button.
+    // Prepare control (Req 11.2). The three durable references are filled
+    // automatically (task/revision) or by choosing a candidate below, so they
+    // stay in a hidden group; the learner only writes the goal.
     const prepare = this.el("div", "agent-final-upgrade-prepare");
-    const sourceTaskId = this.buildTextInput(prepare, "원본 작업 ID", "source-task-id");
+    const references = this.el("div", "agent-final-upgrade-references");
+    references.hidden = true;
+    prepare.appendChild(references);
+    const sourceTaskId = this.buildTextInput(references, "원본 작업 ID", "source-task-id");
     const expectedRevision = this.buildTextInput(
-      prepare,
+      references,
       "원본 작업 리비전",
       "expected-source-task-revision",
     );
     expectedRevision.type = "number";
     const personalizationTraceId = this.buildTextInput(
-      prepare,
+      references,
       "개인화 기록 ID",
       "personalization-trace-id",
     );
     const userGoalField = this.el("div", "agent-field");
     const userGoalLabel = this.el("label", "agent-field-label");
-    userGoalLabel.textContent = "목표";
+    userGoalLabel.textContent = "어떤 점을 더 발전시키고 싶나요?";
     const userGoal = this.el("textarea", "agent-final-upgrade-goal") as HTMLTextAreaElement;
-    userGoal.setAttribute("aria-label", "목표");
+    userGoal.setAttribute("aria-label", "개선 목표");
+    userGoal.setAttribute("placeholder", "예: 예약이 겹치면 다른 시간을 추천해 주면 좋겠어요");
     userGoal.rows = 2;
     userGoalField.appendChild(userGoalLabel);
     userGoalField.appendChild(userGoal);
@@ -533,7 +560,7 @@ export class AgentSurfaceView {
       "agent-final-upgrade-prepare-button",
     ) as HTMLButtonElement;
     prepareButton.type = "button";
-    prepareButton.textContent = "마지막 업그레이드 준비";
+    prepareButton.textContent = "개선 작업 준비하기";
     prepareButton.addEventListener("click", () => this.attemptPrepareFinalUpgrade());
     prepare.appendChild(prepareButton);
     finalUpgrade.appendChild(prepare);
@@ -573,6 +600,8 @@ export class AgentSurfaceView {
     this.toolsExpanded = false;
     this.lastToolRows = [];
     this.upgradeTaskKey = undefined;
+    this.finalUpgradeListedFor = null;
+    this.finalUpgradeSection.hidden = true;
     this.renderedTaskId = null;
     this.workspaceOpenButton.hidden = true;
     this.resultLaunchButton.hidden = true;
@@ -649,19 +678,34 @@ export class AgentSurfaceView {
     if (candidates.length === 1 && !this.finalUpgradeInputs.personalizationTraceId.value)
       this.finalUpgradeInputs.personalizationTraceId.value = candidates[0].id;
 
-    for (const candidate of candidates) {
-      const row = this.el("div", "agent-final-upgrade-candidate");
+    const traceInput = this.finalUpgradeInputs.personalizationTraceId;
+    const rows: HTMLElement[] = [];
+    const markSelected = () => {
+      for (const [index, row] of rows.entries())
+        row.setAttribute("aria-pressed", String(candidates[index].id === traceInput.value));
+    };
+    for (const [index, candidate] of candidates.entries()) {
+      // A button so the learner picks a basis instead of typing its id.
+      const row = this.el("button", "agent-final-upgrade-candidate") as HTMLButtonElement;
+      row.type = "button";
+      row.title = candidate.id;
 
       const id = this.el("div", "agent-final-upgrade-candidate-id");
-      id.textContent = candidate.id;
+      id.textContent = `개선 제안 ${index + 1}`;
       row.appendChild(id);
 
       const meta = this.el("div", "agent-final-upgrade-candidate-meta");
-      meta.textContent = `근거 ${candidate.basisCount}건 · ${candidate.createdAt}`;
+      meta.textContent = `반영할 근거 ${candidate.basisCount}건 · ${formatDate(candidate.createdAt)}`;
       row.appendChild(meta);
 
+      row.addEventListener("click", () => {
+        traceInput.value = candidate.id;
+        markSelected();
+      });
+      rows.push(row);
       this.finalUpgradeList.appendChild(row);
     }
+    markSelected();
   }
 
   // ==========================================================================
@@ -670,6 +714,13 @@ export class AgentSurfaceView {
 
   private renderBuilder(builder: BuilderTurnViewModel): void {
     this.renderedTaskId = builder.taskId;
+    // Final upgrade is a suggestion after completion, never shown up front.
+    const upgradeOffered = builder.phase === "TASK_COMPLETED" && builder.taskId !== null;
+    this.finalUpgradeSection.hidden = !upgradeOffered;
+    if (upgradeOffered && this.finalUpgradeListedFor !== builder.taskId) {
+      this.finalUpgradeListedFor = builder.taskId;
+      this.callbacks.onListFinalUpgrade(); // read-only candidate listing
+    }
     const upgradeTaskKey = JSON.stringify([builder.taskId, builder.taskRevision]);
     if (upgradeTaskKey !== this.upgradeTaskKey) {
       this.upgradeTaskKey = upgradeTaskKey;
