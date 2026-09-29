@@ -182,6 +182,7 @@ const TOOL_STATUS_LABELS: Readonly<Record<ToolRowViewModel["status"], string>> =
  * render `relativePath` only (Req 2.9).
  */
 export class AgentSurfaceView {
+  private readyToStart = false;
   private readonly doc: Document;
   private readonly callbacks: AgentRenderCallbacks;
 
@@ -669,6 +670,7 @@ export class AgentSurfaceView {
   // ==========================================================================
 
   private renderBuilder(builder: BuilderTurnViewModel): void {
+    this.readyToStart = !!builder.readyToStart && !!builder.taskId;
     this.renderedTaskId = builder.taskId;
     const upgradeTaskKey = JSON.stringify([builder.taskId, builder.taskRevision]);
     if (upgradeTaskKey !== this.upgradeTaskKey) {
@@ -678,7 +680,8 @@ export class AgentSurfaceView {
       this.finalUpgradeInputs.personalizationTraceId.value = "";
       this.finalUpgradeList.textContent = "";
     }
-    this.builderPhase.textContent = BUILDER_PHASE_LABELS[builder.phase];
+    this.builderPhase.textContent = this.readyToStart && builder.phase === "IDLE"
+      ? "시작 대기" : BUILDER_PHASE_LABELS[builder.phase];
 
     // Task title.
     if (builder.taskTitle) {
@@ -700,7 +703,10 @@ export class AgentSurfaceView {
       this.builderCompletion.textContent = "";
     }
 
-    if (builder.phase === "TURN_ENDED") {
+    if (this.readyToStart && builder.phase === "IDLE") {
+      this.builderNextHint.hidden = false;
+      this.builderNextHint.textContent = "스펙과 작업이 준비됐어요. ‘빌더 시작’을 누르면 확정한 스펙으로 만들기를 시작해요. 추가 요청은 선택 입력이에요.";
+    } else if (builder.phase === "TURN_ENDED") {
       this.builderNextHint.hidden = false;
       this.builderNextHint.textContent =
         "작업은 아직 끝나지 않았어요. 빌더가 다음 지시를 기다리고 있어요. 아래 '빌더에게 요청하기'에 이어서 할 일을 적어 보내 주세요." +
@@ -752,6 +758,7 @@ export class AgentSurfaceView {
     const completed = builder.phase === "TASK_COMPLETED";
     this.builderComposerInput.disabled = inFlight || completed;
     this.builderSendButton.disabled = inFlight || completed;
+    this.builderSendButton.textContent = this.readyToStart ? "빌더 시작" : "보내기";
     this.workspaceOpenButton.hidden = !builder.taskId;
     this.workspaceOpenButton.disabled = inFlight || !builder.taskId;
     this.resultLaunchButton.hidden = !completed || !builder.taskId;
@@ -892,7 +899,7 @@ export class AgentSurfaceView {
       return;
     }
     const message = this.builderComposerInput.value;
-    if (message.trim().length === 0) {
+    if (message.trim().length === 0 && !this.readyToStart) {
       return;
     }
     this.callbacks.onBuilderStart(message);
@@ -1285,6 +1292,11 @@ export class AgentSurfaceView {
       return;
     }
     this.workerStatus.hidden = false;
+    if (worker.stage === "AGENT_ENDED" && worker.role === "DISCOVERY") {
+      this.workerStatus.textContent = "탐색 작업이 끝났어요.";
+      this.workerStatus.title = worker.code;
+      return;
+    }
     // Display-only: stage + role + raw code (no product branching, Req 12.1).
     const role = worker.role ? ` · ${worker.role}` : "";
     const guidance = workerStatusGuidance(worker.code);

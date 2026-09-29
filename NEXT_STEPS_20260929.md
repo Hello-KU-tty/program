@@ -1,5 +1,14 @@
 # 앞으로 고칠 것과 점검할 것 (2026-09-29)
 
+## Builder 시작 연결 (0.0.12)
+
+사용자 실측에서 스펙의 ‘이걸로 시작’이 확정·Task 준비만 수행하고 Builder를 호출하지 않았다. 명시적 확정 동작에서 준비 성공·동일 Project·PENDING Task를 확인해 한 번 시작하도록 연결했다. History/재시작은 모델0 복원을 유지하며 기존 PENDING 작업에는 ‘빌더 시작’을 제공한다. 초기 학습 목표를 복사한 제목 대신 선택한 제품명을 표시하고, DISCOVERY 종료를 Builder 오류처럼 보이지 않게 안내한다.
+
+- typecheck, 56 files / 767 tests, build 및 실제 provider→Core HTTP/SSE→SQLite 소비 PASS. 중복 시작·준비 실패·화면 이탈·dispose와 복원0 회귀 포함.
+- 0.0.12 설치·재시작 전후 기존 저장 hash 동일. 계정836.86/2000·Overages Disabled 확인 뒤 기존 PENDING 작업의 시작 버튼1회로 실제 native 도구의 작업 시작 성공, Task ACTIVE/revision2를 확인했다. 앱 완성으로 판정하지 않으며 사용자 직접 실측을 이어간다.
+- 현재 [설치 파일·hash·실측](../core/docs/FRONTEND_BUILDER_START_FIX_20260929.md). backend kit2026.09.29.2/118관리hash 유지. B13 진단 변경은 다음 backend kit 대상이다. program push는 HURDOO Write 권한 대기다.
+
+
 ## 새 후보 표시 복구 (0.0.11)
 
 사용자 실측에서 MERGE는 성공·저장됐지만 새 후보가 ID/로딩 안내로만 보였다. adapter가 round 참조만 반환하고 controller가 저장 상세를 반영하지 않은 문제였다. 저장 상세를 round와 함께 전달해 즉시 표시하고, renderer의 상세 조회도 candidateId:revision으로 바꿔 이전 후보에 최신 내용이 섞이지 않도록 수정했다.

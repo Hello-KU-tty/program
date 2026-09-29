@@ -54,6 +54,7 @@ import type {
 } from "../../../vendor/frontend-host";
 import {
   type AgentViewModel,
+  builderTaskLabel,
   type BuilderTurnViewModel,
   type DecisionViewModel,
   type HelperConversationViewModel,
@@ -1495,10 +1496,11 @@ export class AgentSurfaceController {
     // Current-task binding for the Builder header (guarded for shape).
     const currentTask = s.currentTask;
     const taskId = currentTask?.id ?? this.vm.builder.taskId;
-    const taskTitle = currentTask?.title ?? this.vm.builder.taskTitle;
+    const taskTitle = builderTaskLabel(s) ?? this.vm.builder.taskTitle;
     const previousBuilder = taskId !== this.vm.builder.taskId && !this.activeRunId
       ? initialAgentViewModel().builder : this.vm.builder;
-    let builder = { ...previousBuilder, taskId, taskTitle, taskRevision: currentTask?.revision ?? null };
+    let builder = { ...previousBuilder, taskId, taskTitle, taskRevision: currentTask?.revision ?? null,
+      readyToStart: currentTask?.status === "PENDING" };
     if (restoreIdleBuilder && !this.activeRunId && !this.builderFlight) {
       const unapplied = decisions.some(d => d.taskId === taskId && !d.applied) ||
         s.pendingDecisions.some(d => d.taskId === taskId);

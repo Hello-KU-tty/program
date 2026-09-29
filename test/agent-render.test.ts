@@ -101,6 +101,41 @@ function pendingDecision(): DecisionViewModel {
 }
 
 describe("generated workspace and result actions", () => {
+  it("starts a prepared task with an empty optional message only after an explicit click", () => {
+    const starts: string[] = [];
+    const { root, view, restore } = mount({ ...noopCallbacks(), onBuilderStart: message => starts.push(message) });
+    try {
+      view.render(vmWithBuilder({ taskId: "task_pending", readyToStart: true }));
+      expect(starts).toEqual([]);
+      const button = byClass(root, "agent-builder-send")[0];
+      expect(button.textContent).toBe("빌더 시작");
+      expect(byClass(root, "agent-builder-phase")[0].textContent).toBe("시작 대기");
+      button.click();
+      expect(starts).toEqual([""]);
+      view.render(vmWithBuilder({ taskId: "task_pending", readyToStart: true, phase: "STARTING" }));
+      button.click();
+      expect(starts).toEqual([""]);
+    } finally { restore(); }
+  });
+
+  it("does not turn an empty ordinary composer into a new Builder request", () => {
+    const starts: string[] = [];
+    const { root, view, restore } = mount({ ...noopCallbacks(), onBuilderStart: message => starts.push(message) });
+    try {
+      view.render(vmWithBuilder({ taskId: "task_active", readyToStart: false }));
+      byClass(root, "agent-builder-send")[0].click();
+      expect(starts).toEqual([]);
+    } finally { restore(); }
+  });
+
+  it("labels a closed Discovery as a completed exploration, not a Builder failure", () => {
+    const { root, view, restore } = mount();
+    try {
+      view.render({ ...vmWithBuilder({ taskId: "task_pending", readyToStart: true }),
+        worker: { stage: "AGENT_ENDED", role: "DISCOVERY", code: "AGENT_SESSION_CLOSED_DISCOVERY" } });
+      expect(byClass(root, "agent-worker-status")[0].textContent).toBe("탐색 작업이 끝났어요.");
+    } finally { restore(); }
+  });
   it("labels scrollable transcripts and saved conversations for keyboard access without announcing every token", () => {
     const { root, restore } = mount();
     try {

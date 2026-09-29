@@ -233,6 +233,8 @@ export function wireWebviewMessaging(
   });
 
   let disposed = false;
+  let navigationVersion = 0;
+  const startedPreparedTasks = new Set<string>();
   let boundProjectId: string | undefined;
   let projectBinding = Promise.resolve();
   syncProject = () => {
@@ -375,6 +377,11 @@ export function wireWebviewMessaging(
     }
     const flowIntent = parseWebviewToHostFlow(raw);
     if (flowIntent !== null) {
+      if (["goToStart", "openHistoryProject", "startDiscovery"].includes(flowIntent.type)) navigationVersion++;
+      const navigation = navigationVersion;
+      const confirmProject = flowIntent.type === "confirmSpec" && !flowController.isInProgress("spec")
+        ? flowController.getProject()?.id : undefined;
+      const preparedBefore = flowController.getPreparedTask();
       // FlowDispatcher.handle applies the intent to the FlowController, whose
       // onChange (wired above) triggers flowDispatcher.hydrateFlow(), so the
       // webview re-hydrates automatically — no manual re-hydrate needed here.
@@ -391,6 +398,18 @@ export function wireWebviewMessaging(
       }
       if (!disposed && agentHolder) {
         await agentHolder.controller.refreshProject();
+        // "이걸로 시작" is one explicit user gesture: confirm, prepare, then
+        // start once. Never reach this path on History/reload or after leaving.
+        const prepared = flowController.getPreparedTask();
+        const builder = agentHolder.controller.getViewModel().builder;
+        if (confirmProject && navigation === navigationVersion && !disposed &&
+          flowController.getProject()?.id === confirmProject && boundProjectId === confirmProject &&
+          flowController.getSpec()?.status === "CONFIRMED" && prepared && prepared !== preparedBefore &&
+          prepared.projectId === confirmProject && builder.readyToStart && builder.taskId &&
+          !startedPreparedTasks.has(builder.taskId)) {
+          startedPreparedTasks.add(builder.taskId);
+          await agentHolder.controller.startBuilder("");
+        }
         if (flowIntent.type === "openHistoryProject") void agentHolder.controller.recover();
       }
       return;

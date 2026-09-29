@@ -53,6 +53,7 @@ import type {
   NativeWorkerStatusCode,
 } from "../../../vendor/frontend-host";
 import { toAgentError } from "./agent-error";
+import { builderTaskLabel } from "../../core/agent/agent-view-model";
 import type {
   AgentError,
   AgentResult,
@@ -105,7 +106,7 @@ export class ManagedAgentPort implements AgentRunPort, NativeInputPort {
       return ok({
         taskId: task.id,
         expectedTaskRevision: task.revision,
-        taskTitle: task.title,
+        taskTitle: builderTaskLabel(snapshot) ?? task.title,
       });
     } catch (e) {
       return err(toAgentError(e, "prepareBuilder failed"));
