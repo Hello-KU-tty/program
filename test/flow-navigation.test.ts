@@ -112,3 +112,25 @@ describe("navigation intents at the message boundary", () => {
     expect(parseWebviewToHostFlow({ type: "returnToDiscovery", kind: "builder/start" })).toBeNull();
   });
 });
+
+describe("start screen keeps History short", () => {
+  it("shows three recent projects and expands on request", () => {
+    const dom = installFakeDom();
+    try {
+      const root = dom.createElement("div");
+      const client = new WebviewClient({ postMessage: () => {} } as VsCodeApi);
+      bootstrap(root as unknown as HTMLElement, client);
+      const history = Array.from({ length: 6 }, (_, i) => ({ projectId: `p${i}`, title: `프로젝트 ${i}`, learningGoal: "목표",
+        status: "DISCOVERY", suggestedSurface: "DISCOVERY", pendingDecisionCount: 0, helperConversationCount: 0 }));
+      client.dispatch({ type: "hydrateFlow", snapshot: { ...emptySnapshot(), history } as FlowSnapshot });
+      const rows = () => root.queryAll((e) => e.className === "flow-history-row");
+      const more = root.queryAll((e) => e.className === "flow-history-more")[0];
+      expect(rows()).toHaveLength(3);
+      expect(more.hidden).toBe(false);
+      expect(more.textContent).toBe("이전 프로젝트 3개 더 보기");
+      more.click();
+      expect(rows()).toHaveLength(6);
+      expect(more.textContent).toBe("접기");
+    } finally { dom.restore(); }
+  });
+});

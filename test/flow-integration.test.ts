@@ -108,9 +108,9 @@ describe("16.1 discovery start + workspace rendering (Req 4.1, 4.6, 5.1-5.5, 6.3
     // The base preview round renders exactly 10 candidate cards (Req 5.1).
     expect(h.byClass("flow-candidate-card")).toHaveLength(10);
 
-    // Round header + rationale are present (Req 5.2). "라운드 1" is the base round.
+    // Round header + rationale are present (Req 5.2). "처음 후보" is the base round.
     const headers = h.byClass("flow-round-header").map((e) => e.textContent);
-    expect(headers[0]).toBe("라운드 1");
+    expect(headers[0]).toBe("처음 후보");
     expect(h.byClass("flow-round-rationale").length).toBeGreaterThanOrEqual(1);
     expect(h.byClass("flow-round-rationale")[0].textContent.length).toBeGreaterThan(0);
   });
@@ -139,7 +139,7 @@ describe("16.1 discovery start + workspace rendering (Req 4.1, 4.6, 5.1-5.5, 6.3
   it("accumulated rounds render in ascending order after a second accepted feedback (Req 5.4)", async () => {
     h.client.postFlow({ type: "startDiscovery", input: { learningGoal: "웹앱 만들기" } });
     await h.settle();
-    expect(h.byClass("flow-round-header").map((e) => e.textContent)).toEqual(["라운드 1"]);
+    expect(h.byClass("flow-round-header").map((e) => e.textContent)).toEqual(["처음 후보"]);
 
     // "show_more" maps to a MORE feedback intent (0 targets) -> the mock returns
     // a fresh round with roundIndex 2, appended in ascending order (Req 5.4).
@@ -147,7 +147,7 @@ describe("16.1 discovery start + workspace rendering (Req 4.1, 4.6, 5.1-5.5, 6.3
     await h.settle();
 
     const headers = h.byClass("flow-round-header").map((e) => e.textContent);
-    expect(headers).toEqual(["라운드 1", "라운드 2"]);
+    expect(headers).toEqual(["처음 후보", "다듬은 후보 1"]);
     // The controller accumulated exactly one feedback round (roundIndex 2).
     expect(h.controller.getRounds().map((r) => r.roundIndex)).toEqual([2]);
   });

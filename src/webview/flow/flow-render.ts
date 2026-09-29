@@ -146,6 +146,9 @@ const LEVEL_OPTIONS: readonly { value: LearnerLevel; label: string }[] = [
  * Agent_Run_Banner + disables submit while `snapshot.discoveryInProgress`
  * (Req 4.6).
  */
+/** Most recent History rows shown before "더 보기". */
+const HISTORY_VISIBLE = 3;
+
 export class DiscoveryStartView {
   private readonly doc: Document;
   private readonly callbacks: FlowRenderCallbacks;
@@ -183,6 +186,10 @@ export class DiscoveryStartView {
   private readonly historyLoadingCaption: HTMLElement;
   private readonly historyEmptyCaption: HTMLElement;
   private readonly historyList: HTMLElement;
+  /** History rows beyond the first few are shown only on request. */
+  private historyExpanded = false;
+  private lastSnapshot: FlowSnapshot | null = null;
+  private historyMoreButton!: HTMLButtonElement;
 
   /** True while a discovery op is in flight (mirrors the last snapshot). */
   private discoveryInProgress = false;
@@ -209,7 +216,13 @@ export class DiscoveryStartView {
     dataNotice.setAttribute("role", "note");
     dataNotice.setAttribute("aria-label", "데이터 수집 및 저장 안내");
     dataNotice.textContent = "학습 활동 기록은 기본 활성화되어 있습니다. 목표·질문·Decision 선택과 이유·작업 및 분석 요약은 Core 전용 폴더의 data/vibe-helper.sqlite에, 생성 코드는 workspaces에 로컬 저장됩니다. 모델 호출 시 필요한 입력과 코드 문맥이 Kiro로 전달됩니다. 알려진 비밀정보는 가리지만 완벽하지 않으므로 토큰·비밀번호·개인정보를 입력하지 마세요. 현재 자동 삭제 및 초기화·내보내기 기능은 제공하지 않습니다.";
-    container.appendChild(dataNotice);
+    // Folded under a one-line summary so the goal form stays on screen.
+    const dataNoticeGroup = this.el("details", "flow-data-notice");
+    const dataNoticeSummary = this.el("summary", "flow-data-notice-summary");
+    dataNoticeSummary.textContent = "학습 활동이 이 PC에 기록돼요 · 자세히 보기";
+    dataNoticeGroup.appendChild(dataNoticeSummary);
+    dataNoticeGroup.appendChild(dataNotice);
+    container.appendChild(dataNoticeGroup);
 
     // Native-support banner (guide §10-1) — a small caption near the top. Hidden
     // until a verdict is applied; populated by render() from snapshot.flowSupport
@@ -257,6 +270,16 @@ export class DiscoveryStartView {
     const historyList = this.el("ul", "flow-history-list");
     history.appendChild(historyList);
     this.historyList = historyList;
+
+    const historyMore = this.el("button", "flow-history-more") as HTMLButtonElement;
+    historyMore.type = "button";
+    historyMore.hidden = true;
+    historyMore.addEventListener("click", () => {
+      this.historyExpanded = !this.historyExpanded;
+      if (this.lastSnapshot) this.renderHistory(this.lastSnapshot);
+    });
+    history.appendChild(historyMore);
+    this.historyMoreButton = historyMore;
 
     container.appendChild(history);
 
@@ -352,6 +375,7 @@ export class DiscoveryStartView {
    * and re-evaluates the submit lock + length notice (Req 4.2/4.3).
    */
   render(snapshot: FlowSnapshot): void {
+    this.lastSnapshot = snapshot;
     const visible = snapshot.phase === "discovery_start" || snapshot.reviewingDiscovery === true;
     this.container.hidden = !visible;
     if (!visible) {
@@ -414,9 +438,15 @@ export class DiscoveryStartView {
     this.historyEmptyCaption.hidden = loading || projects.length > 0;
 
     this.historyList.textContent = "";
-    for (const project of projects) {
+    const collapsible = projects.length > HISTORY_VISIBLE;
+    const shown = collapsible && !this.historyExpanded ? projects.slice(0, HISTORY_VISIBLE) : projects;
+    for (const project of shown) {
       this.historyList.appendChild(this.buildHistoryRow(project));
     }
+    this.historyMoreButton.hidden = !collapsible;
+    this.historyMoreButton.textContent = this.historyExpanded
+      ? "접기"
+      : `이전 프로젝트 ${projects.length - HISTORY_VISIBLE}개 더 보기`;
   }
 
   /** Build one read-only History row for a safe {@link HistoryProjectView}. */
@@ -792,7 +822,7 @@ export class DiscoveryWorkspace {
     if (preview) {
       const section = this.el("div", "flow-round");
       const header = this.el("div", "flow-round-header");
-      header.textContent = "라운드 1";
+      header.textContent = "처음 후보";
       section.appendChild(header);
 
       const rationale = this.el("p", "flow-round-rationale");
@@ -808,9 +838,11 @@ export class DiscoveryWorkspace {
     }
 
     // Accumulated feedback rounds in ascending roundIndex (Req 5.4).
+    // Labels follow display order, not Core's roundIndex: Core numbers
+    // feedback rounds from 1, which would repeat the preview's "1".
     const rounds = [...snapshot.rounds].sort((a, b) => a.roundIndex - b.roundIndex);
-    for (const round of rounds) {
-      this.roundsRegion.appendChild(this.buildRoundSection(round, basket, enrichedByRef));
+    for (const [position, round] of rounds.entries()) {
+      this.roundsRegion.appendChild(this.buildRoundSection(round, basket, enrichedByRef, position + 1));
     }
   }
 
@@ -827,17 +859,13 @@ export class DiscoveryWorkspace {
     enriched: ProjectCandidateRevision | undefined,
   ): HTMLElement {
     const ref = previewRef(preview);
-    const card = this.buildCardShell(ref, basket, {
+    return this.buildCardShell(ref, basket, {
       title: preview.title,
       summary: preview.summary,
       appeal: preview.appeal,
       coreInteraction: preview.coreInteraction,
       tags: preview.generationTags,
-    });
-    if (enriched) {
-      card.appendChild(this.buildEnrichedDetail(enriched));
-    }
-    return card;
+    }, enriched);
   }
 
   /**
@@ -851,10 +879,11 @@ export class DiscoveryWorkspace {
     round: CandidateRound,
     basket: ReadonlySet<string>,
     enrichedByRef: ReadonlyMap<string, ProjectCandidateRevision>,
+    position: number,
   ): HTMLElement {
     const section = this.el("div", "flow-round");
     const header = this.el("div", "flow-round-header");
-    header.textContent = `라운드 ${round.roundIndex}`;
+    header.textContent = `다듬은 후보 ${position}`;
     section.appendChild(header);
 
     const rationale = this.el("p", "flow-round-rationale");
@@ -864,15 +893,13 @@ export class DiscoveryWorkspace {
     for (const ref of round.candidates) {
       const enriched = enrichedByRef.get(refKey(ref));
       if (enriched) {
-        const card = this.buildCardShell(ref, basket, {
+        section.appendChild(this.buildCardShell(ref, basket, {
           title: enriched.title,
           summary: enriched.summary,
           appeal: enriched.appeal,
           coreInteraction: enriched.coreInteraction,
           tags: enriched.generationTags,
-        });
-        card.appendChild(this.buildEnrichedDetail(enriched));
-        section.appendChild(card);
+        }, enriched));
       } else {
         section.appendChild(this.buildRefOnlyCard(ref, basket));
       }
@@ -895,7 +922,10 @@ export class DiscoveryWorkspace {
       coreInteraction: string;
       tags: readonly string[];
     },
+    enriched?: ProjectCandidateRevision,
   ): HTMLElement {
+    // Compact row for fast scanning (BRIEF §7): title, a short summary and the
+    // actions. Appeal, interaction, concepts and scope live under "자세히".
     const card = this.el("div", "flow-candidate-card");
 
     const title = this.el("h2", "flow-candidate-title");
@@ -906,25 +936,35 @@ export class DiscoveryWorkspace {
     summary.textContent = fields.summary;
     card.appendChild(summary);
 
+    card.appendChild(this.buildCardControls(ref, basket));
+
+    const more = this.el("details", "flow-candidate-more");
+    const moreSummary = this.el("summary", "flow-candidate-more-toggle");
+    moreSummary.textContent = "자세히";
+    more.appendChild(moreSummary);
+
     const appeal = this.el("p", "flow-candidate-appeal");
     appeal.textContent = `매력 포인트: ${fields.appeal}`;
-    card.appendChild(appeal);
+    more.appendChild(appeal);
 
     const interaction = this.el("p", "flow-candidate-interaction");
     interaction.textContent = `핵심 경험: ${fields.coreInteraction}`;
-    card.appendChild(interaction);
+    more.appendChild(interaction);
 
     if (fields.tags.length > 0) {
-      const tags = this.el("div", "flow-candidate-tags");
+      // Internal generation tags (DIRECT/EXPAND/...) are kept for tooling but
+      // not shown to the learner (BRIEF §7: not a user-facing router).
+      const tags = this.el("div", "flow-candidate-tags flow-generation-tags");
       for (const tag of fields.tags) {
         const chip = this.el("span", "flow-tag");
         chip.textContent = tag;
         tags.appendChild(chip);
       }
-      card.appendChild(tags);
+      more.appendChild(tags);
     }
 
-    card.appendChild(this.buildCardControls(ref, basket));
+    if (enriched) more.appendChild(this.buildEnrichedDetail(enriched));
+    card.appendChild(more);
     return card;
   }
 

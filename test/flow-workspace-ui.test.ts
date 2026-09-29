@@ -198,7 +198,7 @@ describe("DiscoveryWorkspace (task 12.2)", () => {
     view.render(snapshot());
     expect(byClass(root, "flow-candidate-card")).toHaveLength(10);
     expect(byClass(root, "flow-round-rationale")[0].textContent).toBe("이 후보들을 이렇게 골랐어요.");
-    expect(byClass(root, "flow-round-header")[0].textContent).toBe("라운드 1");
+    expect(byClass(root, "flow-round-header")[0].textContent).toBe("처음 후보");
     // Each card shows title + tag chips (Req 5.1).
     expect(byClass(root, "flow-candidate-title")[0].textContent).toBe("후보 1");
     expect(byClass(root, "flow-tag").length).toBeGreaterThanOrEqual(10);
@@ -212,7 +212,7 @@ describe("DiscoveryWorkspace (task 12.2)", () => {
     ];
     view.render(snapshot({ rounds }));
     const headers = byClass(root, "flow-round-header").map((e) => e.textContent);
-    expect(headers).toEqual(["라운드 1", "라운드 2", "라운드 3"]);
+    expect(headers).toEqual(["처음 후보", "다듬은 후보 1", "다듬은 후보 2"]);
     restore();
   });
 

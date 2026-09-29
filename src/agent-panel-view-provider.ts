@@ -1350,6 +1350,114 @@ export function buildWebviewHtml(
       line-height: 1.5;
       color: var(--vscode-foreground);
     }
+    /* Spec review: refine/confirm stay pinned at the bottom of the scroll area. */
+    .flow-spec .flow-spec-composer {
+      position: sticky;
+      bottom: calc(-1 * var(--sp-2));
+      z-index: 1;
+      margin: 0 calc(-1 * var(--sp-3));
+      padding: var(--sp-2) var(--sp-3);
+      background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+      border-top: 1px solid var(--vscode-panel-border, color-mix(in srgb, var(--vscode-foreground) 14%, transparent));
+    }
+    .flow-spec .flow-spec-composer {
+      display: flex;
+      flex-direction: row;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: var(--sp-2);
+    }
+    .flow-spec .flow-spec-composer > .flow-field-label,
+    .flow-spec .flow-spec-composer > .flow-spec-refine-input { flex: 1 0 100%; }
+    .flow-spec .flow-spec-refine-input { min-height: 0; height: 3.2em; resize: vertical; }
+    .flow-spec .flow-spec-composer > .flow-spec-confirm { order: 1; }
+    .flow-spec .flow-spec-composer > .flow-spec-refine-button { order: 2; }
+    .flow-spec .flow-spec-composer > .flow-spec-return { order: 3; margin-left: auto; }
+
+    /* Start screen: the goal form first, History after it (DOM order kept). */
+    .flow-start .flow-history { order: 10; }
+    .flow-data-notice > summary {
+      cursor: pointer;
+      font-size: 0.85em;
+      color: var(--vscode-descriptionForeground);
+    }
+    .flow-data-notice[open] > summary { margin-bottom: var(--sp-1); }
+    .flow-data-notice .flow-start-intro { font-size: 0.85em; }
+
+    /* History rows: title and status on one line, goal on one line, action at the side. */
+    .flow-history-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      column-gap: var(--sp-2);
+      align-items: center;
+    }
+    .flow-history-row > :not(.flow-history-open) { grid-column: 1; }
+    .flow-history-row > .flow-history-open { grid-column: 2; grid-row: 1 / span 3; }
+    .flow-history-row-goal {
+      margin: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .flow-history-more {
+      align-self: flex-start;
+      appearance: none;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.85em;
+      color: var(--vscode-descriptionForeground);
+      background: transparent;
+      border: none;
+      padding: var(--sp-1) 0;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+    .flow-history-more:hover { color: var(--vscode-foreground); }
+    .flow-history-more[hidden] { display: none; }
+
+    /* Compact candidate rows (BRIEF §7): scan titles, fold the details. */
+    .flow-candidate-card { padding: var(--sp-2) var(--sp-3); gap: 2px; }
+    .flow-candidate-summary {
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      overflow: hidden;
+      font-size: 0.92em;
+      color: var(--vscode-descriptionForeground);
+    }
+    .flow-candidate-card .flow-candidate-controls { margin-top: var(--sp-1); }
+    .flow-candidate-more > summary {
+      float: right;
+      margin-top: -26px;
+      cursor: pointer;
+      font-size: 0.85em;
+      color: var(--vscode-descriptionForeground);
+      padding: 2px var(--sp-1);
+      list-style-position: inside;
+    }
+    .flow-candidate-more > summary:hover { color: var(--vscode-foreground); }
+    .flow-candidate-more[open] {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-1);
+      margin-top: var(--sp-1);
+      padding-top: var(--sp-2);
+      border-top: 1px dashed var(--vscode-panel-border, color-mix(in srgb, var(--vscode-foreground) 18%, transparent));
+    }
+    .flow-candidate-more[open] > summary { order: -1; float: none; margin-top: 0; align-self: flex-end; }
+    /* The refinement composer stays reachable while scrolling the list. */
+    .flow-workspace .flow-composer {
+      position: sticky;
+      bottom: calc(-1 * var(--sp-2));
+      z-index: 1;
+      margin: 0 calc(-1 * var(--sp-3));
+      padding: var(--sp-2) var(--sp-3);
+      background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+      border-top: 1px solid var(--vscode-panel-border, color-mix(in srgb, var(--vscode-foreground) 14%, transparent));
+    }
+    /* Internal generation tags are never shown to the learner. */
+    .flow-generation-tags { display: none !important; }
+
     .flow-candidate-appeal,
     .flow-candidate-interaction {
       margin: 0;

@@ -492,7 +492,7 @@ describe("native worker status line", () => {
       view.render({ ...initialAgentViewModel(), worker: { stage: "DIAGNOSTIC", role: null, code: "WORKSPACE_WINDOW_AVAILABLE" } } as AgentViewModel);
       expect(status().hidden).toBe(false);
       expect(status().textContent).toContain("그 창에서 처리");
-      expect(status().attributes.title ?? status().title).toBe("WORKSPACE_WINDOW_AVAILABLE");
+      expect((status() as unknown as { title?: string }).title).toBe("WORKSPACE_WINDOW_AVAILABLE");
       view.render({ ...initialAgentViewModel(), worker: { stage: "AGENT_RUNNING", role: "DISCOVERY", code: "AGENT_RUNNING_DISCOVERY" } } as AgentViewModel);
       expect(status().textContent).toBe("탐색 · 에이전트가 작업 중이에요");
     } finally { restore(); }
@@ -657,6 +657,26 @@ describe("final upgrade is a suggestion after completion", () => {
       rows[1].click();
       expect(trace.value).toBe("trace_b");
       expect(rows.map((r) => r.attributes["aria-pressed"])).toEqual(["false", "true"]);
+    } finally { restore(); }
+  });
+});
+
+describe("agent surface tabs", () => {
+  it("switches surfaces and badges waiting decisions", () => {
+    const { root, view, restore } = mount();
+    try {
+      const surface = byClass(root, "agent-surface")[0];
+      const tabs = byClass(root, "agent-tab");
+      expect(surface.dataset.tab).toBe("builder");
+      expect(tabs.map((t) => t.attributes["aria-selected"])).toEqual(["true", "false", "false"]);
+      tabs[1].click();
+      expect(surface.dataset.tab).toBe("helper");
+      view.render({ ...initialAgentViewModel(), decisions: [pendingDecision()] });
+      const badges = byClass(root, "agent-tab-badge");
+      expect(badges[0].hidden).toBe(false);
+      expect(badges[0].textContent).toBe("1");
+      view.render({ ...initialAgentViewModel(), decisions: [{ ...pendingDecision(), resolved: true }] });
+      expect(badges[0].hidden).toBe(true);
     } finally { restore(); }
   });
 });
