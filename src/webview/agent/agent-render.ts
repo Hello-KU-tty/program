@@ -55,6 +55,7 @@ import type {
   FinalUpgradeCandidate,
 } from "../../../vendor/frontend-client";
 import { errorGuidance, workerStatusGuidance } from "../../core/runtime-errors";
+import { renderChatMessage } from "./chat-message";
 
 /**
  * Callbacks the agent render layer invokes when the learner interacts with a
@@ -389,7 +390,7 @@ export class AgentSurfaceView {
     helper.appendChild(this.helperPhase);
 
     this.helperWindowOpening = this.el("div", "agent-helper-window");
-    this.helperWindowOpening.textContent = "도우미 창을 여는 중이에요…";
+    this.helperWindowOpening.textContent = "도우미 연결을 준비하고 있어요. 별도 Kiro 창이 열려도 질문과 답변은 여기에서 이어져요.";
     this.helperWindowOpening.hidden = true;
     helper.appendChild(this.helperWindowOpening);
 
@@ -731,15 +732,7 @@ export class AgentSurfaceView {
     // Permission-denied indicator.
     this.builderPermissionDenied.hidden = !builder.permissionDenied;
 
-    // Transcript (Core-redacted agent text → textContent only, Req 2.7).
-    this.keepScroll(this.builderTranscript, () => {
-      this.builderTranscript.textContent = "";
-      for (const line of builder.transcript) {
-        const lineEl = this.el("p", "agent-transcript-line");
-        lineEl.textContent = line.text;
-        this.builderTranscript.appendChild(lineEl);
-      }
-    });
+    this.renderTranscript(this.builderTranscript, builder.transcript, "빌더");
 
     // Tool rows — one row per stable key (Req 2.2/2.8), collapsed by default.
     this.renderToolRows(builder.toolRows);
@@ -812,6 +805,29 @@ export class AgentSurfaceView {
     const followBottom = region.scrollHeight - previous - region.clientHeight < 24;
     rebuild();
     region.scrollTop = followBottom ? region.scrollHeight : previous;
+  }
+
+  private readonly transcriptCache = new WeakMap<HTMLElement, string>();
+  private conversationKey = "";
+
+  private renderTranscript(region: HTMLElement, chunks: BuilderTurnViewModel["transcript"], role: string): void {
+    // TEXT events are deltas, not messages. Never insert whitespace at transport boundaries.
+    const text = chunks.map(chunk => chunk.text).join("");
+    if (this.transcriptCache.get(region) === text && (region.children.length > 0 || !text)) return;
+    this.keepScroll(region, () => {
+      region.textContent = "";
+      if (text) {
+        const message = this.el("article", "agent-chat-message");
+        const label = this.el("div", "agent-chat-role");
+        label.textContent = role;
+        message.appendChild(label);
+        const body = this.el("div", "agent-chat-body");
+        renderChatMessage(body, text);
+        message.appendChild(body);
+        region.appendChild(message);
+      }
+      this.transcriptCache.set(region, text);
+    });
   }
 
   /** Fixed guidance for a known runtime code, with the code kept for support. */
@@ -912,7 +928,7 @@ export class AgentSurfaceView {
 
   private renderHelper(helper: HelperViewModel): void {
     this.helperPhase.textContent = HELPER_PHASE_LABELS[helper.phase];
-    this.helperWindowOpening.hidden = !helper.windowOpening;
+    this.helperWindowOpening.hidden = helper.phase !== "RUNNING" || !helper.windowOpening || helper.transcript.length > 0;
 
     if (helper.phase === "FAILED" && helper.errorCode) {
       this.helperError.hidden = false;
@@ -922,19 +938,18 @@ export class AgentSurfaceView {
       this.helperError.textContent = "";
     }
 
-    // Transcript (agent text → textContent only, Req 2.7 / 4.5).
-    this.helperTranscript.textContent = "";
-    for (const line of helper.transcript) {
-      const lineEl = this.el("p", "agent-transcript-line");
-      lineEl.textContent = line.text;
-      this.helperTranscript.appendChild(lineEl);
-    }
+    this.renderTranscript(this.helperTranscript, helper.transcript, "도우미");
 
     // Recorded conversations read from the After_Snapshot (Req 4.5).
-    this.helperConversations.textContent = "";
-    for (const conversation of helper.conversations) {
-      this.helperConversations.appendChild(this.buildHelperConversation(conversation));
-    }
+    this.keepScroll(this.helperConversations, () => {
+      const key = JSON.stringify(helper.conversations);
+      if (this.conversationKey === key && this.helperConversations.children.length > 0) return;
+      this.conversationKey = key;
+      this.helperConversations.textContent = "";
+      for (const conversation of helper.conversations) {
+        this.helperConversations.appendChild(this.buildHelperConversation(conversation));
+      }
+    });
 
     const inFlight = helper.phase === "RUNNING";
     this.helperComposerInput.disabled = inFlight;
@@ -947,7 +962,7 @@ export class AgentSurfaceView {
     block.dataset.conversationId = conversation.conversationId;
 
     const status = this.el("div", "agent-helper-conversation-status");
-    status.textContent = conversation.status;
+    status.textContent = { OPEN: "대화 중", PENDING_ANALYSIS: "대화 기록됨 · 근거 정리 대기", ANALYZED: "근거 정리 완료", ANALYSIS_FAILED: "근거 정리 실패" }[conversation.status];
     block.appendChild(status);
 
     if (conversation.userExcerpts.length > 0) {
@@ -966,8 +981,8 @@ export class AgentSurfaceView {
       label.textContent = "도우미 답변 요약";
       block.appendChild(label);
       for (const summary of conversation.responseSummaries) {
-        const summaryEl = this.el("p", "agent-helper-conversation-response");
-        summaryEl.textContent = summary;
+        const summaryEl = this.el("div", "agent-helper-conversation-response");
+        renderChatMessage(summaryEl, summary);
         block.appendChild(summaryEl);
       }
     }
@@ -1286,7 +1301,9 @@ export class AgentSurfaceView {
 
   /** Renders the native-worker status (display-only, Req 12.1). */
   private renderWorker(worker: AgentViewModel["worker"]): void {
-    if (!worker) {
+    // This host's opening code can outlive the other host's entire Helper run.
+    // The run-scoped Helper banner above owns this indication.
+    if (!worker || worker.stage === "HELPER_WINDOW_OPENING") {
       this.workerStatus.hidden = true;
       this.workerStatus.textContent = "";
       return;

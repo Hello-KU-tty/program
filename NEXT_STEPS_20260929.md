@@ -1,5 +1,14 @@
 # 앞으로 고칠 것과 점검할 것 (2026-09-29)
 
+## 채팅·도우미 배너 수정 인계 (0.0.13)
+
+스트리밍 TEXT 조각을 하나로 이어 문단·목록·강조·코드를 안전하게 표시하고, 역할 표시/대화 스타일/Helper 스크롤 보존을 추가했다. HTML과 외부 이미지·활성 링크는 실행하지 않는다. Helper의 실제 run 이벤트와 terminal을 기준으로 창 준비 표시를 해제하며 늦은 로컬 상태가 다시 켜지 못하게 했다. 무한 blink도 제거했다.
+
+- typecheck, 57 files / 779 tests, build, 실제 provider/Core HTTP/SSE/SQLite 소비 회귀 PASS. kit2026.09.29.2/118관리hash 유지.
+- Kiro CLI0.0.13 설치 확인. W reload에서 이전 H owner의 UPDATE_WAITING을 확인했으며, 이 인계 시점 실제 새 화면 검증은 미완료다.
+- Windows 별도 H 창은 현재 권한 격리 제약으로 유지한다. 한 창 제거는 별도 capability 검증이 필요하다. 재시작 전체 transcript 복원·Helper 저장 요약 품질·영어 진행 출력은 후속 항목이다.
+- [원인·수정·VSIX hash·후속 작업](../core/docs/FRONTEND_CHAT_FIX_20260929.md). 프론트 실측은 이쪽에서 이어서 진행한다. 아래 이전 기록은 당시 상태다.
+
 ## Builder 시작 연결 (0.0.12)
 
 사용자 실측에서 스펙의 ‘이걸로 시작’이 확정·Task 준비만 수행하고 Builder를 호출하지 않았다. 명시적 확정 동작에서 준비 성공·동일 Project·PENDING Task를 확인해 한 번 시작하도록 연결했다. History/재시작은 모델0 복원을 유지하며 기존 PENDING 작업에는 ‘빌더 시작’을 제공한다. 초기 학습 목표를 복사한 제목 대신 선택한 제품명을 표시하고, DISCOVERY 종료를 Builder 오류처럼 보이지 않게 안내한다.

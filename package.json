@@ -2,7 +2,7 @@
   "name": "builder-helper-agent-panel",
   "displayName": "Builder & Helper Agent Panel",
   "description": "Kiro IDE extension contributing a right-side Agent Panel with Builder and Helper tabs.",
-  "version": "0.0.12",
+  "version": "0.0.13",
   "private": true,
   "publisher": "vibe-helper",
   "engines": {
