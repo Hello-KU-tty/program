@@ -485,6 +485,7 @@ function contractSnapshot(parts: {
   previewRound?: unknown;
   rounds?: unknown[];
   candidateEnrichments?: unknown[];
+  candidates?: unknown[];
   selectedCandidate?: unknown;
   learningSpec?: unknown;
 }) {
@@ -496,7 +497,7 @@ function contractSnapshot(parts: {
           previewRound: parts.previewRound ?? null,
           rounds: parts.rounds ?? [],
           candidateEnrichments: parts.candidateEnrichments ?? [],
-          candidates: [],
+          candidates: parts.candidates ?? [],
         }
       : null;
   return {
@@ -555,6 +556,66 @@ function fakeClient(overrides: Partial<Record<string, unknown>> = {}): LocalCore
   };
   return base as unknown as LocalCoreClient;
 }
+
+describe("feedback round details reach the controller without another model run", () => {
+  function harness(missing = false, held?: Promise<void>) {
+    const initial = contractSnapshot({ previewRound: contractPreviewRound(), rounds: [contractRound(1, "round_1")],
+      candidates: [contractCandidate("cand_1", 2), contractCandidate("cand_2", 1)] });
+    const next = { ...contractRound(2, "round_2"), candidates: [{ candidateId: "merged", revision: 1 }] };
+    let snapshot = initial;
+    const startRun = vi.fn(async (_request: unknown) => ({ id: "run_feedback" }));
+    const client = fakeClient({ restoreProject: async () => snapshot, startRun,
+      watchRun: async () => {
+        await held;
+        snapshot = contractSnapshot({ previewRound: contractPreviewRound(), rounds: [contractRound(1, "round_1"), next],
+          candidates: [...initial.discoveryContext!.candidates, ...(missing ? [] : [contractCandidate("merged", 1)])] });
+        return { status: "SUCCEEDED", outcome: "DURABLE_RESULT" };
+      } });
+    const port = new LocalCoreDiscoveryPort(client);
+    const controller = new FlowController({ discovery: port, spec: port, restore: port }, { clock: new FakeClock() });
+    return { controller, startRun };
+  }
+
+  it.each(["MERGE", "REGENERATE"] as const)("%s publishes saved details with the round and keeps basket/input", async intent => {
+    const { controller, startRun } = harness();
+    await controller.restoreSavedProject("project_1");
+    const targets = [{ candidateId: "cand_1", revision: 2 }, { candidateId: "cand_2", revision: 1 }];
+    targets.forEach(target => controller.toggleBasket(target));
+    const before = controller.snapshot();
+    await controller.submitFeedback({ intent, targets: intent === "MERGE" ? targets : [] });
+    const after = controller.snapshot();
+    expect(after.rounds.at(-1)?.candidates).toEqual([{ candidateId: "merged", revision: 1 }]);
+    expect(after.enrichedCandidates.find(c => c.candidateId === "merged")).toMatchObject({ revision: 1, title: contractCandidate("merged", 1).title });
+    expect(after.input).toEqual(before.input);
+    expect(after.basket).toEqual(before.basket);
+    expect(after.discoveryInProgress).toBe(false);
+    expect(startRun).toHaveBeenCalledOnce();
+    expect(startRun.mock.calls[0][0]).toMatchObject({ phase: intent === "MERGE" ? "MERGE" : "ROUND" });
+  });
+
+  it("reports missing durable details without publishing an endless loading card or retrying a model", async () => {
+    const { controller, startRun } = harness(true);
+    await controller.restoreSavedProject("project_1");
+    const before = controller.snapshot();
+    await controller.submitFeedback({ intent: "REGENERATE", targets: [] });
+    expect(controller.snapshot().rounds).toEqual(before.rounds);
+    expect(controller.snapshot().notice?.kind).toBe("error");
+    expect(startRun).toHaveBeenCalledOnce();
+  });
+
+  it("does not apply late round details after leaving the project", async () => {
+    let release!: () => void;
+    const { controller, startRun } = harness(false, new Promise<void>(resolve => { release = resolve; }));
+    await controller.restoreSavedProject("project_1");
+    const pending = controller.submitFeedback({ intent: "REGENERATE", targets: [] });
+    await vi.waitFor(() => expect(startRun).toHaveBeenCalledOnce());
+    controller.goToStart();
+    release();
+    await pending;
+    expect(controller.snapshot().project).toBeNull();
+    expect(controller.snapshot().enrichedCandidates).toEqual([]);
+  });
+});
 
 describe("LocalCoreDiscoveryPort success mapping (guide \u00a76)", () => {
   it("startDiscovery -> ok(DiscoverySession) from the restored snapshot", async () => {
@@ -626,7 +687,8 @@ describe("LocalCoreDiscoveryPort success mapping (guide \u00a76)", () => {
     };
     const client = fakeClient({
       restoreProject: async () =>
-        contractSnapshot({ rounds: [contractRound(1, "round_1"), contractRound(2, "round_2")] }),
+        contractSnapshot({ rounds: [contractRound(1, "round_1"), contractRound(2, "round_2")],
+          candidates: [contractCandidate("cand_1", 2), contractCandidate("cand_2", 1)] }),
     });
     const port = new LocalCoreDiscoveryPort(client);
     await port.restoreProject("project_1", ENV);
@@ -636,6 +698,7 @@ describe("LocalCoreDiscoveryPort success mapping (guide \u00a76)", () => {
     expect(res.value.roundIndex).toBe(2);
     expect(res.value.appliedFeedbackIds).toEqual(["feedback_1"]);
     expect(res.value.candidates).toHaveLength(2);
+    expect(res.value.candidateDetails?.map(c => [c.candidateId, c.revision])).toEqual([["cand_1", 2], ["cand_2", 1]]);
   });
 
   it("generateSpecDraft -> ok(LearningSpecRevision) DRAFT", async () => {
@@ -845,6 +908,7 @@ describe("navigation: return to Discovery and go to start", () => {
         discoverySession: contractSession({ status: "SELECTED", correlationId: "corr_session" }),
         previewRound: contractPreviewRound(),
         learningSpec: contractSpec(2, "DRAFT", 1),
+        selectedCandidate: contractCandidate("cand_1", 1),
       }),
       project: { id: "project_1", status: "SPEC_REVIEW" },
     };
@@ -892,7 +956,7 @@ describe("navigation: return to Discovery and go to start", () => {
     expect(h.execute).not.toHaveBeenCalled();
   });
 
-  it("controller returns to the start form with the input kept, then resubmit retries on the same project", async () => {
+  it("controller shows saved candidates without mutation, then explicit regeneration starts once on the same project", async () => {
     const h = returnHarness();
     const port = new LocalCoreDiscoveryPort(h.client);
     const controller = new FlowController({ discovery: port, spec: port, restore: port });
@@ -901,18 +965,76 @@ describe("navigation: return to Discovery and go to start", () => {
 
     await controller.returnToDiscovery();
     const snap = controller.snapshot();
-    expect(snap.phase).toBe("discovery_start");
+    expect(snap.phase).toBe("discovery_workspace");
+    expect(snap.reviewingDiscovery).toBe(true);
     expect(snap.project?.id).toBe("project_1");
     expect(snap.input?.learningGoal).toBe(INPUT.learningGoal);
-    expect(snap.spec).toBeNull();
+    expect(snap.spec?.revision).toBe(2);
+    expect(snap.previewRound).not.toBeNull();
+    expect(h.execute).not.toHaveBeenCalled();
     expect(h.startRun).not.toHaveBeenCalled();
 
-    // Same input -> explicit retry on the new session, not a new project.
+    // The existing mutation is deferred until this explicit request.
     await controller.startDiscovery(snap.input!);
     expect(h.startRun).toHaveBeenCalledOnce();
     expect(h.startRun.mock.calls[0][0]).toMatchObject({
       kind: "DISCOVERY", phase: "PREVIEW", projectId: "project_1", discoverySessionId: "discovery_session_2",
     });
+    expect(h.execute).toHaveBeenCalledOnce();
+    expect(h.execute.mock.calls[0][0]).toMatchObject({ kind: "UI_RETURN_TO_DISCOVERY", input: snap.input });
+  });
+
+  it("reopens the existing Spec from saved candidates with no Core mutation or model call", async () => {
+    const h = returnHarness();
+    const port = new LocalCoreDiscoveryPort(h.client);
+    const controller = new FlowController({ discovery: port, spec: port, restore: port });
+    await controller.restoreSavedProject("project_1");
+    const before = controller.snapshot();
+    await controller.returnToDiscovery();
+    expect(await controller.submitFeedback({ intent: "SELECT", targets: [{ candidateId: "other", revision: 1 }] })).toEqual({ accepted: false });
+    expect(await controller.submitFeedback({ intent: "SELECT", targets: [before.selectedCandidate!] })).toEqual({ accepted: true });
+    expect(controller.snapshot().phase).toBe("spec_review");
+    expect(controller.snapshot().spec).toEqual(before.spec);
+    expect(h.execute).not.toHaveBeenCalled();
+    expect(h.startRun).not.toHaveBeenCalled();
+  });
+
+  it("preserves saved candidates and draft on failed explicit regeneration", async () => {
+    const h = returnHarness();
+    const port = new LocalCoreDiscoveryPort(h.client);
+    const controller = new FlowController({ discovery: port, spec: port, restore: port });
+    await controller.restoreSavedProject("project_1");
+    await controller.returnToDiscovery();
+    const before = controller.snapshot();
+    h.execute.mockRejectedValueOnce(new Error("offline"));
+    await controller.startDiscovery({ ...INPUT, learningGoal: "새 목표" });
+    expect(controller.snapshot().previewRound).toEqual(before.previewRound);
+    expect(controller.snapshot().spec).toEqual(before.spec);
+    expect(controller.snapshot().reviewingDiscovery).toBe(true);
+    expect(h.execute).toHaveBeenCalledOnce();
+    expect(h.execute.mock.calls[0][0]).toMatchObject({ input: { learningGoal: "새 목표" } });
+    expect(h.startRun).not.toHaveBeenCalled();
+  });
+
+  it("deduplicates explicit regeneration and ignores its late result after leaving the project", async () => {
+    const h = returnHarness();
+    const port = new LocalCoreDiscoveryPort(h.client);
+    const controller = new FlowController({ discovery: port, spec: port, restore: port });
+    await controller.restoreSavedProject("project_1");
+    await controller.returnToDiscovery();
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const original = h.execute.getMockImplementation()!;
+    h.execute.mockImplementationOnce(async req => { await gate; return original(req); });
+    const pending = controller.startDiscovery(INPUT);
+    await vi.waitFor(() => expect(h.execute).toHaveBeenCalledOnce());
+    await controller.startDiscovery(INPUT);
+    await controller.goToStart();
+    release();
+    await pending;
+    expect(controller.snapshot().project).toBeNull();
+    expect(h.execute).toHaveBeenCalledOnce();
+    expect(h.startRun).not.toHaveBeenCalled();
   });
 
   it("goToStart clears the screen only and reloads History without touching Core state", async () => {

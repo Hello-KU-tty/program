@@ -15,7 +15,16 @@
  * already contains only display-safe scalars (stage / role / raw diagnostic
  * code).
  */
-import type { NativeWorkerStatusView } from "../../../vendor/frontend-client";
+import type { NativeWorkerStatusView, ProjectSessionSnapshot } from "../../../vendor/frontend-client";
+
+/** Use the selected product name when the initial task only repeats the goal. */
+export function builderTaskLabel(snapshot: ProjectSessionSnapshot): string | null {
+  const task = snapshot.currentTask;
+  if (!task) return null;
+  const goalTitle = task.title === snapshot.project.title || task.title === snapshot.project.learningGoal;
+  return task.sequence === 1 && goalTitle && snapshot.selectedCandidate
+    ? snapshot.selectedCandidate.title : task.title;
+}
 
 /** Top-level agent surface projection posted to the webview. */
 export interface AgentViewModel {
@@ -47,6 +56,8 @@ export interface BuilderTurnViewModel {
     | "START_ERROR";
   readonly taskId: string | null;
   readonly taskTitle: string | null;
+  /** A durable PENDING task exists; an explicit empty-message start is allowed. */
+  readonly readyToStart?: boolean;
   /** Durable revision used to fill the existing upgrade form (never a path). */
   readonly taskRevision?: number | null;
   /** Appended TEXT stream (Core-redacted). */

@@ -1,5 +1,67 @@
 # 앞으로 고칠 것과 점검할 것 (2026-09-29)
 
+## 즉시 작업 인계: 양쪽 main 병합 완료 (0.0.14)
+
+HURDOO의 program push 권한을 확인했고, 원격 ca586f4/5519b18과 로컬0.0.10~0.0.13 수정들을 merge로 보존했다. 오류 안내 NATIVE_IDE_TURN_FAILED/PROJECT_TOOLCHAIN_DENIED도 포함한다. 아래16:30의 Write 권한 대기·브랜치 병합 대기는 이 후속으로 대체한다.
+
+- 병합 최종 frontend 타입·전체 테스트·빌드 검증을 수행했다. 채팅 수정 이전의 실제 provider/Core 소비 회귀도 PASS다.
+- **최종 소스는0.0.14**다. 병합 전 로컬 설치한0.0.13과 다른 내용이므로 버전을 올렸다. 개발자는 최신 main에서 이어서 작업한다.
+- backend kit은2026.09.29.2 유지. B13을 포함할 다음 kit은2026.09.29.3 이상, 다음 확장 버전은0.0.15 이상을 사용한다. 기존 source ZIP은 아직0.0.10 시점이다.
+- 이쪽 프론트 실제 화면 검증은 별도 완료 근거가 필요하다. 전체 자동 검증을 Windows 한 창 동시 실행·기존0.0.9 업그레이드·사용자 학습 효과 PASS로 확대하지 않는다.
+
+## 채팅·도우미 배너 수정 인계 (0.0.13)
+
+스트리밍 TEXT 조각을 하나로 이어 문단·목록·강조·코드를 안전하게 표시하고, 역할 표시/대화 스타일/Helper 스크롤 보존을 추가했다. HTML과 외부 이미지·활성 링크는 실행하지 않는다. Helper의 실제 run 이벤트와 terminal을 기준으로 창 준비 표시를 해제하며 늦은 로컬 상태가 다시 켜지 못하게 했다. 무한 blink도 제거했다.
+
+- typecheck, 57 files / 779 tests, build, 실제 provider/Core HTTP/SSE/SQLite 소비 회귀 PASS. kit2026.09.29.2/118관리hash 유지.
+- Kiro CLI0.0.13 설치 확인. W reload에서 이전 H owner의 UPDATE_WAITING을 확인했으며, 이 인계 시점 실제 새 화면 검증은 미완료다.
+- Windows 별도 H 창은 현재 권한 격리 제약으로 유지한다. 한 창 제거는 별도 capability 검증이 필요하다. 재시작 전체 transcript 복원·Helper 저장 요약 품질·영어 진행 출력은 후속 항목이다.
+- [원인·수정·VSIX hash·후속 작업](../core/docs/FRONTEND_CHAT_FIX_20260929.md). 프론트 실측은 이쪽에서 이어서 진행한다. 아래 이전 기록은 당시 상태다.
+
+## Builder 시작 연결 (0.0.12)
+
+사용자 실측에서 스펙의 ‘이걸로 시작’이 확정·Task 준비만 수행하고 Builder를 호출하지 않았다. 명시적 확정 동작에서 준비 성공·동일 Project·PENDING Task를 확인해 한 번 시작하도록 연결했다. History/재시작은 모델0 복원을 유지하며 기존 PENDING 작업에는 ‘빌더 시작’을 제공한다. 초기 학습 목표를 복사한 제목 대신 선택한 제품명을 표시하고, DISCOVERY 종료를 Builder 오류처럼 보이지 않게 안내한다.
+
+- typecheck, 56 files / 767 tests, build 및 실제 provider→Core HTTP/SSE→SQLite 소비 PASS. 중복 시작·준비 실패·화면 이탈·dispose와 복원0 회귀 포함.
+- 0.0.12 설치·재시작 전후 기존 저장 hash 동일. 계정836.86/2000·Overages Disabled 확인 뒤 기존 PENDING 작업의 시작 버튼1회로 실제 native 도구의 작업 시작 성공, Task ACTIVE/revision2를 확인했다. 앱 완성으로 판정하지 않으며 사용자 직접 실측을 이어간다.
+- 현재 [설치 파일·hash·실측](../core/docs/FRONTEND_BUILDER_START_FIX_20260929.md). backend kit2026.09.29.2/118관리hash 유지. B13 진단 변경은 다음 backend kit 대상이다. program push는 HURDOO Write 권한 대기다.
+
+
+## 새 후보 표시 복구 (0.0.11)
+
+사용자 실측에서 MERGE는 성공·저장됐지만 새 후보가 ID/로딩 안내로만 보였다. adapter가 round 참조만 반환하고 controller가 저장 상세를 반영하지 않은 문제였다. 저장 상세를 round와 함께 전달해 즉시 표시하고, renderer의 상세 조회도 candidateId:revision으로 바꿔 이전 후보에 최신 내용이 섞이지 않도록 수정했다.
+
+- typecheck, 56 files / 758 tests, build PASS. 실제 controller/port→Core HTTP/SSE→SQLite→webview에서 MERGE/REGENERATE 직후 표시, 입력·바구니 보존, 추가 enrichment 없음 PASS.
+- kit2026.09.29.2 관리 파일118개는 그대로다. 0.0.11 VSIX를 설치·재시작해 기존 프로젝트의 새 후보와 원래 후보 상세를 확인했다. 저장 상태 hash는 동일하고 복구의 새 모델 run은0이다.
+- 현재 설치 파일·SHA와 검증 범위는 [후속 기록](../core/docs/FRONTEND_FEEDBACK_DISPLAY_FIX_20260929.md)을 따른다. 아래0.0.10과 기존 source ZIP은 이전 시점 기록이다.
+- program push는 HURDOO Write 권한 대기다. 권한 부여 전 재시도하지 않는다. 프론트 직접 실측은 준비된 Kiro 창에서 이어서 진행한다.
+
+
+## 2026-09-29 후속 작업 결과 (0.0.10)
+
+**직접 사용 준비 결과:** 이쪽에서 현재 소스0.0.10을 다시 빌드·설치하고 제품 workspace Trust를 적용했다. 합성 목표로 실제 PREVIEW1회가32.812초에 성공해10개 후보를 저장했다. Kiro 정상 종료·재시작 뒤 History에서 같은 후보를 추가 모델 호출 없이 복원했고 durable 상태 hash도 같았다. 사용량835.96→836.18/2000, Overages Disabled. 사용자용 Kiro 창은 빈 학습 목표 입력 화면으로 준비했다. Builder/Helper 이후 직접 실측은 이어서 진행할 예정이다. [현재 VSIX·실측 범위](../core/docs/FRONTEND_LIVE_READY_20260929.md).
+
+**Git 전달:** core 소스 `bc8570b` push 완료. program 소스 `deef685` commit 완료이며, 현재 HURDOO의 해당 repository Write 권한이 없어 push를 대기한다. 권한 부여 전 반복 push하지 않는다. 이 후속은 소스 변경 없는 문서 기록이다.
+
+**실측 담당/예정:** 프론트 실측은 **이쪽(core 작업 환경)에서 현재 제출 후보 확장을 Kiro에 적용해 진행할 예정**이다. 사용자 직접 사용을 위한 창과 대상 Workspace Trust도 준비한다. 확장 설치·Trust는 사용자가 승인했으며, 이번 변경은 `hurdoo` 계정으로 `Hello-KU-tty/core`, `Hello-KU-tty/program`에 commit/push한다. 아래 미커밋/실측 미완료 문구는 이전 자동 검증 시점의 기록이며 실제 관측 결과는 후속 인계로 구분한다.
+
+이 절은 아래 최초 인계의 현재 상태/바로 할 일을 갱신한다. 최초 기록과 당시 실측은 그대로 보존한다.
+
+- backend8265e9d에는 e3532b7이 이미 포함되어 있다. 새 kit **frontend-handoff-20260929-2 / 2026.09.29.2**를 실제 program에 적용했고 관리 파일118개 hash를 검증했다. 새 적용 receipt는 `.vibe-helper-kit.json`이다.
+- kit 이름·버전·이전 기준의 소스 하드코딩을 없앴다. 실제 적용 파일 hash와 receipt/manifest를 대조하는 `--program`, `--verification` 방식은 [새 kit 절차](../core/docs/FRONTEND_HANDOFF.md)를 따른다.
+- 외부 JS/CMD/EXE pnpm의 공용 shim 교체를 정확한 descriptor/launcher와 같은 제품 상위 버전 조건에서 검증했다. Node 변경·변조·downgrade 거절은 유지했다.
+- Spec의 이전 후보 보기는 저장 Session/Spec/candidate/input을 보존하며 모델0이다. 현재 Spec 재열기도 모델0이다. 명시적 새 후보 받기에서만 같은 Project의 새 Session과 preview1회를 생성한다.
+- package/package-lock **0.0.10**, Node24.19.0 pin 유지. 실제 frontend typecheck·753 tests·build, actual consumer PASS. backend 전체 check와 native169도 PASS.
+- 제품0.0.10 VSIX 생성 및 Kiro1.1.70 CLI 설치/목록 확인을 마쳤다. 이 PC는 설치 전 기존0.0.9가 없어 기존 프로젝트 upgrade PASS로 세지 않는다. 실제 Kiro 재시작/activation·Agent는 미검증이다.
+- source ZIP781개 파일을 새로 풀어 lockfile 설치, backend 전체 check, frontend753, panel build/native169+source selector6, actual consumer를 통과했다. 검사 후781개 hash 일치. 실제 모델0.
+- 모든 변경은 현재 미커밋이다. commit/push/외부 제출은 하지 않았다. 옛 push 명령을 이번 작업에서 실행하지 않았다.
+
+남은 실측: 최신 크레딧/Overages 관측(누적900·신규중단880 유지), 기존 프로젝트/Trust 확인, B6/B7/B8/B11과 vertical flow·History·fallback 영상. B3 durable 실패/abandon은 여전히 미구현이다. 사람 pilot·baseline과 정확한 제출 형식도 별도 조건이다.
+
+산출물·hash·잔여 항목은 [제출 전 결과](../core/docs/SUBMISSION_READINESS_20260929.md), 소스 재현 명령은 [재현 보고서](../core/docs/SOURCE_REPRODUCIBILITY_20260929.md)를 기준으로 한다. 아래 최초 기록의0.0.9/하드코딩/push 권고는 현재 완료 상태로 오해하지 않는다.
+
+---
+
 프론트(`program`)와 백엔드(`core`)를 함께 기준으로 정리했다. 실측은 이 문서의 **2. 실측 점검** 순서대로 진행하고, 결과는 `LIVE_TEST_CHECKLIST.html`의 "결과 Markdown 복사"로 남긴다.
 
 ## 0. 현재 상태 (16:30 갱신)

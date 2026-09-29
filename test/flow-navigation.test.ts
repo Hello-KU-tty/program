@@ -80,6 +80,25 @@ describe("project navigation bar", () => {
     button.click();
     expect(posted).toContainEqual({ type: "returnToDiscovery" });
   });
+
+  it("shows saved candidates alongside retained input and an explicit new-candidate action", () => {
+    const selected = { candidateId: "candidate_1", revision: 1 };
+    const snapshot: FlowSnapshot = { ...withProject("discovery_workspace", "SPEC_REVIEW"),
+      reviewingDiscovery: true, input: { learningGoal: "저장된 목표" }, selectedCandidate: selected,
+      previewRound: { discoverySessionId: "session_1", generationRationale: "저장된 후보", previews: [
+        { candidateId: selected.candidateId, position: 1, title: "저장된 프로젝트", summary: "요약", appeal: "이유", coreInteraction: "경험", technologyNecessity: "기술", generationTags: ["DIRECT"] },
+      ] } };
+    client.dispatch({ type: "hydrateFlow", snapshot });
+    expect(byClass("flow-start-submit").textContent).toBe("새 후보 받기");
+    expect(byClass("flow-candidate-title").textContent).toBe("저장된 프로젝트");
+    const specButton = root.queryAll(e => e.textContent === "현재 스펙 다시 보기")[0];
+    expect(specButton.disabled).toBe(false);
+    specButton.click();
+    expect(posted).toContainEqual({ type: "selectCandidate", target: selected });
+    expect(posted.some((item: any) => item.type === "startDiscovery")).toBe(false);
+    byClass("flow-start-submit").click();
+    expect(posted).toContainEqual(expect.objectContaining({ type: "startDiscovery", input: expect.objectContaining({ learningGoal: "저장된 목표" }) }));
+  });
 });
 
 describe("navigation intents at the message boundary", () => {

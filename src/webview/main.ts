@@ -129,7 +129,10 @@ export function bootstrap(
   root.appendChild(nav);
   const renderNav = (snapshot: FlowSnapshot): void => {
     nav.hidden = snapshot.project === null;
-    navTitle.textContent = snapshot.project?.title ?? "";
+    const selected = snapshot.selectedCandidate;
+    const product = selected && snapshot.enrichedCandidates.find(candidate =>
+      candidate.candidateId === selected.candidateId && candidate.revision === selected.revision);
+    navTitle.textContent = product?.title ?? snapshot.project?.title ?? "";
   };
 
   // The Build_Surface renders into its own child container of `root`, so its

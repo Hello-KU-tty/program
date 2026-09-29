@@ -233,6 +233,8 @@ export function wireWebviewMessaging(
   });
 
   let disposed = false;
+  let navigationVersion = 0;
+  const startedPreparedTasks = new Set<string>();
   let boundProjectId: string | undefined;
   let projectBinding = Promise.resolve();
   syncProject = () => {
@@ -375,6 +377,11 @@ export function wireWebviewMessaging(
     }
     const flowIntent = parseWebviewToHostFlow(raw);
     if (flowIntent !== null) {
+      if (["goToStart", "openHistoryProject", "startDiscovery"].includes(flowIntent.type)) navigationVersion++;
+      const navigation = navigationVersion;
+      const confirmProject = flowIntent.type === "confirmSpec" && !flowController.isInProgress("spec")
+        ? flowController.getProject()?.id : undefined;
+      const preparedBefore = flowController.getPreparedTask();
       // FlowDispatcher.handle applies the intent to the FlowController, whose
       // onChange (wired above) triggers flowDispatcher.hydrateFlow(), so the
       // webview re-hydrates automatically — no manual re-hydrate needed here.
@@ -391,6 +398,18 @@ export function wireWebviewMessaging(
       }
       if (!disposed && agentHolder) {
         await agentHolder.controller.refreshProject();
+        // "이걸로 시작" is one explicit user gesture: confirm, prepare, then
+        // start once. Never reach this path on History/reload or after leaving.
+        const prepared = flowController.getPreparedTask();
+        const builder = agentHolder.controller.getViewModel().builder;
+        if (confirmProject && navigation === navigationVersion && !disposed &&
+          flowController.getProject()?.id === confirmProject && boundProjectId === confirmProject &&
+          flowController.getSpec()?.status === "CONFIRMED" && prepared && prepared !== preparedBefore &&
+          prepared.projectId === confirmProject && builder.readyToStart && builder.taskId &&
+          !startedPreparedTasks.has(builder.taskId)) {
+          startedPreparedTasks.add(builder.taskId);
+          await agentHolder.controller.startBuilder("");
+        }
         if (flowIntent.type === "openHistoryProject") void agentHolder.controller.recover();
       }
       return;
@@ -1880,7 +1899,6 @@ export function buildWebviewHtml(
     .agent-helper-window {
       color: var(--accent);
       background: color-mix(in srgb, var(--accent) 12%, transparent);
-      animation: bhap-pulse 1.4s ease-in-out infinite;
     }
     .agent-worker-status,
     .agent-notice {
@@ -1929,6 +1947,54 @@ export function buildWebviewHtml(
       color: var(--vscode-descriptionForeground);
     }
     .agent-helper-conversation-user { font-weight: 600; }
+    .agent-chat-message {
+      padding: 14px 16px;
+      border: 1px solid var(--vscode-panel-border, #444);
+      border-radius: 12px;
+      background: color-mix(in srgb, var(--vscode-editor-background) 65%, transparent);
+      min-width: 0;
+    }
+    .agent-chat-role {
+      color: var(--accent);
+      font-weight: 650;
+      font-size: 0.85em;
+      margin-bottom: 10px;
+    }
+    .agent-chat-body, .agent-helper-conversation-response {
+      line-height: 1.75;
+      overflow-wrap: anywhere;
+      white-space: normal;
+    }
+    .agent-chat-body > :first-child, .agent-helper-conversation-response > :first-child { margin-top: 0; }
+    .agent-chat-body > :last-child, .agent-helper-conversation-response > :last-child { margin-bottom: 0; }
+    .agent-chat-body p, .agent-helper-conversation-response p { margin: 0 0 12px; line-height: inherit; white-space: pre-wrap; }
+    .agent-chat-body ul, .agent-chat-body ol, .agent-helper-conversation-response ul, .agent-helper-conversation-response ol { margin: 10px 0 14px; padding-left: 24px; }
+    .agent-chat-body li, .agent-helper-conversation-response li { margin: 5px 0; }
+    .agent-chat-body h3, .agent-chat-body h4, .agent-chat-body h5, .agent-chat-body h6 { margin: 18px 0 8px; line-height: 1.45; font-size: 1.05em; }
+    .agent-chat-body code, .agent-helper-conversation-response code {
+      font-family: var(--vscode-editor-font-family, monospace);
+      font-size: 0.92em;
+      background: color-mix(in srgb, var(--vscode-foreground) 9%, transparent);
+      border-radius: 4px;
+      padding: 2px 4px;
+    }
+    .agent-chat-body pre, .agent-helper-conversation-response pre {
+      padding: 12px;
+      border-radius: 8px;
+      background: var(--vscode-textCodeBlock-background, #181818);
+      overflow-x: auto;
+      white-space: pre;
+      line-height: 1.55;
+    }
+    .agent-chat-body pre code, .agent-helper-conversation-response pre code { padding: 0; background: none; }
+    .agent-helper-conversation-user {
+      align-self: flex-end;
+      max-width: 90%;
+      padding: 10px 14px;
+      border-radius: 12px 12px 3px 12px;
+      background: color-mix(in srgb, var(--accent) 15%, transparent);
+      font-weight: 400;
+    }
 
     /* ---- Tool rows: collapsed to recent rows, expandable into a scroll box ---- */
     .agent-tools-header {

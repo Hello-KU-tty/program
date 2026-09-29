@@ -101,6 +101,41 @@ function pendingDecision(): DecisionViewModel {
 }
 
 describe("generated workspace and result actions", () => {
+  it("starts a prepared task with an empty optional message only after an explicit click", () => {
+    const starts: string[] = [];
+    const { root, view, restore } = mount({ ...noopCallbacks(), onBuilderStart: message => starts.push(message) });
+    try {
+      view.render(vmWithBuilder({ taskId: "task_pending", readyToStart: true }));
+      expect(starts).toEqual([]);
+      const button = byClass(root, "agent-builder-send")[0];
+      expect(button.textContent).toBe("빌더 시작");
+      expect(byClass(root, "agent-builder-phase")[0].textContent).toBe("시작 대기");
+      button.click();
+      expect(starts).toEqual([""]);
+      view.render(vmWithBuilder({ taskId: "task_pending", readyToStart: true, phase: "STARTING" }));
+      button.click();
+      expect(starts).toEqual([""]);
+    } finally { restore(); }
+  });
+
+  it("does not turn an empty ordinary composer into a new Builder request", () => {
+    const starts: string[] = [];
+    const { root, view, restore } = mount({ ...noopCallbacks(), onBuilderStart: message => starts.push(message) });
+    try {
+      view.render(vmWithBuilder({ taskId: "task_active", readyToStart: false }));
+      byClass(root, "agent-builder-send")[0].click();
+      expect(starts).toEqual([]);
+    } finally { restore(); }
+  });
+
+  it("labels a closed Discovery as a completed exploration, not a Builder failure", () => {
+    const { root, view, restore } = mount();
+    try {
+      view.render({ ...vmWithBuilder({ taskId: "task_pending", readyToStart: true }),
+        worker: { stage: "AGENT_ENDED", role: "DISCOVERY", code: "AGENT_SESSION_CLOSED_DISCOVERY" } });
+      expect(byClass(root, "agent-worker-status")[0].textContent).toBe("탐색 작업이 끝났어요.");
+    } finally { restore(); }
+  });
   it("labels scrollable transcripts and saved conversations for keyboard access without announcing every token", () => {
     const { root, restore } = mount();
     try {
@@ -270,6 +305,48 @@ describe("agent text is rendered as text, never markup (task 9.2, Req 2.7)", () 
     expect(outputs[0].textContent).toBe(injected);
     expect(outputs[0].children).toHaveLength(0);
     restore();
+  });
+});
+
+describe("readable stream and Helper lifecycle", () => {
+  it("joins arbitrary transport chunks before formatting on both agent surfaces", () => {
+    const { root, view, restore } = mount();
+    try {
+      const chunks = ["좌석 **HO", "L", "D**\n\n- 코드 `pack", "age.json`"].map((text, sequence) => ({ text, sequence }));
+      const vm = { ...vmWithBuilder({ transcript: chunks }), helper: { ...initialAgentViewModel().helper, transcript: chunks } };
+      view.render(vm);
+      expect(byClass(root, "agent-chat-message")).toHaveLength(2);
+      expect(root.queryAll(e => e.tagName === "STRONG").map(e => e.textContent)).toEqual(["HOLD", "HOLD"]);
+      expect(root.queryAll(e => e.tagName === "CODE").map(e => e.textContent)).toEqual(["package.json", "package.json"]);
+      const messages = byClass(root, "agent-chat-message");
+      view.render({ ...vm, worker: { stage: "AGENT_ENDED", role: "BUILDER", code: "AGENT_SESSION_CLOSED_BUILDER" } });
+      expect(byClass(root, "agent-chat-message")[0]).toBe(messages[0]);
+      expect(byClass(root, "agent-chat-message")[1]).toBe(messages[1]);
+    } finally { restore(); }
+  });
+
+  it("keeps a reader's Helper scroll position and follows the bottom only when already there", () => {
+    const { root, view, restore } = mount();
+    try {
+      const region = byClass(root, "agent-transcript")[1] as FakeElement & { clientHeight: number };
+      region.clientHeight = 100; region.scrollHeight = 1000; region.scrollTop = 210;
+      const vm = initialAgentViewModel();
+      view.render({ ...vm, helper: { ...vm.helper, transcript: [{ sequence: 1, text: "첫 문장" }] } });
+      expect(region.scrollTop).toBe(210);
+      region.scrollTop = 900;
+      view.render({ ...vm, helper: { ...vm.helper, transcript: [{ sequence: 1, text: "첫 문장 다음 문장" }] } });
+      expect(region.scrollTop).toBe(1000);
+    } finally { restore(); }
+  });
+
+  it.each(["RECORDED", "FAILED", "IDLE"] as const)("never displays a stale opening banner when Helper is %s", phase => {
+    const { root, view, restore } = mount();
+    try {
+      const vm = initialAgentViewModel();
+      view.render({ ...vm, helper: { ...vm.helper, phase, windowOpening: true }, worker: { stage: "HELPER_WINDOW_OPENING", role: null, code: "HELPER_WINDOW_OPENING" } });
+      expect(byClass(root, "agent-helper-window")[0].hidden).toBe(true);
+      expect(byClass(root, "agent-worker-status")[0].hidden).toBe(true);
+    } finally { restore(); }
   });
 });
 

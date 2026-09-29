@@ -17,6 +17,27 @@ import {
 } from "./support/fake-core-client";
 import { FakeNativeWorker } from "./support/fake-native-worker";
 
+it("uses the selected product title for the initial task's copied goal without altering durable data", async () => {
+  const snapshot = fakeSnapshot();
+  const source = fakeSnapshot({
+    currentTask: { ...snapshot.currentTask, title: snapshot.project.title, status: "PENDING" },
+    selectedCandidate: { title: "Synthetic selected product" },
+  });
+  const { port } = makePort({ restoreProjectResult: { resolve: source } });
+  const result = await port.prepareBuilder("project_1");
+  expect(result).toMatchObject({ ok: true, value: { taskTitle: "Synthetic selected product" } });
+  expect(source.currentTask?.title).toBe(source.project.title);
+});
+
+it("keeps the real title of a later task", async () => {
+  const snapshot = fakeSnapshot();
+  const { port } = makePort({ restoreProjectResult: { resolve: fakeSnapshot({
+    currentTask: { ...snapshot.currentTask, sequence: 2, title: "Add offline state" },
+    selectedCandidate: { title: "Synthetic selected product" },
+  }) } });
+  expect(await port.prepareBuilder("project_1")).toMatchObject({ ok: true, value: { taskTitle: "Add offline state" } });
+});
+
 /**
  * Unit tests for the live {@link ManagedAgentPort} (task 3.2).
  *

@@ -352,7 +352,7 @@ export class DiscoveryStartView {
    * and re-evaluates the submit lock + length notice (Req 4.2/4.3).
    */
   render(snapshot: FlowSnapshot): void {
-    const visible = snapshot.phase === "discovery_start";
+    const visible = snapshot.phase === "discovery_start" || snapshot.reviewingDiscovery === true;
     this.container.hidden = !visible;
     if (!visible) {
       return;
@@ -384,6 +384,7 @@ export class DiscoveryStartView {
 
     // Agent_Run_Banner + submit lock while a discovery op is in flight (Req 4.6).
     this.discoveryInProgress = snapshot.discoveryInProgress;
+    this.submitButton.textContent = snapshot.reviewingDiscovery ? "새 후보 받기" : "후보 만나기";
     this.unavailable = snapshot.flowSupport.mode === "unavailable";
     this.agentBanner.hidden = !this.discoveryInProgress;
 
@@ -735,7 +736,7 @@ export class DiscoveryWorkspace {
     // Disable composer + select controls while a discovery op is in flight
     // (Req 5.5, 7.11); re-enable otherwise (Req 7.12).
     for (const button of this.actionButtons) {
-      button.disabled = this.discoveryInProgress || this.unavailable;
+      button.disabled = this.discoveryInProgress || this.unavailable || snapshot.reviewingDiscovery === true;
     }
 
     const scopeKey = JSON.stringify([snapshot.project?.id ?? null, snapshot.previewRound?.discoverySessionId ?? null]);
@@ -758,8 +759,10 @@ export class DiscoveryWorkspace {
       const selected = basket.has(control.reference);
       control.toggle.textContent = selected ? "바구니에서 빼기" : "바구니에 담기";
       control.toggle.setAttribute("aria-pressed", selected ? "true" : "false");
-      control.toggle.disabled = this.discoveryInProgress;
-      control.select.disabled = this.discoveryInProgress || this.unavailable;
+      control.toggle.disabled = this.discoveryInProgress || snapshot.reviewingDiscovery === true;
+      const currentSpec = snapshot.selectedCandidate && control.reference === refKey(snapshot.selectedCandidate);
+      control.select.textContent = snapshot.reviewingDiscovery && currentSpec ? "현재 스펙 다시 보기" : "이걸로 진행";
+      control.select.disabled = this.discoveryInProgress || this.unavailable || (snapshot.reviewingDiscovery === true && !currentSpec);
     }
     if (rebuilt && focused) {
       const replacement = this.candidateControls.find(control => control.key === focused.key)?.[focusedAction];
@@ -771,16 +774,16 @@ export class DiscoveryWorkspace {
    * Rebuilds the rounds region from scratch against the snapshot: the preview
    * round (rationale + base 10 cards) first, then each accumulated feedback
    * round section in ascending `roundIndex` (Req 5.2, 5.4). Enriched detail is
-   * matched by `candidateId` from `snapshot.enrichedCandidates` (Req 5.3).
+   * matched by exact `candidateId:revision` from `snapshot.enrichedCandidates` (Req 5.3).
    */
   private rebuildRounds(snapshot: FlowSnapshot): void {
     this.roundsRegion.textContent = "";
     this.candidateControls.length = 0;
     this.controlOccurrences.clear();
 
-    const enrichedById = new Map<string, ProjectCandidateRevision>();
+    const enrichedByRef = new Map<string, ProjectCandidateRevision>();
     for (const enriched of snapshot.enrichedCandidates) {
-      enrichedById.set(enriched.candidateId, enriched);
+      enrichedByRef.set(refKey(enriched), enriched);
     }
     const basket = new Set(snapshot.basket);
 
@@ -798,7 +801,7 @@ export class DiscoveryWorkspace {
 
       for (const item of preview.previews) {
         section.appendChild(
-          this.buildPreviewCard(item, basket, enrichedById.get(item.candidateId)),
+          this.buildPreviewCard(item, basket, enrichedByRef.get(refKey(previewRef(item)))),
         );
       }
       this.roundsRegion.appendChild(section);
@@ -807,7 +810,7 @@ export class DiscoveryWorkspace {
     // Accumulated feedback rounds in ascending roundIndex (Req 5.4).
     const rounds = [...snapshot.rounds].sort((a, b) => a.roundIndex - b.roundIndex);
     for (const round of rounds) {
-      this.roundsRegion.appendChild(this.buildRoundSection(round, basket, enrichedById));
+      this.roundsRegion.appendChild(this.buildRoundSection(round, basket, enrichedByRef));
     }
   }
 
@@ -847,7 +850,7 @@ export class DiscoveryWorkspace {
   private buildRoundSection(
     round: CandidateRound,
     basket: ReadonlySet<string>,
-    enrichedById: ReadonlyMap<string, ProjectCandidateRevision>,
+    enrichedByRef: ReadonlyMap<string, ProjectCandidateRevision>,
   ): HTMLElement {
     const section = this.el("div", "flow-round");
     const header = this.el("div", "flow-round-header");
@@ -859,7 +862,7 @@ export class DiscoveryWorkspace {
     section.appendChild(rationale);
 
     for (const ref of round.candidates) {
-      const enriched = enrichedById.get(ref.candidateId);
+      const enriched = enrichedByRef.get(refKey(ref));
       if (enriched) {
         const card = this.buildCardShell(ref, basket, {
           title: enriched.title,

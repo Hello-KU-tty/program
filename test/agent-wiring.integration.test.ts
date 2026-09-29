@@ -222,6 +222,44 @@ it("drops mixed flow/agent discriminators without invoking either controller", a
   }
 });
 
+describe("explicit Spec-to-Builder handoff guard", () => {
+  it.each(["prepared", "prepare_failed", "left_project", "disposed"] as const)(
+    "starts only the successfully prepared, still-visible task (%s)", async outcome => {
+      const base = fakeSnapshot();
+      const { client, webview, wired } = await wire({ restoreProjectResult: {
+        resolve: fakeSnapshot({ currentTask: { ...base.currentTask, status: "PENDING" } }),
+      } });
+      try {
+        await wired.ready;
+        const agent = (await wired.agentReady)!;
+        expect(client.startRunInputs).toHaveLength(0); // startup/restore is read-only
+        const start = vi.spyOn(agent.controller, "startBuilder").mockResolvedValue();
+        const flow = wired.flowController;
+        vi.spyOn(flow, "getProject").mockReturnValue({ id: PROJECT_ID, title: "Synthetic", learningGoal: "Synthetic", status: "SPEC_REVIEW" });
+        vi.spyOn(flow, "getSession").mockReturnValue({ projectId: PROJECT_ID } as NonNullable<ReturnType<typeof flow.getSession>>);
+        vi.spyOn(flow, "getSpec").mockReturnValue({ status: "CONFIRMED" } as NonNullable<ReturnType<typeof flow.getSpec>>);
+        let prepared: ReturnType<typeof flow.getPreparedTask> = null;
+        vi.spyOn(flow, "getPreparedTask").mockImplementation(() => prepared);
+        let release!: () => void;
+        const gate = new Promise<void>(resolve => { release = resolve; });
+        vi.spyOn(flow, "confirmSpec").mockImplementation(async () => {
+          await gate;
+          if (outcome !== "prepare_failed") prepared = { projectId: PROJECT_ID, workspacePath: "", status: "READY" };
+        });
+        await flow.loadHistory(); // binds the current Project through the real onChange
+        const confirming = webview.send({ type: "confirmSpec" });
+        await vi.waitFor(() => expect(flow.confirmSpec).toHaveBeenCalledOnce());
+        if (outcome === "left_project") await webview.send({ type: "goToStart" });
+        if (outcome === "disposed") wired.messageSubscription.dispose();
+        release();
+        await confirming;
+        expect(start).toHaveBeenCalledTimes(outcome === "prepared" ? 1 : 0);
+        if (outcome === "prepared") expect(start).toHaveBeenCalledWith("");
+      } finally { wired.messageSubscription.dispose(); }
+    },
+  );
+});
+
 /**
  * Assert the security boundary (Requirements 13.1, 14.3): serialize EVERY posted
  * message and scan for a connection object, token, or absolute path. Nothing of

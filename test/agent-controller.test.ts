@@ -448,6 +448,36 @@ describe("AgentSurfaceController — start errors map to START_ERROR", () => {
 // ---------- helper → RECORDED reads helperConversations (Requirement 4.3) ----------
 
 describe("AgentSurfaceController — helper turn read-back", () => {
+  it.each(["TEXT", "TOOL"] as const)("clears opening on Helper %s from another host and ignores a stale local opening status", async kind => {
+    const worker = new FakeNativeWorker();
+    const h = buildHarness({ worker, client: { startRunResult: { resolve: fakeLocalRun({ kind: "HELPER" }) } } });
+    const started = h.controller.startHelper({ message: "질문", origin: "FREE_TEXT" });
+    await waitForWatch(h.client);
+    worker.pushStatus("HELPER_WINDOW_OPENING");
+    expect(h.controller.getViewModel().helper.windowOpening).toBe(true);
+    h.client.emit({ kind, sequence: 1, text: "답변", toolId: "tool_1", tool: "core", status: "SUCCEEDED" } as never);
+    expect(h.controller.getViewModel().helper.windowOpening).toBe(false);
+    worker.pushStatus("HELPER_WINDOW_OPENING");
+    expect(h.controller.getViewModel().helper.windowOpening).toBe(false);
+    h.client.settle(fakeLocalRun({ kind: "HELPER", status: "SUCCEEDED", outcome: "HELPER_RECORDED" }));
+    await started;
+    expect(h.controller.getViewModel().helper.windowOpening).toBe(false);
+    expect(h.builderStartRunCount()).toBe(0);
+    h.controller.dispose();
+  });
+
+  it.each(["SUCCEEDED", "FAILED", "CANCELLED"] as const)("clears opening on %s even without a text event or a local worker update", async status => {
+    const worker = new FakeNativeWorker();
+    const h = buildHarness({ worker, client: { startRunResult: { resolve: fakeLocalRun({ kind: "HELPER" }) } } });
+    const started = h.controller.startHelper({ message: "질문", origin: "FREE_TEXT" });
+    await waitForWatch(h.client);
+    worker.pushStatus("HELPER_WINDOW_OPENING");
+    h.client.settle(fakeLocalRun({ kind: "HELPER", status, outcome: status === "SUCCEEDED" ? "HELPER_RECORDED" : "NONE" }));
+    await started;
+    expect(h.controller.getViewModel().helper.windowOpening).toBe(false);
+    h.controller.dispose();
+  });
+
   it("a HELPER_RECORDED terminal projects RECORDED and reads conversations from the snapshot", async () => {
     const h = buildHarness({
       client: {

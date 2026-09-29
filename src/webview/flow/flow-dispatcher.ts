@@ -166,7 +166,7 @@ export class FlowDispatcher {
         return;
       }
       case "returnToDiscovery": {
-        // Supersedes the draft spec only; no Agent run starts here.
+        // Screen navigation only; the selected session and draft stay durable.
         await this.controller.returnToDiscovery();
         return;
       }

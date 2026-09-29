@@ -54,6 +54,7 @@ import type {
 } from "../../../vendor/frontend-host";
 import {
   type AgentViewModel,
+  builderTaskLabel,
   type BuilderTurnViewModel,
   type DecisionViewModel,
   type HelperConversationViewModel,
@@ -595,6 +596,8 @@ export class AgentSurfaceController {
     return flight;
   }
 
+  private helperActivitySeen = false;
+
   private async startHelperTurn(input: {
     message: string;
     origin: "FREE_TEXT" | "QUICK_ACTION";
@@ -626,6 +629,7 @@ export class AgentSurfaceController {
 
     // New Helper turn: RUNNING, clear the prior error, reset the transcript, and
     // clear any stale window-opening indicator; re-hydrate.
+    this.helperActivitySeen = false;
     this.setHelper({
       phase: "RUNNING",
       errorCode: null,
@@ -824,7 +828,9 @@ export class AgentSurfaceController {
    * does NOT call `onChange` (callers batch change notifications).
    */
   private setHelper(patch: Partial<HelperViewModel>): void {
-    this.vm = { ...this.vm, helper: { ...this.vm.helper, ...patch } };
+    const helper = { ...this.vm.helper, ...patch };
+    if (helper.phase !== "RUNNING") helper.windowOpening = false;
+    this.vm = { ...this.vm, helper };
   }
 
   /**
@@ -880,12 +886,15 @@ export class AgentSurfaceController {
   private applyEvent(surface: "builder" | "helper", view: RunEventView): void {
     if (surface === "builder") {
       this.vm = { ...this.vm, builder: reduceEvent(this.vm.builder, view) };
-    } else if (view.kind === "TEXT") {
-      this.setHelper({
-        transcript: [
-          ...this.vm.helper.transcript,
-          { sequence: view.sequence, text: view.text },
-        ],
+    } else {
+      // Events belong to this Helper run, unlike status from the Builder host.
+      // TOOL/TEXT proves the separate host is active. Never wait for its local status.
+      if (view.kind === "TEXT" || view.kind === "TOOL" || view.kind === "PERMISSION_DENIED") {
+        this.helperActivitySeen = true;
+        this.setHelper({ windowOpening: false });
+      }
+      if (view.kind === "TEXT") this.setHelper({
+        transcript: [...this.vm.helper.transcript, { sequence: view.sequence, text: view.text }],
       });
     }
     this.deps.onChange();
@@ -911,7 +920,7 @@ export class AgentSurfaceController {
     // RUNNING. Cleared when the stage moves on so the indicator does not linger.
     if (this.vm.helper.phase === "RUNNING") {
       this.setHelper({
-        windowOpening: view?.stage === "HELPER_WINDOW_OPENING",
+        windowOpening: view?.stage === "HELPER_WINDOW_OPENING" && !this.helperActivitySeen,
       });
     }
     this.deps.onChange();
@@ -1495,10 +1504,11 @@ export class AgentSurfaceController {
     // Current-task binding for the Builder header (guarded for shape).
     const currentTask = s.currentTask;
     const taskId = currentTask?.id ?? this.vm.builder.taskId;
-    const taskTitle = currentTask?.title ?? this.vm.builder.taskTitle;
+    const taskTitle = builderTaskLabel(s) ?? this.vm.builder.taskTitle;
     const previousBuilder = taskId !== this.vm.builder.taskId && !this.activeRunId
       ? initialAgentViewModel().builder : this.vm.builder;
-    let builder = { ...previousBuilder, taskId, taskTitle, taskRevision: currentTask?.revision ?? null };
+    let builder = { ...previousBuilder, taskId, taskTitle, taskRevision: currentTask?.revision ?? null,
+      readyToStart: currentTask?.status === "PENDING" };
     if (restoreIdleBuilder && !this.activeRunId && !this.builderFlight) {
       const unapplied = decisions.some(d => d.taskId === taskId && !d.applied) ||
         s.pendingDecisions.some(d => d.taskId === taskId);
