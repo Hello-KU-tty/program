@@ -2,6 +2,10 @@
 
 ## 2026-09-29 후속 작업 결과 (0.0.10)
 
+**직접 사용 준비 결과:** 이쪽에서 현재 소스0.0.10을 다시 빌드·설치하고 제품 workspace Trust를 적용했다. 합성 목표로 실제 PREVIEW1회가32.812초에 성공해10개 후보를 저장했다. Kiro 정상 종료·재시작 뒤 History에서 같은 후보를 추가 모델 호출 없이 복원했고 durable 상태 hash도 같았다. 사용량835.96→836.18/2000, Overages Disabled. 사용자용 Kiro 창은 빈 학습 목표 입력 화면으로 준비했다. Builder/Helper 이후 직접 실측은 이어서 진행할 예정이다. [현재 VSIX·실측 범위](../core/docs/FRONTEND_LIVE_READY_20260929.md).
+
+**Git 전달:** core 소스 `bc8570b` push 완료. program 소스 `deef685` commit 완료이며, 현재 HURDOO의 해당 repository Write 권한이 없어 push를 대기한다. 권한 부여 전 반복 push하지 않는다. 이 후속은 소스 변경 없는 문서 기록이다.
+
 **실측 담당/예정:** 프론트 실측은 **이쪽(core 작업 환경)에서 현재 제출 후보 확장을 Kiro에 적용해 진행할 예정**이다. 사용자 직접 사용을 위한 창과 대상 Workspace Trust도 준비한다. 확장 설치·Trust는 사용자가 승인했으며, 이번 변경은 `hurdoo` 계정으로 `Hello-KU-tty/core`, `Hello-KU-tty/program`에 commit/push한다. 아래 미커밋/실측 미완료 문구는 이전 자동 검증 시점의 기록이며 실제 관측 결과는 후속 인계로 구분한다.
 
 이 절은 아래 최초 인계의 현재 상태/바로 할 일을 갱신한다. 최초 기록과 당시 실측은 그대로 보존한다.
