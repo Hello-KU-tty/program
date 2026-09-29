@@ -485,6 +485,7 @@ function contractSnapshot(parts: {
   previewRound?: unknown;
   rounds?: unknown[];
   candidateEnrichments?: unknown[];
+  candidates?: unknown[];
   selectedCandidate?: unknown;
   learningSpec?: unknown;
 }) {
@@ -496,7 +497,7 @@ function contractSnapshot(parts: {
           previewRound: parts.previewRound ?? null,
           rounds: parts.rounds ?? [],
           candidateEnrichments: parts.candidateEnrichments ?? [],
-          candidates: [],
+          candidates: parts.candidates ?? [],
         }
       : null;
   return {
@@ -555,6 +556,66 @@ function fakeClient(overrides: Partial<Record<string, unknown>> = {}): LocalCore
   };
   return base as unknown as LocalCoreClient;
 }
+
+describe("feedback round details reach the controller without another model run", () => {
+  function harness(missing = false, held?: Promise<void>) {
+    const initial = contractSnapshot({ previewRound: contractPreviewRound(), rounds: [contractRound(1, "round_1")],
+      candidates: [contractCandidate("cand_1", 2), contractCandidate("cand_2", 1)] });
+    const next = { ...contractRound(2, "round_2"), candidates: [{ candidateId: "merged", revision: 1 }] };
+    let snapshot = initial;
+    const startRun = vi.fn(async (_request: unknown) => ({ id: "run_feedback" }));
+    const client = fakeClient({ restoreProject: async () => snapshot, startRun,
+      watchRun: async () => {
+        await held;
+        snapshot = contractSnapshot({ previewRound: contractPreviewRound(), rounds: [contractRound(1, "round_1"), next],
+          candidates: [...initial.discoveryContext!.candidates, ...(missing ? [] : [contractCandidate("merged", 1)])] });
+        return { status: "SUCCEEDED", outcome: "DURABLE_RESULT" };
+      } });
+    const port = new LocalCoreDiscoveryPort(client);
+    const controller = new FlowController({ discovery: port, spec: port, restore: port }, { clock: new FakeClock() });
+    return { controller, startRun };
+  }
+
+  it.each(["MERGE", "REGENERATE"] as const)("%s publishes saved details with the round and keeps basket/input", async intent => {
+    const { controller, startRun } = harness();
+    await controller.restoreSavedProject("project_1");
+    const targets = [{ candidateId: "cand_1", revision: 2 }, { candidateId: "cand_2", revision: 1 }];
+    targets.forEach(target => controller.toggleBasket(target));
+    const before = controller.snapshot();
+    await controller.submitFeedback({ intent, targets: intent === "MERGE" ? targets : [] });
+    const after = controller.snapshot();
+    expect(after.rounds.at(-1)?.candidates).toEqual([{ candidateId: "merged", revision: 1 }]);
+    expect(after.enrichedCandidates.find(c => c.candidateId === "merged")).toMatchObject({ revision: 1, title: contractCandidate("merged", 1).title });
+    expect(after.input).toEqual(before.input);
+    expect(after.basket).toEqual(before.basket);
+    expect(after.discoveryInProgress).toBe(false);
+    expect(startRun).toHaveBeenCalledOnce();
+    expect(startRun.mock.calls[0][0]).toMatchObject({ phase: intent === "MERGE" ? "MERGE" : "ROUND" });
+  });
+
+  it("reports missing durable details without publishing an endless loading card or retrying a model", async () => {
+    const { controller, startRun } = harness(true);
+    await controller.restoreSavedProject("project_1");
+    const before = controller.snapshot();
+    await controller.submitFeedback({ intent: "REGENERATE", targets: [] });
+    expect(controller.snapshot().rounds).toEqual(before.rounds);
+    expect(controller.snapshot().notice?.kind).toBe("error");
+    expect(startRun).toHaveBeenCalledOnce();
+  });
+
+  it("does not apply late round details after leaving the project", async () => {
+    let release!: () => void;
+    const { controller, startRun } = harness(false, new Promise<void>(resolve => { release = resolve; }));
+    await controller.restoreSavedProject("project_1");
+    const pending = controller.submitFeedback({ intent: "REGENERATE", targets: [] });
+    await vi.waitFor(() => expect(startRun).toHaveBeenCalledOnce());
+    controller.goToStart();
+    release();
+    await pending;
+    expect(controller.snapshot().project).toBeNull();
+    expect(controller.snapshot().enrichedCandidates).toEqual([]);
+  });
+});
 
 describe("LocalCoreDiscoveryPort success mapping (guide \u00a76)", () => {
   it("startDiscovery -> ok(DiscoverySession) from the restored snapshot", async () => {
@@ -626,7 +687,8 @@ describe("LocalCoreDiscoveryPort success mapping (guide \u00a76)", () => {
     };
     const client = fakeClient({
       restoreProject: async () =>
-        contractSnapshot({ rounds: [contractRound(1, "round_1"), contractRound(2, "round_2")] }),
+        contractSnapshot({ rounds: [contractRound(1, "round_1"), contractRound(2, "round_2")],
+          candidates: [contractCandidate("cand_1", 2), contractCandidate("cand_2", 1)] }),
     });
     const port = new LocalCoreDiscoveryPort(client);
     await port.restoreProject("project_1", ENV);
@@ -636,6 +698,7 @@ describe("LocalCoreDiscoveryPort success mapping (guide \u00a76)", () => {
     expect(res.value.roundIndex).toBe(2);
     expect(res.value.appliedFeedbackIds).toEqual(["feedback_1"]);
     expect(res.value.candidates).toHaveLength(2);
+    expect(res.value.candidateDetails?.map(c => [c.candidateId, c.revision])).toEqual([["cand_1", 2], ["cand_2", 1]]);
   });
 
   it("generateSpecDraft -> ok(LearningSpecRevision) DRAFT", async () => {

@@ -63,6 +63,7 @@ import type {
   RestoredProjectView,
 } from "../../core/flow/history-types";
 import type {
+  DiscoveryFeedbackResult,
   DiscoveryPort,
   HistoryPort,
   PortError,
@@ -216,7 +217,7 @@ export class LocalCoreDiscoveryPort implements DiscoveryPort, SpecPort, HistoryP
       return ok(contractToProgramCandidate(candidate));
     } catch (e) { return err(...classify(e, "enrichCandidate failed")); }
   }
-  async submitFeedback(req: { discoverySessionId: string; feedback: DiscoveryFeedback }, env: RequestEnvelope): Promise<PortResult<CandidateRound>> {
+  async submitFeedback(req: { discoverySessionId: string; feedback: DiscoveryFeedback }, env: RequestEnvelope): Promise<PortResult<DiscoveryFeedbackResult>> {
     try {
       let snapshot = await this.forSession(req.discoverySessionId);
       if (!snapshot.discoveryContext) throw new Error("DISCOVERY_CONTEXT_REQUIRED");
@@ -235,7 +236,16 @@ export class LocalCoreDiscoveryPort implements DiscoveryPort, SpecPort, HistoryP
       if (req.feedback.intent !== "SELECT") snapshot = await this.run(snapshot,
         req.feedback.intent === "MERGE" ? "MERGE" : "ROUND", entityId("idem"));
       const round = latestRound(snapshot);
-      if (round) return ok(contractToProgramRound(round));
+      if (round) {
+        // ROUND/MERGE already persisted complete revisions. Pass those exact
+        // revisions with the refs; never run another enrichment just to display them.
+        const candidateDetails = round.candidates.map(ref => {
+          const candidate = findEnrichedCandidate(snapshot, ref);
+          if (!candidate) throw new Error("CANDIDATE_REVISION_NOT_FOUND");
+          return contractToProgramCandidate(candidate);
+        });
+        return ok({ ...contractToProgramRound(round), candidateDetails });
+      }
       const preview = snapshot.discoveryContext?.previewRound;
       if (!preview || req.feedback.intent !== "SELECT") throw new Error("ROUND_NOT_DURABLE");
       // The existing port requires a round-shaped acknowledgement for SELECT;

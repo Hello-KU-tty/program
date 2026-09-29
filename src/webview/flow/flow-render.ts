@@ -774,16 +774,16 @@ export class DiscoveryWorkspace {
    * Rebuilds the rounds region from scratch against the snapshot: the preview
    * round (rationale + base 10 cards) first, then each accumulated feedback
    * round section in ascending `roundIndex` (Req 5.2, 5.4). Enriched detail is
-   * matched by `candidateId` from `snapshot.enrichedCandidates` (Req 5.3).
+   * matched by exact `candidateId:revision` from `snapshot.enrichedCandidates` (Req 5.3).
    */
   private rebuildRounds(snapshot: FlowSnapshot): void {
     this.roundsRegion.textContent = "";
     this.candidateControls.length = 0;
     this.controlOccurrences.clear();
 
-    const enrichedById = new Map<string, ProjectCandidateRevision>();
+    const enrichedByRef = new Map<string, ProjectCandidateRevision>();
     for (const enriched of snapshot.enrichedCandidates) {
-      enrichedById.set(enriched.candidateId, enriched);
+      enrichedByRef.set(refKey(enriched), enriched);
     }
     const basket = new Set(snapshot.basket);
 
@@ -801,7 +801,7 @@ export class DiscoveryWorkspace {
 
       for (const item of preview.previews) {
         section.appendChild(
-          this.buildPreviewCard(item, basket, enrichedById.get(item.candidateId)),
+          this.buildPreviewCard(item, basket, enrichedByRef.get(refKey(previewRef(item)))),
         );
       }
       this.roundsRegion.appendChild(section);
@@ -810,7 +810,7 @@ export class DiscoveryWorkspace {
     // Accumulated feedback rounds in ascending roundIndex (Req 5.4).
     const rounds = [...snapshot.rounds].sort((a, b) => a.roundIndex - b.roundIndex);
     for (const round of rounds) {
-      this.roundsRegion.appendChild(this.buildRoundSection(round, basket, enrichedById));
+      this.roundsRegion.appendChild(this.buildRoundSection(round, basket, enrichedByRef));
     }
   }
 
@@ -850,7 +850,7 @@ export class DiscoveryWorkspace {
   private buildRoundSection(
     round: CandidateRound,
     basket: ReadonlySet<string>,
-    enrichedById: ReadonlyMap<string, ProjectCandidateRevision>,
+    enrichedByRef: ReadonlyMap<string, ProjectCandidateRevision>,
   ): HTMLElement {
     const section = this.el("div", "flow-round");
     const header = this.el("div", "flow-round-header");
@@ -862,7 +862,7 @@ export class DiscoveryWorkspace {
     section.appendChild(rationale);
 
     for (const ref of round.candidates) {
-      const enriched = enrichedById.get(ref.candidateId);
+      const enriched = enrichedByRef.get(refKey(ref));
       if (enriched) {
         const card = this.buildCardShell(ref, basket, {
           title: enriched.title,

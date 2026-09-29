@@ -1,5 +1,15 @@
 # 앞으로 고칠 것과 점검할 것 (2026-09-29)
 
+## 새 후보 표시 복구 (0.0.11)
+
+사용자 실측에서 MERGE는 성공·저장됐지만 새 후보가 ID/로딩 안내로만 보였다. adapter가 round 참조만 반환하고 controller가 저장 상세를 반영하지 않은 문제였다. 저장 상세를 round와 함께 전달해 즉시 표시하고, renderer의 상세 조회도 candidateId:revision으로 바꿔 이전 후보에 최신 내용이 섞이지 않도록 수정했다.
+
+- typecheck, 56 files / 758 tests, build PASS. 실제 controller/port→Core HTTP/SSE→SQLite→webview에서 MERGE/REGENERATE 직후 표시, 입력·바구니 보존, 추가 enrichment 없음 PASS.
+- kit2026.09.29.2 관리 파일118개는 그대로다. 0.0.11 VSIX를 설치·재시작해 기존 프로젝트의 새 후보와 원래 후보 상세를 확인했다. 저장 상태 hash는 동일하고 복구의 새 모델 run은0이다.
+- 현재 설치 파일·SHA와 검증 범위는 [후속 기록](../core/docs/FRONTEND_FEEDBACK_DISPLAY_FIX_20260929.md)을 따른다. 아래0.0.10과 기존 source ZIP은 이전 시점 기록이다.
+- program push는 HURDOO Write 권한 대기다. 권한 부여 전 재시도하지 않는다. 프론트 직접 실측은 준비된 Kiro 창에서 이어서 진행한다.
+
+
 ## 2026-09-29 후속 작업 결과 (0.0.10)
 
 **직접 사용 준비 결과:** 이쪽에서 현재 소스0.0.10을 다시 빌드·설치하고 제품 workspace Trust를 적용했다. 합성 목표로 실제 PREVIEW1회가32.812초에 성공해10개 후보를 저장했다. Kiro 정상 종료·재시작 뒤 History에서 같은 후보를 추가 모델 호출 없이 복원했고 durable 상태 hash도 같았다. 사용량835.96→836.18/2000, Overages Disabled. 사용자용 Kiro 창은 빈 학습 목표 입력 화면으로 준비했다. Builder/Helper 이후 직접 실측은 이어서 진행할 예정이다. [현재 VSIX·실측 범위](../core/docs/FRONTEND_LIVE_READY_20260929.md).

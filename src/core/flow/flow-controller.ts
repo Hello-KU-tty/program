@@ -26,6 +26,7 @@
 import { type Clock, SystemClock, type TimerId } from "../../core/clock";
 import { runtimeErrorMessage } from "../runtime-errors";
 import type {
+  DiscoveryFeedbackResult,
   FlowPorts,
   PortError,
   PortResult,
@@ -699,7 +700,9 @@ export class FlowController {
       (env) =>
         this.ports.discovery.submitFeedback({ discoverySessionId: session.id, feedback }, env),
       session.revision,
-      (round: CandidateRound) => {
+      (result: DiscoveryFeedbackResult) => {
+        const { candidateDetails = [], ...round } = result;
+        for (const candidate of candidateDetails) this.candidatesByRef.set(refKey(candidate), candidate);
         // Accumulate and keep ascending by roundIndex (Req 5.4). The basket is
         // preserved for still-present refs — we simply do not clear it (Req 6.4).
         this.rounds.push(round);

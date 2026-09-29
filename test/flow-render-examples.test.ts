@@ -306,6 +306,22 @@ describe("Korean copy strings (task 12.4, Req 7.1/9.4)", () => {
   });
 });
 
+describe("saved candidate revision display", () => {
+  it("shows each feedback round's exact saved candidate revision", () => {
+    const dom = installFakeDom();
+    try {
+      const root = dom.createElement("div");
+      const view = new DiscoveryWorkspace(root as unknown as HTMLElement, new CaptureCallbacks());
+      view.render(workspaceSnapshot({ previewRound: null,
+        rounds: [1, 2].map(revision => ({ roundIndex: revision, candidates: [{ candidateId: "same", revision }], generationRationale: "saved", appliedFeedbackIds: [] })),
+        enrichedCandidates: [1, 2].map(revision => ({ ...enriched("same", []), revision, title: `저장된 후보 ${revision}` })) }));
+      expect(byClass(root, "flow-candidate-title").map(e => e.textContent)).toEqual(["저장된 후보 1", "저장된 후보 2"]);
+      expect(byClass(root, "flow-candidate-summary").every(e => e.textContent !== "세부 정보를 불러오는 중이에요.")).toBe(true);
+    } finally { dom.restore(); }
+  });
+
+});
+
 describe("one chip per conceptName (task 12.4, Req 9.4)", () => {
   it("renders exactly one chip per enriched coreConcept in the workspace", () => {
     const dom = installFakeDom();

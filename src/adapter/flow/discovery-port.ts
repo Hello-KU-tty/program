@@ -65,6 +65,11 @@ export type PortResult<T> =
   | { ok: true; value: T }
   | { ok: false; error: PortError };
 
+/** A round plus already persisted details; absent on legacy/mock ports. */
+export interface DiscoveryFeedbackResult extends CandidateRound {
+  candidateDetails?: ProjectCandidateRevision[];
+}
+
 /**
  * The Discovery half of the port boundary: open a session, generate preview
  * rounds, enrich candidates, and submit learner feedback (Req 1.1).
@@ -92,7 +97,7 @@ export interface DiscoveryPort {
   submitFeedback(
     req: { discoverySessionId: string; feedback: DiscoveryFeedback },
     env: RequestEnvelope,
-  ): Promise<PortResult<CandidateRound>>;
+  ): Promise<PortResult<DiscoveryFeedbackResult>>;
 }
 
 /**
