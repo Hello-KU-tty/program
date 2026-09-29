@@ -302,7 +302,7 @@ export function bootstrap(
     },
     onResolveDecision: (decisionId, selection, rationale, helperUsed) => {
       client.postAgent({
-        kind: "decision/resolve",
+        kind: "decision/resolveAndContinue",
         decisionId,
         selection,
         helperUsed,

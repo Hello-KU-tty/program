@@ -87,6 +87,10 @@ class StubController {
     this.record("resolveDecision", input);
   }
 
+  async resolveDecisionAndContinue(input: unknown): Promise<void> {
+    this.record("resolveDecisionAndContinue", input);
+  }
+
   async resumeAfterDecision(): Promise<void> {
     this.record("resumeAfterDecision");
   }
@@ -258,6 +262,11 @@ describe("AgentDispatcher — each valid action reaches its controller method (R
         ],
       },
     ]);
+  });
+
+  it("decision/resolveAndContinue dispatches one explicit combined action", async () => {
+    await dispatcher.handle({ kind: "decision/resolveAndContinue", decisionId: "decision_1", selection: { kind: "RECOMMENDATION" }, helperUsed: false });
+    expect(controller.calls).toEqual([{ method: "resolveDecisionAndContinue", args: [{ decisionId: "decision_1", selection: { kind: "RECOMMENDATION" }, helperUsed: false, rationale: undefined }] }]);
   });
 
   it("builder/resumeAfterDecision -> resumeAfterDecision()", async () => {

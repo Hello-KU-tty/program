@@ -1,5 +1,17 @@
 # 앞으로 고칠 것과 점검할 것 (2026-09-29)
 
+## 결정 선택 후 계속 실행 (0.0.16)
+
+**최종 native 상태:** 선택 적용(`resolved/applied=true`, pending0)과 파일 작성 뒤 21:32:42 KST에 `NATIVE_BUILDER_BUDGET_TIMEOUT_CONFIRMED`로 종료됐다. Task는 ACTIVE이며 앱 완성은 아니다. 자동 유료 재시도는 하지 않았다. 아래 실행 중 보존 기록 이후 현재 run은 terminal이다. 새 확장의 설치·화면 확인은 core 상세 기록을 따른다.
+
+사용자 실측에서 선택은 저장됐지만 Builder는 별도 재개 버튼을 기다렸다. 최신 화면 개편과 kit 갱신·인계 0f94445 위에서 선택 버튼을 ‘정하고 계속하기’로 바꾸고 decision/resolveAndContinue를 연결했다. 기존 decision/resolve는 계속 저장만 수행하므로 Helper·History의 자동 실행은 없다.
+
+- 저장 성공 후 같은 Project/Task와 선택 저장을 다시 확인하고, 다른 미해결 결정·기존 활성 Builder가 없을 때 한 번 시작한다. 실패·중복·프로젝트 이동·dispose·최종 준비 중 Task 교체는 새 실행0이다. 여러 결정이면 마지막 선택 뒤 이어진다.
+- 실행 중 선택은 기존 Builder에 저장된 결정을 제공한다. 중복 run은 열지 않는다. 별도 재개 버튼은 ‘선택한 내용으로 계속하기’로 명확히 표시한다.
+- 실제 Core-issued blocking Decision→프론트 dispatcher/controller→HTTP/SSE/SQLite에서 저장·ACTIVE 전환·Builder1회와 중복 클릭 병합 PASS. 테스트 fixture의 Agent는 합성이며 native 모델 성공으로 주장하지 않는다.
+- 사용자 기존 선택은 다시 제출하지 않고 현재0.0.14의 명시적 재개 버튼으로 이어서 실행했다. 실제 Builder가 저장된 선택을 읽고 후속 파일을 작성하는 것을 확인했다. 실행 중인 창의 reload/종료는 하지 않는다.
+- 타입·전체 테스트57파일/794개·빌드 PASS. 다음 확장 버전은0.0.17 이상이다. frontend가 적용한 backend kit2026.09.29.3을 유지한다. [검증·설치 상태](../core/docs/FRONTEND_DECISION_CONTINUE_FIX_20260929.md).
+
 ## 즉시 작업 인계: 양쪽 main 병합 완료 (0.0.14)
 
 HURDOO의 program push 권한을 확인했고, 원격 ca586f4/5519b18과 로컬0.0.10~0.0.13 수정들을 merge로 보존했다. 오류 안내 NATIVE_IDE_TURN_FAILED/PROJECT_TOOLCHAIN_DENIED도 포함한다. 아래16:30의 Write 권한 대기·브랜치 병합 대기는 이 후속으로 대체한다.

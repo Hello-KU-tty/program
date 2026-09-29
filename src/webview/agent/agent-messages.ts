@@ -95,7 +95,7 @@ export type AgentAction =
       readonly decisionId?: string;
     }
   | {
-      readonly kind: "decision/resolve";
+      readonly kind: "decision/resolve" | "decision/resolveAndContinue";
       readonly decisionId: string;
       readonly selection: DecisionSelection;
       readonly rationale?: string;
@@ -261,7 +261,8 @@ export function parseAgentAction(raw: unknown): AgentAction | null {
       };
     }
 
-    case "decision/resolve": {
+    case "decision/resolve":
+    case "decision/resolveAndContinue": {
       if (!isString(raw.decisionId)) {
         return null;
       }

@@ -570,6 +570,75 @@ describe("AgentSurfaceController — decision resolution never resumes Builder",
   });
 });
 
+describe("explicit choose and continue", () => {
+  const input = { decisionId: "decision_1", selection: { kind: "RECOMMENDATION" as const }, helperUsed: false };
+  function ready(options: { remaining?: boolean; active?: boolean; changedTask?: boolean; fail?: boolean } = {}) {
+    const pending = snapshotWithPendingDecision();
+    const h = buildHarness({ client: { restoreProjectResult: { resolve: pending },
+      listRunsResult: { resolve: options.active ? [fakeLocalRun({ status: "RUNNING" })] : [] } } });
+    const original = h.client.execute.bind(h.client);
+    vi.spyOn(h.client, "execute").mockImplementation(async request => {
+      if (request.kind === "UI_RESOLVE_DECISION") {
+        if (options.fail) throw clientError("LIVE_CONTEXT_STALE");
+        const resolved = { ...pending,
+          currentTask: options.changedTask ? { ...pending.currentTask!, id: "task_other" } : pending.currentTask,
+          pendingDecisions: options.remaining ? [{ ...pending.pendingDecisions[0], id: "decision_2" }] : [],
+          decisions: [{ request: pending.pendingDecisions[0], resolution: { id: "resolution_1" }, application: null }],
+        } as unknown as ReturnType<typeof fakeSnapshot>;
+        h.client.restoreProjectResult = { resolve: resolved };
+      }
+      return original(request);
+    });
+    return h;
+  }
+
+  it("saves once and starts once for duplicate clicks on the combined action", async () => {
+    const h = ready();
+    const first = h.controller.resolveDecisionAndContinue(input);
+    const duplicate = h.controller.resolveDecisionAndContinue(input);
+    await waitForWatch(h.client);
+    expect(h.client.executeKinds.filter(kind => kind === "UI_RESOLVE_DECISION")).toHaveLength(1);
+    expect(h.builderStartRunCount()).toBe(1);
+    expect(h.client.startRunInputs[0]).toMatchObject({ kind: "BUILDER", projectId: PROJECT_ID, taskId: TASK_ID, message: "" });
+    h.client.settle(fakeLocalRun({ status: "SUCCEEDED", outcome: "TURN_ENDED" }));
+    await Promise.all([first, duplicate]);
+    h.controller.dispose();
+  });
+
+  it.each(["remaining", "active", "changedTask", "fail"] as const)("does not start when %s prevents continuation", async condition => {
+    const h = ready({ [condition]: true });
+    await h.controller.resolveDecisionAndContinue(input);
+    expect(h.builderStartRunCount()).toBe(0);
+    h.controller.dispose();
+  });
+
+  it("does not start a different task if the task changes during the final run check", async () => {
+    const h = ready();
+    vi.spyOn(h.client, "listRuns").mockImplementationOnce(async () => {
+      const snapshot = await h.client.restoreProject(PROJECT_ID);
+      h.client.restoreProjectResult = { resolve: { ...snapshot, currentTask: { ...snapshot.currentTask!, id: "task_other" } } };
+      return [];
+    });
+    await h.controller.resolveDecisionAndContinue(input);
+    expect(h.builderStartRunCount()).toBe(0);
+    h.controller.dispose();
+  });
+
+  it.each(["switch", "dispose"] as const)("does not resume after %s during the save", async transition => {
+    const h = ready();
+    const gate = deferred<never>();
+    vi.spyOn(h.client, "execute").mockImplementationOnce(() => gate.promise);
+    const result = h.controller.resolveDecisionAndContinue(input);
+    await vi.waitFor(() => expect(h.client.execute).toHaveBeenCalled());
+    if (transition === "switch") h.controller.bindProject("project_other");
+    else h.controller.dispose();
+    gate.resolve({ accepted: true } as never);
+    await result;
+    expect(h.builderStartRunCount()).toBe(0);
+    h.controller.dispose();
+  });
+});
+
 /** A snapshot with one pending decision so resolveDecision reaches execute. */
 function snapshotWithPendingDecision() {
   return fakeSnapshot({

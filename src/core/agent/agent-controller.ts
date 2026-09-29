@@ -169,6 +169,7 @@ export class AgentSurfaceController {
     this.watches.helper?.abort();
     this.watches.builder = this.watches.helper = null;
     this.builderFlight = this.helperFlight = null;
+    this.decisionContinueFlight = null;
     this.activeRunId = null;
     this.cancelRequested = false;
     this.lastProjectId = projectId;
@@ -206,17 +207,17 @@ export class AgentSurfaceController {
    *  6. Otherwise record the run id and hand off to {@link superviseRun} with a
    *     full replay-from-start (`after: run.retainedFromSequence`).
    */
-  startBuilder(message: string): Promise<void> {
+  startBuilder(message: string, expectedTaskId?: string): Promise<void> {
     if (this.builderFlight) return this.builderFlight;
     if (this.activeRunId || this.disposed) return Promise.resolve();
-    const flight = this.startBuilderTurn(message).finally(() => {
+    const flight = this.startBuilderTurn(message, expectedTaskId).finally(() => {
       if (this.builderFlight === flight) this.builderFlight = null;
     });
     this.builderFlight = flight;
     return flight;
   }
 
-  private async startBuilderTurn(message: string): Promise<void> {
+  private async startBuilderTurn(message: string, expectedTaskId?: string): Promise<void> {
     const projectId = this.lastProjectId ?? this.deps.globalState.get("bhlr.lastProjectId");
     if (!projectId) {
       this.lastProjectId = null;
@@ -235,6 +236,8 @@ export class AgentSurfaceController {
       this.notify(prep.error);
       return;
     }
+
+    if (expectedTaskId && prep.value.taskId !== expectedTaskId) return;
 
     // Persist for §3.1 recovery (window-switch reload re-watches this project).
     await this.deps.globalState.update("bhlr.lastProjectId", projectId);
@@ -708,9 +711,8 @@ export class AgentSurfaceController {
    *
    * CRITICAL (Requirement 5.3 / §Correctness Property 2): this method NEVER
    * calls {@link startBuilder}. Resolving a Decision must not auto-resume the
-   * Builder — the webview shows an explicit "Builder 다시 시작" action which
-   * routes to {@link resumeAfterDecision}, the only decision-adjacent path that
-   * starts Builder. Verify by inspection: there is no `startBuilder` call below.
+   * Builder. Explicit continuation is handled separately by
+   * {@link resolveDecisionAndContinue} or {@link resumeAfterDecision}.
    *
    * `input.selection` is the SDK's {@link DecisionSelection} shape, which is
    * structurally identical to the webview action's `selection`
@@ -745,6 +747,10 @@ export class AgentSurfaceController {
     rationale?: string;
     helperUsed: boolean;
   }): Promise<void> {
+    await this.resolveDecisionResult(input);
+  }
+
+  private async resolveDecisionResult(input: Parameters<AgentSurfaceController["resolveDecision"]>[0]): Promise<{ projectId: string; taskId: string | null } | undefined> {
     if (this.disposed) return;
     const binding = this.bindingVersion;
     const projectId =
@@ -795,13 +801,52 @@ export class AgentSurfaceController {
     await this.reprojectFromSnapshot(projectId);
     if (!this.isCurrentBinding(binding)) return;
     this.notice("info", "DECISION_RESOLVED", "");
+    return { projectId, taskId: snap.value.currentTask?.id ?? null };
+  }
+
+  private decisionContinueFlight: Promise<void> | null = null;
+
+  /** One explicit 'choose and continue' gesture; resolve-only stays read-only to Builder. */
+  resolveDecisionAndContinue(input: Parameters<AgentSurfaceController["resolveDecision"]>[0]): Promise<void> {
+    if (this.disposed) return Promise.resolve();
+    if (this.decisionContinueFlight) return this.decisionContinueFlight;
+    const flight = this.resolveAndContinue(input).finally(() => {
+      if (this.decisionContinueFlight === flight) this.decisionContinueFlight = null;
+    });
+    this.decisionContinueFlight = flight;
+    return flight;
+  }
+
+  private async resolveAndContinue(input: Parameters<AgentSurfaceController["resolveDecision"]>[0]): Promise<void> {
+    const binding = this.bindingVersion;
+    const saved = await this.resolveDecisionResult(input);
+    if (!saved?.taskId || !this.isCurrentBinding(binding)) return;
+    const latest = await this.deps.port.snapshot(saved.projectId);
+    if (!this.isCurrentBinding(binding)) return;
+    if (!latest.ok) { this.notify(latest.error); return; }
+    const snapshot = latest.value;
+    const selected = snapshot.decisions.find(d => d.request.id === input.decisionId);
+    if (snapshot.currentTask?.id !== saved.taskId || snapshot.currentTask.status !== "ACTIVE" ||
+        selected?.request.taskId !== saved.taskId || !selected.resolution) return;
+    if (snapshot.pendingDecisions.some(d => d.taskId === saved.taskId) ||
+        snapshot.decisions.some(d => d.request.taskId === saved.taskId && !d.resolution)) {
+      this.notice("info", "DECISION_RESOLVED", "선택을 저장했어요. 남은 결정도 정하면 빌더가 이어서 진행해요.");
+      return;
+    }
+    const active = await this.deps.port.listActiveBuilderRun(saved.projectId);
+    if (!this.isCurrentBinding(binding)) return;
+    if (!active.ok) { this.notify(active.error); return; }
+    if (active.value || this.activeRunId || this.builderFlight) {
+      this.notice("info", "DECISION_RESOLVED", "선택을 저장했어요. 실행 중인 빌더가 이 결정을 확인할 수 있어요.");
+      return;
+    }
+    await this.startBuilder("", saved.taskId);
   }
 
   /**
    * Explicit, user-initiated Builder resume after a Decision was resolved
-   * (design §B.7; Requirement 5.3). This is the ONLY decision-adjacent path
-   * (besides a fresh Builder start) that starts a Builder run after a Decision,
-   * and it runs only in response to the explicit `builder/resumeAfterDecision`
+   * (design §B.7; Requirement 5.3). This separate resume path runs only
+   * in response to the explicit `builder/resumeAfterDecision`
    * webview action — never as a side effect of {@link resolveDecision}
    * (§Correctness Property 2).
    *

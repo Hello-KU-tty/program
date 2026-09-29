@@ -429,7 +429,7 @@ export class AgentSurfaceView {
     // Resume button — shown only while DECISION_REQUIRED (Req 5.3).
     this.builderResumeButton = this.el("button", "agent-builder-resume") as HTMLButtonElement;
     this.builderResumeButton.type = "button";
-    this.builderResumeButton.textContent = "빌더 다시 시작";
+    this.builderResumeButton.textContent = "선택한 내용으로 계속하기";
     this.builderResumeButton.hidden = true;
     this.builderResumeButton.addEventListener("click", () =>
       this.callbacks.onResumeAfterDecision(),
@@ -1186,7 +1186,7 @@ export class AgentSurfaceView {
       const resolvedNote = this.el("div", "agent-decision-resolved");
       resolvedNote.textContent = decision.applied
         ? "이 결정을 반영했어요."
-        : "이 결정을 정했어요. 반영을 기다리는 중이에요.";
+        : "선택이 저장됐어요. 빌더가 대기 중이면 ‘선택한 내용으로 계속하기’를 눌러 이어갈 수 있어요.";
       block.appendChild(resolvedNote);
     }
 
@@ -1223,7 +1223,7 @@ export class AgentSurfaceView {
 
       const choose = this.el("button", "agent-decision-choose") as HTMLButtonElement;
       choose.type = "button";
-      choose.textContent = "이걸로 정하기";
+      choose.textContent = "이걸로 정하고 계속하기";
       choose.disabled = decision.resolved;
       choose.addEventListener("click", () => {
         if (decision.resolved) return;
@@ -1246,7 +1246,7 @@ export class AgentSurfaceView {
       "agent-decision-accept-recommended",
     ) as HTMLButtonElement;
     acceptRecommended.type = "button";
-    acceptRecommended.textContent = "추천대로 하기";
+    acceptRecommended.textContent = "추천대로 정하고 계속하기";
     acceptRecommended.disabled = decision.resolved;
     acceptRecommended.addEventListener("click", () => {
       if (decision.resolved) return;
@@ -1278,7 +1278,7 @@ export class AgentSurfaceView {
 
     const customSubmit = this.el("button", "agent-decision-custom-submit") as HTMLButtonElement;
     customSubmit.type = "button";
-    customSubmit.textContent = "직접 제안으로 정하기";
+    customSubmit.textContent = "제안대로 정하고 계속하기";
     customSubmit.disabled = decision.resolved;
     customSubmit.addEventListener("click", () => {
       if (decision.resolved) return;

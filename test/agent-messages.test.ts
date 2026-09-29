@@ -142,6 +142,12 @@ describe("parseAgentAction - helper/start (task 1.3)", () => {
 });
 
 describe("parseAgentAction - decision/resolve (task 1.3)", () => {
+  it("validates the explicit combined intent with the same selection boundary", () => {
+    const action = { kind: "decision/resolveAndContinue", decisionId: "dec_1", selection: { kind: "RECOMMENDATION" }, helperUsed: false };
+    expect(parseAgentAction(action)).toEqual(action);
+    expect(parseAgentAction({ ...action, selection: { kind: "UNKNOWN" } })).toBeNull();
+    expect(parseAgentAction({ ...action, helperUsed: "false" })).toBeNull();
+  });
   it("accepts an OPTION selection", () => {
     expect(
       parseAgentAction({

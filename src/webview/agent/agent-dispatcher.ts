@@ -125,6 +125,15 @@ export class AgentDispatcher {
         });
         return;
       }
+      case "decision/resolveAndContinue": {
+        await this.controller.resolveDecisionAndContinue({
+          decisionId: action.decisionId,
+          selection: action.selection,
+          rationale: action.rationale,
+          helperUsed: action.helperUsed,
+        });
+        return;
+      }
       case "builder/resumeAfterDecision": {
         await this.controller.resumeAfterDecision();
         return;
