@@ -39,6 +39,9 @@ export function workerStatusGuidance(code: string): string | undefined {
   if (code.startsWith("PERMISSION_GUARD_BUILDER_SHELL_TIMEOUT_")) {
     return "빌더 명령의 제한 시간 형식이 규칙에 맞지 않아 막혔어요. 빌더는 허용된 형식으로 다시 시도해요.";
   }
+  if (code === "PERMISSION_GUARD_BUILDER_SHELL_PROJECT_TOOLCHAIN_DENIED") {
+    return "빌더가 허용 목록에 없는 명령을 실행하려다 막혔어요(설치·빌드·테스트 명령만 허용돼요). 빌더는 허용된 명령으로 다시 시도해요.";
+  }
   if (code.startsWith("PERMISSION_GUARD_BUILDER_SHELL_LOCKFILE_")) {
     return "의존성 준비 명령이 안전 규칙에 막혔어요. 프로젝트 설정 파일 구성을 확인한 뒤 빌더가 허용된 방법으로 다시 시도해요.";
   }
@@ -65,6 +68,8 @@ export function safeRuntimeCode(value: unknown): string {
  * raw message contract (see agent-error.ts); used by the webview error lines.
  */
 const displayOnlyGuidance: Readonly<Record<string, string>> = {
+  // The IDE agent turn ended without a specific cause (e.g. its window closed).
+  NATIVE_IDE_TURN_FAILED: "에이전트 실행이 도중에 끊겼어요. 빌더나 도우미 창이 닫히거나 다시 열렸을 수 있어요. 실행 중에는 그 창을 닫지 말고, 같은 요청을 다시 보내 주세요. 작업 내용은 그대로 남아 있어요.",
   // Core refused a completion report without real validation results (B8).
   TASK_VALIDATION_NOT_RUN: "빌드·테스트 같은 검증을 실행하지 않아 작업 완료가 거절됐어요. 빌더에게 테스트를 실행한 뒤 완료해 달라고 요청해 주세요.",
   // Rejected before any model call: the role's Core tools never appeared.
