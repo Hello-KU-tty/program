@@ -2,38 +2,28 @@
 
 프론트(`program`)와 백엔드(`core`)를 함께 기준으로 정리했다. 실측은 이 문서의 **2. 실측 점검** 순서대로 진행하고, 결과는 `LIVE_TEST_CHECKLIST.html`의 "결과 Markdown 복사"로 남긴다.
 
-## 0. 현재 상태
+## 0. 현재 상태 (16:30 갱신)
 
 | 항목 | 값 |
 | --- | --- |
-| 설치된 확장 | `vibe-helper.builder-helper-agent-panel` **0.0.9** |
-| 적용된 kit | `frontend-handoff-20260929` (2026.09.29.1, backendHead `8424710`) |
-| 프론트 | `main` `620d1fa` (push 완료) |
-| 백엔드 | `codex/windows-extension-runtime-20260923` `e3532b7` — **1커밋 push 안 됨** |
-| Kiro | 1.1.70 / Agent 1.1.158 (지원 pin과 일치) |
-| 도구 | 시스템 Node 24.18.0(nvm), 백엔드 검증용 Node 24.19.0(PATH 앞에 붙여서만 사용), pnpm 11.13.1 |
-| 백엔드 `pnpm check` (`e3532b7`) | 전체 통과: unit 173, integration 387, eval 42, smoke 6, E2E 12 |
+| 이 PC 설치 확장 | 0.0.9 (kit 2026.09.29.1) |
+| 백엔드 `main` | `eb215ef` — PR #1 머지, HURDOO `bc8570b`/`d8c0d31`, B13 포함. push 완료 |
+| 프론트 `main` | `5519b18` — push 완료. `82f55ff` 이후 오류 안내 2개(`NATIVE_IDE_TURN_FAILED`, `PROJECT_TOOLCHAIN_DENIED`)와 이 문서 |
+| HURDOO 프론트 `deef685` | 0.0.10, kit 2026.09.29.2 적용, "다른 주제로 돌아가기" 후보 보존 등. **program Write 권한이 없어 push 안 됨** (`82f55ff` 기반) |
+| 백엔드 `pnpm check` (`eb215ef`) | 전체 통과. E2E 1개는 첫 실행 실패 후 3/3 재통과(일시적) |
 
-`e3532b7`(공용 pnpm shim 교체)은 kit에 아직 없다. 이 PC는 같은 코드로 멈춘 프로젝트를 직접 복구해 둬서 지금은 동작하지만, 다른 PC나 다음 업그레이드에서는 kit에 들어가야 한다.
+`5519b18`과 `deef685`는 둘 다 `82f55ff`에서 갈라졌다. 같은 버전 번호(0.0.10, kit 2026.09.29.2)로 다른 결과물을 만들지 않기 위해, 이 PC에서는 새 kit와 VSIX를 만들지 않고 합치기를 기다린다.
 
 ---
 
-## 1. 바로 할 일
+## 1. 바로 할 일 (순서대로)
 
-1. **백엔드 `e3532b7` push**
-   - `git -C core push origin codex/windows-extension-runtime-20260923`
-2. **다음 kit 생성 (`frontend-handoff-20260929` 다음 버전)**
-   - `core/scripts/build-frontend-handoff.mjs`는 kit 이름·버전·이전 기준이 코드에 고정돼 있다. 아래 세 값을 바꾼다.
-     - `KIT`: 예) `frontend-handoff-20260930`
-     - `KIT_VERSION`: 예) `2026.09.30.1`
-     - `PREVIOUS`: 새 기준 파일 `examples/frontend-handoff/program-managed-20260929.json`
-   - 새 기준 파일은 **현재 program에 적용된 20260929 kit manifest의 `portable/`, `vendor/` 해시**로 만든다(118개). 20260927 기준 파일을 만든 방식과 같다.
-   - README(`docs/FRONTEND_HANDOFF_<날짜>.md`)와 검증 기록(`docs/spikes/T19_FRONTEND_HANDOFF_UPDATE_<날짜>.json`)을 추가한다.
-   - **PowerShell**에서 `pnpm check` 통과 → 커밋(작업 트리 깨끗한 상태) → `pnpm frontend:handoff`.
-3. **프론트 적용**
-   - `update-program.mjs --check` → 적용 → `git add portable vendor` → `npm run typecheck` / `npm test` / `npm run build` → `--verify` → `package-program.mjs`.
-   - 버전을 **0.0.10**으로 올려 설치하고 Kiro를 **완전히 종료 후 재시작**한다.
-   - 0.0.9 → 0.0.10 업그레이드에서 기존 프로젝트 Builder가 막히지 않는지 확인한다. B12 수정의 실제 검증이다.
+1. **HURDOO에게 `Hello-KU-tty/program` Write 권한 부여** (GitHub → program → Settings → Collaborators and teams → HURDOO를 Write로 추가)
+2. **HURDOO가 `deef685`를 브랜치로 push:** 예) `git push origin deef685:refs/heads/feat/submission-0.0.10`
+3. **합치기:** 그 브랜치에 `main`(`5519b18`)을 merge한다. 겹칠 수 있는 파일은 `src/core/runtime-errors.ts`, `test/runtime-errors.test.ts`, `NEXT_STEPS_20260929.md`, `LIVE_TEST_CHECKLIST.html`이다. `runtime-errors.ts`는 양쪽 항목을 모두 살린다.
+4. **최종 kit:** 백엔드 `main`(`eb215ef` 이상, B13 포함)에서 PowerShell로 `pnpm check` → `pnpm frontend:handoff`. 기준은 자동 선택되며, 버전은 `2026.09.29.3` 이상으로 한다(2026.09.29.2는 HURDOO 로컬 kit와 겹침).
+5. **프론트 적용과 설치:** `update-program.mjs --check` → 적용 → typecheck·test·build → `--verify` → 버전 **0.0.11**로 VSIX 조립 → 설치 → Kiro 완전 재시작.
+6. **이 PC에서 업그레이드 확인:** 0.0.9 → 0.0.11에서 기존 프로젝트("기본적인 리액트 활용 웹사이트") Builder가 막히지 않는지 본다. B12와 pnpm shim 수정의 실사용 검증이다. HURDOO 쪽은 기존 확장이 없어 이 검증을 하지 못했다.
 
 ---
 
