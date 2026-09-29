@@ -112,3 +112,11 @@ describe("backend B7/B8 worker guidance", () => {
     expect(workerStatusGuidance("OPENING_OBSERVER_CLOSED_HELPER")).toContain("새로 시작");
   });
 });
+
+describe("interrupted turns and project command denials", () => {
+  it("explains an interrupted IDE turn and a denied project command", async () => {
+    const { errorGuidance } = await import("../src/core/runtime-errors");
+    expect(errorGuidance("NATIVE_IDE_TURN_FAILED")).toContain("창을 닫지 말고");
+    expect(workerStatusGuidance("PERMISSION_GUARD_BUILDER_SHELL_PROJECT_TOOLCHAIN_DENIED")).toContain("허용 목록");
+  });
+});
