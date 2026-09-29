@@ -7,14 +7,14 @@
   ],
   "promptVersions": {
     "discovery": "1.3.5",
-    "builder": "1.3.11",
+    "builder": "1.3.12",
     "helper": "1.2.0",
     "evidence-analyst": "1.0.8"
   },
   "files": {
     "agent-prompts/builder.md": {
-      "sha256": "f16a2022c2d12e01d92fb6b88547fc84dcde6d4fc1d61fcc01ba562840d1273c",
-      "bytes": 20453
+      "sha256": "0d0ce1bd1b63138f2b71eec9d9e6b48427af8bccf0fa0339a44bc2dfd529e594",
+      "bytes": 21602
     },
     "agent-prompts/discovery.md": {
       "sha256": "d3af4d4906a22e79225055668d500a2fd6303ea31ca35cf38cf9925dcc3d2c9d",
@@ -29,24 +29,24 @@
       "bytes": 9348
     },
     "bin/bridge.mjs": {
-      "sha256": "ae6f1a1dc3a7ca41ff61ef425e346e42ddf271ec70a0b01f704e8301772bf0e1",
-      "bytes": 1013906
+      "sha256": "7b166d37d2c85b4552970babfd57914af8ac6d5c17b21cff7e14a8bb62bf6e91",
+      "bytes": 1014136
     },
     "bin/client.cjs": {
-      "sha256": "e7416ccf90fbc5bb4c1ca2bba72aa8b6bb875ea380498c21128a75682a40747f",
-      "bytes": 394366
+      "sha256": "db65285f7cceece1034aef925757faa9f970fa0c5b0c3abee82ed9458c0889f4",
+      "bytes": 394591
     },
     "bin/core.mjs": {
-      "sha256": "d62eb1f76e465814d7cf97537304c134f525dc59cffb609a8af5bb5bf27645f0",
-      "bytes": 1036122
+      "sha256": "0ebc7a923ed568b6618cf6f0994b591ed40b32d44fb9c74ef144e13b2e4f1b66",
+      "bytes": 1042300
     },
     "bin/extension.cjs": {
-      "sha256": "201972afc8acc738ef3bfb9ea909cf40b7af816da5a3a2426f9145e1a4b3ffc2",
-      "bytes": 571443
+      "sha256": "d9141ab5062b6ec286e1cd57f792f90ac3da6fdf162d538fe5fad2a6ce277d0b",
+      "bytes": 572417
     },
     "bin/frontend-host.cjs": {
-      "sha256": "e53cbd7323a1d7bec24c5f95b64ddfa7fa84d8ddc59e640c35e6abeea9bfa302",
-      "bytes": 532342
+      "sha256": "c88c87f7c68b42a54ebfa5ee9eb6bccc8c869e7b79524783f3d6953e1ba40e80",
+      "bytes": 533275
     },
     "bin/guard.mjs": {
       "sha256": "d21014410e0e03ab141aba0c119da459280f2cb2241417629b3a111866529871",
@@ -57,52 +57,52 @@
       "bytes": 5371
     },
     "bin/native-worker.cjs": {
-      "sha256": "5bcfe3487e06b8cbf6b11229e44e27c8d1fbf93e887d471077be41ed07d4b39c",
-      "bytes": 518665
+      "sha256": "336399298ca639576522747555bcfa3d5efb3115ba74ddaca1aca9b7fbbb9861",
+      "bytes": 519597
     },
     "bin/probe.cjs": {
       "sha256": "77f2015f1bff167f3e0ed697914c5c65eda252a3aa1a6b8a46649c07d33856dc",
       "bytes": 1012
     },
     "bin/project-tools.mjs": {
-      "sha256": "59e25b5a89922750caf69bd6507c04e0154faf3a3a46e3da5d1838386df69cfd",
-      "bytes": 400361
+      "sha256": "9d73bfa76c6850164e57ebca4e5290d9dea8aafbfad88a35f7ded0995282016b",
+      "bytes": 400586
     },
     "bin/runtime.cjs": {
-      "sha256": "dced816a9f3308b96a84801782e3fc8b6c0e100951d901d9b2374af19d030280",
-      "bytes": 445654
+      "sha256": "c24aac3d4d0ab2e8519465f3198c7e8be66fbb4762839cb85f4909c1ea2f6544",
+      "bytes": 448707
     },
     "drizzle/0000_daily_moira_mactaggert.sql": {
-      "sha256": "cf0b8171223433fa13fe81fe4e252d7adbce284f96f4a3ea50dce602bf2814fb",
-      "bytes": 27521
+      "sha256": "96f726a8baee7111af86e34022f3430b978b58d0316522a15a330b72dab9489b",
+      "bytes": 28084
     },
     "drizzle/0001_first_reaper.sql": {
-      "sha256": "75b74d10e8ccd114d6ad6e10e168938f2134e91c82876f86a8382e06592d90d3",
-      "bytes": 8194
+      "sha256": "0dee3e1214166d4d7c9b7ad4ae714b41e392423179ea3ff4db91a6e8f051eb0b",
+      "bytes": 8306
     },
     "drizzle/0002_brave_hitman.sql": {
-      "sha256": "e6a16864371565931bbf3d0e0d3df924560f426edb0becad3db551c95ba1179b",
-      "bytes": 2887
+      "sha256": "7ea08fe43daa9392b85c4758e44e94d795642a3bc70f71ffafe83870f7c9f223",
+      "bytes": 2937
     },
     "drizzle/0003_yielding_vulture.sql": {
-      "sha256": "a05cf68a600173a2f490cd2a14660a3a19592c0bd9f1dd939d7f67c8396c4d32",
-      "bytes": 2097
+      "sha256": "9dda277b0132dbd6d7a9775918c9c52f63a03409058bc348907a649358bed0f0",
+      "bytes": 2140
     },
     "drizzle/0004_peaceful_namor.sql": {
-      "sha256": "458a5010b3251cf8e483c9e58c946569a6d639f3b8cdccad0b249705e9621e44",
-      "bytes": 1954
+      "sha256": "2f640d278099888e54ae93bfc814b835b3a5b3e2db0d5fdfaa056164fca16177",
+      "bytes": 1989
     },
     "drizzle/0005_overrated_vapor.sql": {
-      "sha256": "504b3e59c6427b3e3b0d237f32e5f8f9b8736df9411799a7c08a902a6d052faa",
-      "bytes": 2098
+      "sha256": "86ea31933696b7d78b43d3e943cbc21221e994c2c2cd37eb29af27c7dadcdc29",
+      "bytes": 2137
     },
     "drizzle/0006_freezing_wolf_cub.sql": {
-      "sha256": "35b120573689494dcad79d8971c1f6cb3bc8e4e9829f2694e98afa1a8dff42fe",
-      "bytes": 1643
+      "sha256": "22e824167cf27e36fe147ee692c14dc46142c269faaecd4e8f763e86c6fc06f7",
+      "bytes": 1671
     },
     "drizzle/0007_pink_unicorn.sql": {
-      "sha256": "78a78decac2febc68dea2130a1bdb501b7c8402802d74f9e93d251bd6b3aac52",
-      "bytes": 1553
+      "sha256": "f5cb5c54fbd56d4c639c308ad4733d22ee3bbb182e1fe33d6fb091d13709309e",
+      "bytes": 1574
     },
     "drizzle/meta/_journal.json": {
       "sha256": "bf35b2969598f75d768c8fc2c2168f088cb85cd0f5bc124e8f5e97af54090fa1",
@@ -145,8 +145,8 @@
       "bytes": 1079
     },
     "licenses/node-LICENSE": {
-      "sha256": "d9c4eeda951d6d08f4aa1316b61aafcf67e6da5f79b18f8edeb56fa6abdc038c",
-      "bytes": 160552
+      "sha256": "148eacf7863ef4329224a29398623077200a27194aa075569faf4a0a85566ca5",
+      "bytes": 157606
     },
     "licenses/pkce-challenge@5.0.1-LICENSE": {
       "sha256": "feb87a2e0c305de3464cc44077da5393c52d8ca6362d37427157d04ec6f4510d",

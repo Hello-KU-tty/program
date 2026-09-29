@@ -107,6 +107,7 @@ export interface AgentRunPort {
    */
   prepareBuilder(
     projectId: string,
+    followUpMessage?: string,
   ): Promise<
     AgentResult<{
       taskId: string;

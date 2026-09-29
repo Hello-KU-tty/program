@@ -274,6 +274,7 @@ __export(dist_exports, {
   uiPrepareBuilderTaskCommandSchema: () => uiPrepareBuilderTaskCommandSchema,
   uiPrepareDiscoveryAgentContextQuerySchema: () => uiPrepareDiscoveryAgentContextQuerySchema,
   uiPrepareFinalUpgradeTaskCommandSchema: () => uiPrepareFinalUpgradeTaskCommandSchema,
+  uiPrepareFollowUpTaskCommandSchema: () => uiPrepareFollowUpTaskCommandSchema,
   uiReadAnalysisJobsQuerySchema: () => uiReadAnalysisJobsQuerySchema,
   uiReadEvidenceTraceQuerySchema: () => uiReadEvidenceTraceQuerySchema,
   uiRecordDiscoveryFeedbackCommandSchema: () => uiRecordDiscoveryFeedbackCommandSchema,
@@ -2417,6 +2418,7 @@ var builderTaskContextSchema = import_zod10.z.strictObject({
   project: projectSchema,
   learningSpec: learningSpecRevisionSchema,
   task: builderTaskSchema,
+  previousCompletionReport: taskCompletionReportSchema.optional(),
   liveContext: liveProjectContextSchema.nullable(),
   decisionRequests: import_zod10.z.array(decisionRequestSchema).max(50),
   decisionResolutions: import_zod10.z.array(decisionResolutionSchema).max(50),
@@ -2848,6 +2850,15 @@ var uiPrepareFinalUpgradeTaskCommandSchema = import_zod14.z.strictObject({
   personalizationTraceId: personalizationTraceIdSchema,
   userGoal: nonEmptyTextSchema
 });
+var uiPrepareFollowUpTaskCommandSchema = import_zod14.z.strictObject({
+  ...uiRequestMetadata,
+  kind: import_zod14.z.literal("UI_PREPARE_FOLLOW_UP_TASK"),
+  idempotencyKey: idempotencyKeySchema,
+  projectId: projectIdSchema,
+  sourceTaskId: taskIdSchema,
+  expectedSourceTaskRevision: entityRevisionSchema,
+  userGoal: nonEmptyTextSchema
+});
 var uiUpdateLearningSpecCommandSchema = import_zod14.z.strictObject({
   ...uiRequestMetadata,
   kind: import_zod14.z.literal("UI_UPDATE_LEARNING_SPEC"),
@@ -3003,6 +3014,7 @@ var uiRequestSchema = import_zod14.z.discriminatedUnion("kind", [
   uiConfirmLearningSpecCommandSchema,
   uiPrepareBuilderTaskCommandSchema,
   uiPrepareFinalUpgradeTaskCommandSchema,
+  uiPrepareFollowUpTaskCommandSchema,
   uiReturnToDiscoveryCommandSchema,
   uiResolveDecisionCommandSchema,
   uiListProjectsQuerySchema,
@@ -3286,6 +3298,7 @@ var localResponseSchemas = {
   UI_CONFIRM_LEARNING_SPEC: commandReceiptSchema,
   UI_PREPARE_BUILDER_TASK: preparedBuilderTaskDescriptorSchema,
   UI_PREPARE_FINAL_UPGRADE_TASK: preparedBuilderTaskDescriptorSchema,
+  UI_PREPARE_FOLLOW_UP_TASK: preparedBuilderTaskDescriptorSchema,
   UI_RETURN_TO_DISCOVERY: commandReceiptSchema,
   UI_RESOLVE_DECISION: commandReceiptSchema,
   UI_LIST_PROJECTS: projectHistorySchema,
@@ -4089,6 +4102,7 @@ var LocalCoreClient = class {
   uiPrepareBuilderTaskCommandSchema,
   uiPrepareDiscoveryAgentContextQuerySchema,
   uiPrepareFinalUpgradeTaskCommandSchema,
+  uiPrepareFollowUpTaskCommandSchema,
   uiReadAnalysisJobsQuerySchema,
   uiReadEvidenceTraceQuerySchema,
   uiRecordDiscoveryFeedbackCommandSchema,

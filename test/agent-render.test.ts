@@ -195,7 +195,7 @@ describe("generated workspace and result actions", () => {
       expect(result.hidden).toBe(false); expect(result.disabled).toBe(false);
       workspace.click(); result.click();
       expect(opened).toEqual(["task_synthetic"]); expect(launches).toBe(1); expect(starts).toBe(0);
-      expect(byClass(root, "agent-builder-send")[0].disabled).toBe(true);
+      expect(byClass(root, "agent-builder-send")[0].disabled).toBe(false);
       view.resetProject(); view.render(initialAgentViewModel());
       workspace.click(); result.click();
       expect(opened).toEqual(["task_synthetic"]); expect(launches).toBe(1);
@@ -586,7 +586,7 @@ describe("next step after a Builder turn", () => {
       expect(hint().textContent).toContain("아직 끝나지 않았어요");
       expect(hint().textContent).toContain("막힌 작업");
       view.render(vmWithBuilder({ phase: "TASK_COMPLETED" }));
-      expect(hint().hidden).toBe(true);
+      expect(hint().hidden).toBe(false);
     } finally { restore(); }
   });
 });
@@ -678,5 +678,52 @@ describe("agent surface tabs", () => {
       view.render({ ...initialAgentViewModel(), decisions: [{ ...pendingDecision(), resolved: true }] });
       expect(badges[0].hidden).toBe(true);
     } finally { restore(); }
+  });
+});
+
+
+describe("Helper answer without duplicate summary", () => {
+  const textOf = (el: FakeElement): string => el.textContent + el.children.map(textOf).join("");
+  it.each(["RUNNING", "RECORDED"] as const)("keeps the full answer and durable question while %s", phase => {
+    const {root,view,restore}=mount();
+    try {
+      const vm=initialAgentViewModel();
+      const full="처음 설명부터 마지막 결론까지 모두 보이는 답변";
+      const conversation={conversationId:"conversation_synthetic",taskId:"task_synthetic",decisionId:null,status:"PENDING_ANALYSIS" as const,userExcerpts:["합성 질문"],responseSummaries:["잘린 마지막 문장만"]};
+      view.render({...vm,helper:{...vm.helper,phase,transcript:[{sequence:1,text:full}],conversations:[conversation]}});
+      expect(textOf(byClass(root,"agent-transcript")[1])).toContain(full);
+      expect(byClass(root,"agent-helper-conversation-user")[0].textContent).toBe("합성 질문");
+      expect(byClass(root,"agent-helper-conversation-status")[0].textContent).toContain("근거 정리 대기");
+      expect(byClass(root,"agent-helper-conversation-response")).toEqual([]);
+      expect(textOf(root)).not.toContain("도우미 답변 요약");
+      expect(textOf(root)).not.toContain("잘린 마지막 문장만");
+      view.render({...vm,helper:{...vm.helper,conversations:[conversation]}});
+      expect(byClass(root,"agent-helper-conversation-user")[0].textContent).toBe("합성 질문");
+      expect(textOf(root)).not.toContain("잘린 마지막 문장만");
+    } finally {restore();}
+  });
+});
+
+
+describe("continuous use after MVP completion", () => {
+  it("keeps Builder and Helper send controls usable and retains prior denied tool history", () => {
+    const sent: string[] = [];
+    const {root,view,restore}=mount({...noopCallbacks(),onBuilderStart: message=>sent.push(message)});
+    try {
+      view.render(vmWithBuilder({phase:"TASK_COMPLETED",taskId:"task_done",permissionDenied:true,
+        toolRows:[toolRow({status:"FAILED",errorCode:"PERMISSION_GUARD_BUILDER_SHELL_PROJECT_COMMAND_NODE"})]}));
+      const composer=byClass(root,"agent-composer-input")[0];
+      const send=byClass(root,"agent-builder-send")[0];
+      expect(composer.disabled).toBe(false);
+      expect(send.disabled).toBe(false);
+      expect(send.textContent).toBe("보내기");
+      expect(byClass(root,"agent-composer-input")[1].disabled).toBe(false);
+      expect(byClass(root,"agent-helper-send")[0].disabled).toBe(false);
+      expect(byClass(root,"agent-builder-permission")[0].hidden).toBe(true);
+      expect(byClass(root,"agent-tool-row-status")[0].textContent).toBe("요청 제한");
+      expect(byClass(root,"agent-tools-summary")[0].textContent).toBe("1개 · 제한 1");
+      composer.value="접속할 수 있게 해줘";send.click();
+      expect(sent).toEqual(["접속할 수 있게 해줘"]);
+    } finally {restore();}
   });
 });

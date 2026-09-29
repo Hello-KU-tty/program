@@ -89,6 +89,7 @@ export class ManagedAgentPort implements AgentRunPort, NativeInputPort {
 
   async prepareBuilder(
     projectId: string,
+    followUpMessage?: string,
   ): Promise<
     AgentResult<{
       taskId: string;
@@ -98,15 +99,24 @@ export class ManagedAgentPort implements AgentRunPort, NativeInputPort {
   > {
     try {
       const snapshot = await this.client.restoreProject(projectId);
-      const task = snapshot.currentTask;
+      let task = snapshot.currentTask;
       if (!task) {
         // No current Task — a Builder run cannot be started (design §3.1).
         return err(toAgentError("CURRENT_TASK_REQUIRED", "prepareBuilder failed"));
       }
+      if (task.status === "COMPLETED" && followUpMessage?.trim()) {
+        const prepared = await this.client.execute({
+          schemaVersion: 1, actor: { kind: "UI" }, kind: "UI_PREPARE_FOLLOW_UP_TASK",
+          correlationId: snapshot.project.correlationId, idempotencyKey: entityId("idem"),
+          projectId, sourceTaskId: task.id, expectedSourceTaskRevision: task.revision,
+          userGoal: followUpMessage.trim(),
+        });
+        task = prepared.task;
+      }
       return ok({
         taskId: task.id,
         expectedTaskRevision: task.revision,
-        taskTitle: builderTaskLabel(snapshot) ?? task.title,
+        taskTitle: task.id === snapshot.currentTask?.id ? builderTaskLabel(snapshot) ?? task.title : task.title,
       });
     } catch (e) {
       return err(toAgentError(e, "prepareBuilder failed"));

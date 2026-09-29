@@ -348,9 +348,7 @@ async function waitForWatch(client: FakeCoreClient): Promise<void> {
 
 describe("AgentSurfaceController — start → run → classify happy path", () => {
   it("startBuilder streams events then classifies TASK_COMPLETED from the After_Snapshot", async () => {
-    const h = buildHarness({
-      client: { restoreProjectResult: { resolve: completedSnapshot() } },
-    });
+    const h = buildHarness();
 
     const started = h.controller.startBuilder("build the tracker");
     await waitForWatch(h.client);
@@ -375,6 +373,7 @@ describe("AgentSurfaceController — start → run → classify happy path", () 
       output: null,
       truncated: false,
     } as never);
+    h.client.restoreProjectResult = { resolve: completedSnapshot() };
     h.client.settle(fakeLocalRun({ status: "SUCCEEDED", outcome: "PENDING" }));
     await started;
 

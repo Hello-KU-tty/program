@@ -2121,6 +2121,7 @@ var builderTaskContextSchema = z10.strictObject({
   project: projectSchema,
   learningSpec: learningSpecRevisionSchema,
   task: builderTaskSchema,
+  previousCompletionReport: taskCompletionReportSchema.optional(),
   liveContext: liveProjectContextSchema.nullable(),
   decisionRequests: z10.array(decisionRequestSchema).max(50),
   decisionResolutions: z10.array(decisionResolutionSchema).max(50),
@@ -2551,6 +2552,15 @@ var uiPrepareFinalUpgradeTaskCommandSchema = z14.strictObject({
   personalizationTraceId: personalizationTraceIdSchema,
   userGoal: nonEmptyTextSchema
 });
+var uiPrepareFollowUpTaskCommandSchema = z14.strictObject({
+  ...uiRequestMetadata,
+  kind: z14.literal("UI_PREPARE_FOLLOW_UP_TASK"),
+  idempotencyKey: idempotencyKeySchema,
+  projectId: projectIdSchema,
+  sourceTaskId: taskIdSchema,
+  expectedSourceTaskRevision: entityRevisionSchema,
+  userGoal: nonEmptyTextSchema
+});
 var uiUpdateLearningSpecCommandSchema = z14.strictObject({
   ...uiRequestMetadata,
   kind: z14.literal("UI_UPDATE_LEARNING_SPEC"),
@@ -2706,6 +2716,7 @@ var uiRequestSchema = z14.discriminatedUnion("kind", [
   uiConfirmLearningSpecCommandSchema,
   uiPrepareBuilderTaskCommandSchema,
   uiPrepareFinalUpgradeTaskCommandSchema,
+  uiPrepareFollowUpTaskCommandSchema,
   uiReturnToDiscoveryCommandSchema,
   uiResolveDecisionCommandSchema,
   uiListProjectsQuerySchema,
@@ -2900,6 +2911,7 @@ var localResponseSchemas = {
   UI_CONFIRM_LEARNING_SPEC: commandReceiptSchema,
   UI_PREPARE_BUILDER_TASK: preparedBuilderTaskDescriptorSchema,
   UI_PREPARE_FINAL_UPGRADE_TASK: preparedBuilderTaskDescriptorSchema,
+  UI_PREPARE_FOLLOW_UP_TASK: preparedBuilderTaskDescriptorSchema,
   UI_RETURN_TO_DISCOVERY: commandReceiptSchema,
   UI_RESOLVE_DECISION: commandReceiptSchema,
   UI_LIST_PROJECTS: projectHistorySchema,

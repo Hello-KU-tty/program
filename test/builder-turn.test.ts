@@ -216,3 +216,14 @@ describe("reduceEvent — TOOL errorCode (B9)", () => {
     expect(vm.toolRows[0]).toMatchObject({ status: "FAILED", errorCode: "NATIVE_FILE_NOT_FOUND" });
   });
 });
+
+
+it("retains a correlated permission reason through later failed metadata, but honors a real success", () => {
+  const denied=reduceEvent(emptyTurn(),toolView({toolId:"call_denied",status:"FAILED",errorCode:"NATIVE_TOOL_PERMISSION_DENIED"}));
+  const terminal=reduceEvent(denied,toolView({toolId:"call_denied",status:"FAILED",errorCode:null}));
+  expect(terminal.toolRows).toHaveLength(1);
+  expect(terminal.toolRows[0].errorCode).toBe("NATIVE_TOOL_PERMISSION_DENIED");
+  const success=reduceEvent(terminal,toolView({toolId:"call_denied",status:"SUCCEEDED",errorCode:null}));
+  expect(success.toolRows[0].errorCode).toBeNull();
+  expect(success.toolRows[0].status).toBe("SUCCEEDED");
+});

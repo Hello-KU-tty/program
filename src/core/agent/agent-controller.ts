@@ -228,7 +228,7 @@ export class AgentSurfaceController {
     this.lastProjectId = projectId;
     const binding = this.bindingVersion;
 
-    const prep = await this.deps.port.prepareBuilder(projectId);
+    const prep = await this.deps.port.prepareBuilder(projectId, expectedTaskId ? undefined : message);
     if (this.disposed || binding !== this.bindingVersion) return;
     if (!prep.ok) {
       // prepareBuilder returns 'invalid' for CURRENT_TASK_REQUIRED (agent-error).

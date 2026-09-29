@@ -524,3 +524,25 @@ describe("ManagedAgentPort — watch forwards projected views and terminal run",
     }
   });
 });
+
+
+describe("explicit follow-up preparation", () => {
+  it("prepares the next Task for a completed project's explicit message", async () => {
+    const base=fakeSnapshot();
+    const source={...base.currentTask!,status:"COMPLETED" as const,revision:7};
+    const next={...source,id:"task_follow_up",status:"PENDING" as const,revision:1,title:"Follow-up",sequence:2};
+    const {port}=makePort({restoreProjectResult:{resolve:fakeSnapshot({currentTask:source})},executeResult:{resolve:{task:next}}});
+    expect(await port.prepareBuilder("project_1","Explain the implementation")).toMatchObject({ok:true,value:{taskId:"task_follow_up",expectedTaskRevision:1,taskTitle:"Follow-up"}});
+  });
+  it.each([undefined,"","   "])("does not prepare a follow-up during a read/empty request: %s", async message => {
+    const base=fakeSnapshot();
+    const source={...base.currentTask!,status:"COMPLETED" as const};
+    const {port}=makePort({restoreProjectResult:{resolve:fakeSnapshot({currentTask:source})},executeResult:{throw:clientError("MUST_NOT_MUTATE")}});
+    expect(await port.prepareBuilder("project_1",message)).toMatchObject({ok:true,value:{taskId:source.id}});
+  });
+  it("propagates a preparation error instead of starting against a completed Task", async () => {
+    const base=fakeSnapshot();
+    const {port}=makePort({restoreProjectResult:{resolve:fakeSnapshot({currentTask:{...base.currentTask!,status:"COMPLETED"}})},executeResult:{throw:clientError("STALE_TASK_REVISION")}});
+    expect(await port.prepareBuilder("project_1","Continue")).toMatchObject({ok:false});
+  });
+});

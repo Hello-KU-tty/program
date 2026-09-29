@@ -12,6 +12,10 @@ const failures: Readonly<Record<string, { code: RuntimeErrorCode | "unknown"; me
   NATIVE_MODEL_UNAVAILABLE: { code: "model_unavailable", message: "현재 Kiro 모델을 사용할 수 없어요. Kiro의 모델 이용 상태를 확인한 뒤 다시 시도해 주세요." },
   NATIVE_RATE_LIMITED: { code: "rate_limited", message: "Kiro 요청이 잠시 제한됐어요. 잠시 기다린 뒤 다시 시도해 주세요." },
   NATIVE_SERVICE_UNAVAILABLE: { code: "service_unavailable", message: "Kiro 서비스에 일시적인 문제가 있어요. 잠시 기다린 뒤 다시 시도해 주세요." },
+  PROJECT_RECORDED_NODE_UNAVAILABLE: { code: "unknown", message: "이 프로젝트에서 사용하던 Node 실행 파일이나 버전을 확인할 수 없어요. 기존 Node를 복원한 뒤 다시 시도해 주세요. 다른 Node로 자동 변경하지 않았어요." },
+  PROJECT_RECORDED_PNPM_UNAVAILABLE: { code: "unknown", message: "이 프로젝트에서 사용하던 pnpm 실행 파일이나 버전을 확인할 수 없어요. 기존 도구 설치를 확인해 주세요. 프로젝트 파일은 그대로 남아 있어요." },
+  PROJECT_RECORDED_TOOLCHAIN_INVALID: { code: "unknown", message: "저장된 프로젝트 도구 설정과 실행기가 일치하지 않아요. 도구 설정의 변경 여부를 확인해 주세요. 프로젝트 파일을 삭제하거나 새로 만들 필요는 없어요." },
+  PROJECT_TOOLCHAIN_CHANGED_RESTART_REQUIRED: { code: "unknown", message: "이 프로젝트의 도구 설정이 이전 실행과 달라졌어요. 기존 Node·pnpm과 확장 버전을 확인해 주세요. 단순 재시도로 해결되지 않을 수 있어요." },
   NATIVE_RPC_REJECTED: { code: "unknown", message: "Kiro가 요청을 거절했지만 자세한 원인은 확인되지 않았어요. Kiro 상태를 확인한 뒤 다시 시도해 주세요." },
   NATIVE_WORKSPACE_TRUST_REQUIRED: { code: "trust_required", message: "현재 작업 폴더의 Workspace Trust 승인이 필요해요. Kiro에서 폴더를 확인하고 신뢰한 뒤 다시 시도해 주세요. 이전 프로젝트 기록은 계속 조회할 수 있어요." },
   CORE_UPDATE_WAITING_FOR_OWNER_EXIT: { code: "update_waiting", message: "이전 버전의 Core를 사용하는 Kiro 창이 종료되기를 기다리고 있어요. 작업을 저장하고 해당 창을 정상적으로 닫은 뒤 ‘Vibe Helper: Retry Core Connection’을 실행해 주세요." },
@@ -77,7 +81,12 @@ const displayOnlyGuidance: Readonly<Record<string, string>> = {
 };
 
 /** Guidance to show next to a raw error code, or undefined when none is known. */
+export function isPermissionDenial(code: string | null): boolean {
+  return code === "NATIVE_TOOL_PERMISSION_DENIED" || !!code?.startsWith("PERMISSION_GUARD_");
+}
+
 export function errorGuidance(code: string): string | undefined {
+  if (isPermissionDenial(code)) return workerStatusGuidance(code) ?? "이 도구 요청은 허용 범위나 입력 형식에 맞지 않아 실행되지 않았어요. 다른 작업과 후속 요청은 계속할 수 있어요.";
   const known = runtimeFailure(code);
   if (known) return known.message;
   return Object.prototype.hasOwnProperty.call(displayOnlyGuidance, code) ? displayOnlyGuidance[code] : undefined;

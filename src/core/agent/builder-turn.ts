@@ -18,6 +18,7 @@ import {
   type ProjectSessionSnapshot,
   type RunEventView,
 } from "../../../vendor/frontend-client";
+import { isPermissionDenial } from "../runtime-errors";
 import type { BuilderTurnViewModel, ToolRowViewModel } from "./agent-view-model";
 
 /**
@@ -51,7 +52,7 @@ export function reduceEvent(
       };
     case "TOOL": {
       const key = view.toolId ?? `seq:${view.sequence}`;
-      const row: ToolRowViewModel = {
+      let row: ToolRowViewModel = {
         key,
         tool: view.tool,
         status: view.status,
@@ -65,6 +66,10 @@ export function reduceEvent(
         errorCode: view.errorCode ?? null,
       };
       const idx = vm.toolRows.findIndex((r) => r.key === key);
+      const previous = idx >= 0 ? vm.toolRows[idx] : undefined;
+      if (previous && isPermissionDenial(previous.errorCode) && !row.errorCode && row.status !== "SUCCEEDED") {
+        row = { ...row, errorCode: previous.errorCode, status: "FAILED" };
+      }
       const toolRows =
         idx >= 0
           ? // Upsert by key: status transitions RUNNING → SUCCEEDED/FAILED/UNKNOWN

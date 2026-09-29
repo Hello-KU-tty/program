@@ -283,6 +283,18 @@ export declare const localApplicationEnvelopeSchema: z.ZodObject<{
         actor: z.ZodObject<{
             kind: z.ZodLiteral<"UI">;
         }, z.core.$strict>;
+        kind: z.ZodLiteral<"UI_PREPARE_FOLLOW_UP_TASK">;
+        idempotencyKey: z.ZodString;
+        projectId: z.ZodString;
+        sourceTaskId: z.ZodString;
+        expectedSourceTaskRevision: z.ZodInt;
+        userGoal: z.ZodString;
+    }, z.core.$strict>, z.ZodObject<{
+        schemaVersion: z.ZodLiteral<1>;
+        correlationId: z.ZodString;
+        actor: z.ZodObject<{
+            kind: z.ZodLiteral<"UI">;
+        }, z.core.$strict>;
         kind: z.ZodLiteral<"UI_RETURN_TO_DISCOVERY">;
         idempotencyKey: z.ZodString;
         projectId: z.ZodString;
@@ -580,6 +592,68 @@ export declare const localResponseSchemas: {
         status: z.ZodLiteral<"READY">;
     }, z.core.$strict>;
     readonly UI_PREPARE_FINAL_UPGRADE_TASK: z.ZodObject<{
+        schemaVersion: z.ZodLiteral<1>;
+        correlationId: z.ZodString;
+        projectId: z.ZodString;
+        workspacePath: z.ZodString;
+        task: z.ZodObject<{
+            schemaVersion: z.ZodLiteral<1>;
+            id: z.ZodString;
+            projectId: z.ZodString;
+            learningSpecId: z.ZodString;
+            learningSpecRevision: z.ZodInt;
+            correlationId: z.ZodString;
+            revision: z.ZodInt;
+            title: z.ZodString;
+            productGoal: z.ZodString;
+            requirements: z.ZodArray<z.ZodString>;
+            acceptanceCriteria: z.ZodArray<z.ZodObject<{
+                key: z.ZodString;
+                description: z.ZodString;
+            }, z.core.$strict>>;
+            expectedConcepts: z.ZodArray<z.ZodString>;
+            excludedWork: z.ZodArray<z.ZodString>;
+            prerequisiteTaskIds: z.ZodArray<z.ZodString>;
+            expectedDecisionCategories: z.ZodArray<z.ZodEnum<{
+                API_CONTRACT: "API_CONTRACT";
+                ARCHITECTURE: "ARCHITECTURE";
+                AUTHENTICATION: "AUTHENTICATION";
+                AUTHORIZATION: "AUTHORIZATION";
+                COST_DEPLOYMENT: "COST_DEPLOYMENT";
+                DATA_MODEL: "DATA_MODEL";
+                LEARNING_CONCEPT: "LEARNING_CONCEPT";
+                PRODUCT_BEHAVIOR: "PRODUCT_BEHAVIOR";
+                RETENTION_DELETION: "RETENTION_DELETION";
+                SECURITY_PRIVACY: "SECURITY_PRIVACY";
+            }>>;
+            finalUpgrade: z.ZodOptional<z.ZodObject<{
+                sourceTaskId: z.ZodString;
+                personalizationTraceId: z.ZodString;
+                userGoal: z.ZodString;
+            }, z.core.$strict>>;
+            sequence: z.ZodInt;
+            status: z.ZodEnum<{
+                ACTIVE: "ACTIVE";
+                BLOCKED: "BLOCKED";
+                CANCELLED: "CANCELLED";
+                COMPLETED: "COMPLETED";
+                FAILED: "FAILED";
+                PENDING: "PENDING";
+            }>;
+            createdAt: z.ZodISODateTime;
+            updatedAt: z.ZodISODateTime;
+            source: z.ZodObject<{
+                kind: z.ZodLiteral<"CORE">;
+            }, z.core.$strict>;
+            redactionStatus: z.ZodEnum<{
+                NOT_REQUIRED: "NOT_REQUIRED";
+                REDACTED: "REDACTED";
+                VERIFIED_REDACTED: "VERIFIED_REDACTED";
+            }>;
+        }, z.core.$strict>;
+        status: z.ZodLiteral<"READY">;
+    }, z.core.$strict>;
+    readonly UI_PREPARE_FOLLOW_UP_TASK: z.ZodObject<{
         schemaVersion: z.ZodLiteral<1>;
         correlationId: z.ZodString;
         projectId: z.ZodString;

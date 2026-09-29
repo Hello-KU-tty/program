@@ -7,6 +7,10 @@ import type { HostToWebview } from "../src/webview/messages";
 
 describe("safe runtime recovery guidance", () => {
   const cases = [
+    ["PROJECT_RECORDED_NODE_UNAVAILABLE", "unknown", "기존 Node"],
+    ["PROJECT_RECORDED_PNPM_UNAVAILABLE", "unknown", "pnpm"],
+    ["PROJECT_RECORDED_TOOLCHAIN_INVALID", "unknown", "실행기가 일치하지"],
+    ["PROJECT_TOOLCHAIN_CHANGED_RESTART_REQUIRED", "unknown", "도구 설정이 이전 실행과"],
     ["NATIVE_QUOTA_EXCEEDED", "quota_exceeded", "사용량 한도"],
     ["NATIVE_CREDIT_OBSERVATION_REQUIRED", "credit_observation_required", "최신 계정 사용량"],
     ["NATIVE_AUTH_REQUIRED", "auth_required", "로그인"],

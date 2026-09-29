@@ -54,7 +54,7 @@ import type {
   EvidenceTraceView,
   FinalUpgradeCandidate,
 } from "../../../vendor/frontend-client";
-import { errorGuidance, workerStatusGuidance } from "../../core/runtime-errors";
+import { errorGuidance, workerStatusGuidance, isPermissionDenial } from "../../core/runtime-errors";
 import { renderChatMessage } from "./chat-message";
 
 /**
@@ -359,7 +359,7 @@ export class AgentSurfaceView {
     builder.appendChild(this.builderError);
 
     this.builderPermissionDenied = this.el("div", "agent-builder-permission");
-    this.builderPermissionDenied.textContent = "권한이 거부되어 일부 작업을 수행하지 못했어요.";
+    this.builderPermissionDenied.textContent = "이번 실행에서 일부 도구 요청이 제한됐어요. 아래 도구 실행 기록에서 이유를 확인할 수 있어요. 다른 요청은 계속 보낼 수 있어요.";
     this.builderPermissionDenied.hidden = true;
     builder.appendChild(this.builderPermissionDenied);
 
@@ -573,7 +573,7 @@ export class AgentSurfaceView {
     // Offered only after the Task completes (renderBuilder toggles it): an
     // optional next step, not a form to fill in from the start.
     const finalUpgrade = this.el("section", "agent-final-upgrade");
-    finalUpgrade.setAttribute("aria-label", "마지막 개선 제안");
+    finalUpgrade.setAttribute("aria-label", "선택적인 개선 제안");
     finalUpgrade.hidden = true;
     this.finalUpgradeSection = finalUpgrade;
     const finalUpgradeHeader = this.el("div", "agent-final-upgrade-header");
@@ -592,7 +592,7 @@ export class AgentSurfaceView {
 
     const finalUpgradeIntro = this.el("p", "agent-final-upgrade-intro");
     finalUpgradeIntro.textContent =
-      "이번 작업을 마쳤어요. 지금까지의 대화와 선택을 바탕으로 마지막 개선 작업을 이어서 할 수 있어요. 원하지 않으면 건너뛰어도 괜찮아요.";
+      "이번 작업을 마쳤어요. 아래 제안을 선택하거나 빌더에게 원하는 후속 작업을 바로 요청할 수 있어요. 원하지 않으면 건너뛰어도 괜찮아요.";
     finalUpgrade.appendChild(finalUpgradeIntro);
 
     this.finalUpgradeList = this.el("div", "agent-final-upgrade-list");
@@ -853,6 +853,9 @@ export class AgentSurfaceView {
     if (this.readyToStart && builder.phase === "IDLE") {
       this.builderNextHint.hidden = false;
       this.builderNextHint.textContent = "스펙과 작업이 준비됐어요. ‘빌더 시작’을 누르면 확정한 스펙으로 만들기를 시작해요. 추가 요청은 선택 입력이에요.";
+    } else if (builder.phase === "TASK_COMPLETED") {
+      this.builderNextHint.hidden = false;
+      this.builderNextHint.textContent = "완료한 내용에 이어 실행, 설명, 수정 요청을 계속 보내 주세요. 도우미에게도 언제든 질문할 수 있어요.";
     } else if (builder.phase === "TURN_ENDED") {
       this.builderNextHint.hidden = false;
       this.builderNextHint.textContent =
@@ -876,7 +879,7 @@ export class AgentSurfaceView {
     }
 
     // Permission-denied indicator.
-    this.builderPermissionDenied.hidden = !builder.permissionDenied;
+    this.builderPermissionDenied.hidden = !builder.permissionDenied || builder.phase === "TASK_COMPLETED";
 
     this.renderTranscript(this.builderTranscript, builder.transcript, "빌더");
 
@@ -895,8 +898,8 @@ export class AgentSurfaceView {
       builder.phase === "RECOVERING" ||
       builder.phase === "CLEANUP";
     const completed = builder.phase === "TASK_COMPLETED";
-    this.builderComposerInput.disabled = inFlight || completed;
-    this.builderSendButton.disabled = inFlight || completed;
+    this.builderComposerInput.disabled = inFlight;
+    this.builderSendButton.disabled = inFlight;
     this.builderSendButton.textContent = this.readyToStart ? "빌더 시작" : "보내기";
     this.workspaceOpenButton.hidden = !builder.taskId;
     this.workspaceOpenButton.disabled = inFlight || !builder.taskId;
@@ -911,14 +914,15 @@ export class AgentSurfaceView {
    */
   private renderToolRows(rows: readonly ToolRowViewModel[]): void {
     this.lastToolRows = rows;
+    const denied = rows.filter(row => isPermissionDenial(row.errorCode)).length;
     const failed = rows.filter((row) =>
-      row.status === "FAILED" && row.errorCode !== "NATIVE_FILE_NOT_FOUND").length;
+      row.status === "FAILED" && row.errorCode !== "NATIVE_FILE_NOT_FOUND" && !isPermissionDenial(row.errorCode)).length;
     const collapsible = rows.length > COLLAPSED_TOOL_ROWS;
     const expanded = collapsible && this.toolsExpanded;
 
     this.builderToolsHeader.hidden = rows.length === 0;
     this.builderToolsSummary.textContent =
-      rows.length === 0 ? "" : `${rows.length}개${failed > 0 ? ` · 실패 ${failed}` : ""}`;
+      rows.length === 0 ? "" : `${rows.length}개${failed > 0 ? ` · 실패 ${failed}` : ""}${denied > 0 ? ` · 제한 ${denied}` : ""}`;
     this.builderToolsToggle.hidden = !collapsible;
     this.builderToolsToggle.setAttribute("aria-expanded", String(expanded));
     this.builderToolsToggle.textContent = expanded
@@ -1000,8 +1004,8 @@ export class AgentSurfaceView {
     // A read that found no file is usually a probe, not a failure (B9). The
     // status stays FAILED in the model; only the label and tone change here.
     const fileMissing = toolRow.errorCode === "NATIVE_FILE_NOT_FOUND";
-    status.textContent = fileMissing ? "파일 없음" : TOOL_STATUS_LABELS[toolRow.status];
-    status.dataset.status = fileMissing ? "NOT_FOUND" : toolRow.status;
+    status.textContent = fileMissing ? "파일 없음" : isPermissionDenial(toolRow.errorCode) ? "요청 제한" : TOOL_STATUS_LABELS[toolRow.status];
+    status.dataset.status = fileMissing ? "NOT_FOUND" : isPermissionDenial(toolRow.errorCode) ? "DENIED" : toolRow.status;
     if (fileMissing) row.title = "프로젝트 구성을 확인하는 중 해당 파일을 찾지 못했어요. 파일이 아직 없을 수 있어요.";
     head.appendChild(status);
     row.appendChild(head);
@@ -1122,16 +1126,8 @@ export class AgentSurfaceView {
       }
     }
 
-    if (conversation.responseSummaries.length > 0) {
-      const label = this.el("div", "agent-helper-conversation-label");
-      label.textContent = "도우미 답변 요약";
-      block.appendChild(label);
-      for (const summary of conversation.responseSummaries) {
-        const summaryEl = this.el("div", "agent-helper-conversation-response");
-        renderChatMessage(summaryEl, summary);
-        block.appendChild(summaryEl);
-      }
-    }
+    // The stored 240-character tail is analysis context, not a user-facing summary.
+    // Keep the actual Helper transcript and durable user questions/status above.
 
     return block;
   }

@@ -279,9 +279,7 @@ function assertNoSecretsPosted(posted: readonly PostedMessage[]): void {
 
 describe("wireWebviewMessaging (live agent) — builder/start full cycle", () => {
   it("drives start -> stream -> classify producing exactly one agent/hydrate reflecting TASK_COMPLETED", async () => {
-    const { client, webview } = await wire({
-      restoreProjectResult: { resolve: completedSnapshot() },
-    });
+    const { client, webview } = await wire({});
 
     const baseline = webview.posted.length;
 
@@ -316,6 +314,7 @@ describe("wireWebviewMessaging (live agent) — builder/start full cycle", () =>
       output: null,
       truncated: false,
     } as never);
+    client.restoreProjectResult = { resolve: completedSnapshot() };
     client.settle(fakeLocalRun({ status: "SUCCEEDED", outcome: "PENDING" }));
 
     // Let the terminal classify + hydrate settle.

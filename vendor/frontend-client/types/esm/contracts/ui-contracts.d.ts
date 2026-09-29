@@ -102,6 +102,19 @@ export declare const uiPrepareFinalUpgradeTaskCommandSchema: z.ZodObject<{
     personalizationTraceId: z.ZodString;
     userGoal: z.ZodString;
 }, z.core.$strict>;
+export declare const uiPrepareFollowUpTaskCommandSchema: z.ZodObject<{
+    schemaVersion: z.ZodLiteral<1>;
+    correlationId: z.ZodString;
+    actor: z.ZodObject<{
+        kind: z.ZodLiteral<"UI">;
+    }, z.core.$strict>;
+    kind: z.ZodLiteral<"UI_PREPARE_FOLLOW_UP_TASK">;
+    idempotencyKey: z.ZodString;
+    projectId: z.ZodString;
+    sourceTaskId: z.ZodString;
+    expectedSourceTaskRevision: z.ZodInt;
+    userGoal: z.ZodString;
+}, z.core.$strict>;
 export declare const uiUpdateLearningSpecCommandSchema: z.ZodObject<{
     schemaVersion: z.ZodLiteral<1>;
     correlationId: z.ZodString;
@@ -575,6 +588,18 @@ export declare const uiRequestSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     sourceTaskId: z.ZodString;
     expectedSourceTaskRevision: z.ZodInt;
     personalizationTraceId: z.ZodString;
+    userGoal: z.ZodString;
+}, z.core.$strict>, z.ZodObject<{
+    schemaVersion: z.ZodLiteral<1>;
+    correlationId: z.ZodString;
+    actor: z.ZodObject<{
+        kind: z.ZodLiteral<"UI">;
+    }, z.core.$strict>;
+    kind: z.ZodLiteral<"UI_PREPARE_FOLLOW_UP_TASK">;
+    idempotencyKey: z.ZodString;
+    projectId: z.ZodString;
+    sourceTaskId: z.ZodString;
+    expectedSourceTaskRevision: z.ZodInt;
     userGoal: z.ZodString;
 }, z.core.$strict>, z.ZodObject<{
     schemaVersion: z.ZodLiteral<1>;

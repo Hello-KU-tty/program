@@ -3506,6 +3506,126 @@ export declare const builderTaskContextSchema: z.ZodObject<{
             VERIFIED_REDACTED: "VERIFIED_REDACTED";
         }>;
     }, z.core.$strict>;
+    previousCompletionReport: z.ZodOptional<z.ZodObject<{
+        schemaVersion: z.ZodLiteral<1>;
+        id: z.ZodString;
+        projectId: z.ZodString;
+        taskId: z.ZodString;
+        correlationId: z.ZodString;
+        expectedTaskRevision: z.ZodInt;
+        implementedFeatures: z.ZodArray<z.ZodString>;
+        acceptanceResults: z.ZodArray<z.ZodObject<{
+            criterionKey: z.ZodString;
+            status: z.ZodEnum<{
+                FAILED: "FAILED";
+                PASSED: "PASSED";
+            }>;
+            evidence: z.ZodArray<z.ZodDiscriminatedUnion<[z.ZodObject<{
+                kind: z.ZodLiteral<"CODE">;
+                path: z.ZodString;
+                lineRange: z.ZodOptional<z.ZodObject<{
+                    start: z.ZodInt;
+                    end: z.ZodInt;
+                }, z.core.$strict>>;
+                revisionRef: z.ZodOptional<z.ZodString>;
+            }, z.core.$strict>, z.ZodObject<{
+                kind: z.ZodLiteral<"DIFF">;
+                diffId: z.ZodString;
+                paths: z.ZodArray<z.ZodString>;
+                revisionRef: z.ZodOptional<z.ZodString>;
+            }, z.core.$strict>, z.ZodObject<{
+                kind: z.ZodLiteral<"TEST_RESULT">;
+                testResultId: z.ZodString;
+                taskId: z.ZodString;
+            }, z.core.$strict>, z.ZodObject<{
+                kind: z.ZodLiteral<"TOOL_CALL">;
+                toolCallId: z.ZodString;
+                toolName: z.ZodString;
+            }, z.core.$strict>, z.ZodObject<{
+                kind: z.ZodLiteral<"USER_MESSAGE">;
+                conversationId: z.ZodString;
+                messageId: z.ZodString;
+            }, z.core.$strict>, z.ZodObject<{
+                kind: z.ZodLiteral<"USER_DECISION">;
+                decisionId: z.ZodString;
+            }, z.core.$strict>, z.ZodObject<{
+                kind: z.ZodLiteral<"USER_ACTION">;
+                eventId: z.ZodString;
+            }, z.core.$strict>, z.ZodObject<{
+                kind: z.ZodLiteral<"AGENT_MESSAGE">;
+                conversationId: z.ZodString;
+                messageId: z.ZodString;
+            }, z.core.$strict>, z.ZodObject<{
+                kind: z.ZodLiteral<"EVENT">;
+                eventId: z.ZodString;
+            }, z.core.$strict>], "kind">>;
+        }, z.core.$strict>>;
+        validationResults: z.ZodArray<z.ZodObject<{
+            name: z.ZodString;
+            status: z.ZodEnum<{
+                FAILED: "FAILED";
+                NOT_RUN: "NOT_RUN";
+                PASSED: "PASSED";
+            }>;
+            summary: z.ZodString;
+            reference: z.ZodOptional<z.ZodObject<{
+                kind: z.ZodLiteral<"TEST_RESULT">;
+                testResultId: z.ZodString;
+                taskId: z.ZodString;
+            }, z.core.$strict>>;
+        }, z.core.$strict>>;
+        conceptUsage: z.ZodArray<z.ZodObject<{
+            conceptName: z.ZodString;
+            scope: z.ZodEnum<{
+                AGENT_SUPPORT: "AGENT_SUPPORT";
+                EXCLUDED: "EXCLUDED";
+                LEARNER_FOCUS: "LEARNER_FOCUS";
+            }>;
+            importance: z.ZodEnum<{
+                CORE: "CORE";
+                SUPPORTING: "SUPPORTING";
+            }>;
+            usageReason: z.ZodString;
+            codeReferences: z.ZodArray<z.ZodObject<{
+                kind: z.ZodLiteral<"CODE">;
+                path: z.ZodString;
+                lineRange: z.ZodOptional<z.ZodObject<{
+                    start: z.ZodInt;
+                    end: z.ZodInt;
+                }, z.core.$strict>>;
+                revisionRef: z.ZodOptional<z.ZodString>;
+            }, z.core.$strict>>;
+        }, z.core.$strict>>;
+        appliedDecisionIds: z.ZodArray<z.ZodString>;
+        codeReferences: z.ZodArray<z.ZodObject<{
+            kind: z.ZodLiteral<"CODE">;
+            path: z.ZodString;
+            lineRange: z.ZodOptional<z.ZodObject<{
+                start: z.ZodInt;
+                end: z.ZodInt;
+            }, z.core.$strict>>;
+            revisionRef: z.ZodOptional<z.ZodString>;
+        }, z.core.$strict>>;
+        diffReferences: z.ZodArray<z.ZodObject<{
+            kind: z.ZodLiteral<"DIFF">;
+            diffId: z.ZodString;
+            paths: z.ZodArray<z.ZodString>;
+            revisionRef: z.ZodOptional<z.ZodString>;
+        }, z.core.$strict>>;
+        specDeviations: z.ZodArray<z.ZodString>;
+        remainingIssues: z.ZodArray<z.ZodString>;
+        limitations: z.ZodArray<z.ZodString>;
+        completedAt: z.ZodISODateTime;
+        source: z.ZodObject<{
+            kind: z.ZodLiteral<"AGENT">;
+            role: z.ZodLiteral<"BUILDER">;
+        }, z.core.$strict>;
+        redactionStatus: z.ZodEnum<{
+            NOT_REQUIRED: "NOT_REQUIRED";
+            REDACTED: "REDACTED";
+            VERIFIED_REDACTED: "VERIFIED_REDACTED";
+        }>;
+    }, z.core.$strict>>;
     liveContext: z.ZodNullable<z.ZodObject<{
         schemaVersion: z.ZodLiteral<1>;
         id: z.ZodString;
