@@ -133,6 +133,43 @@ const HELPER_PHASE_LABELS: Readonly<Record<HelperViewModel["phase"], string>> = 
 };
 
 /** Korean labels for a tool row status. */
+/** Learner-facing names for Core decision categories; unknown values pass through. */
+const DECISION_CATEGORY_LABELS: Readonly<Record<string, string>> = {
+  PRODUCT_BEHAVIOR: "제품 동작",
+  DATA_MODEL: "데이터 구조",
+  API_CONTRACT: "API 설계",
+  AUTHENTICATION: "로그인·인증",
+  AUTHORIZATION: "권한",
+  SECURITY_PRIVACY: "보안·개인정보",
+  RETENTION_DELETION: "보관·삭제",
+  COST_DEPLOYMENT: "비용·배포",
+  ARCHITECTURE: "구조 설계",
+  LEARNING_CONCEPT: "학습 개념",
+};
+
+/** Plain-language worker stages; the raw code stays in the tooltip for support. */
+const WORKER_STAGE_LABELS: Readonly<Record<string, string>> = {
+  STARTING: "에이전트 연결을 준비하고 있어요",
+  CONNECTED: "에이전트와 연결됐어요",
+  HELPER_WINDOW_OPENING: "도우미 창을 여는 중이에요",
+  WORKSPACE_SWITCHING: "작업 폴더로 이동하는 중이에요",
+  WORKSPACE_SWITCH_FAILED: "작업 폴더로 이동하지 못했어요",
+  JOB_CLAIMED: "요청을 받았어요",
+  AGENT_OPENING: "에이전트를 여는 중이에요",
+  AGENT_QUEUED: "순서를 기다리는 중이에요",
+  AGENT_RUNNING: "에이전트가 작업 중이에요",
+  AGENT_ENDED: "에이전트 작업이 끝났어요",
+  AGENT_FAILED: "에이전트 작업이 실패했어요",
+  USER_INPUT: "확인이 필요한 질문이 있어요",
+  PERMISSION: "도구 사용 권한을 확인하고 있어요",
+};
+const WORKER_ROLE_LABELS: Readonly<Record<string, string>> = {
+  DISCOVERY: "탐색", BUILDER: "빌더", HELPER: "도우미", EVIDENCE_ANALYST: "분석",
+};
+
+/** The agent surface tabs. */
+export type AgentTab = "builder" | "helper" | "record";
+
 /** Short local date/time for display; the raw value is kept when unparsable. */
 function formatDate(value: string): string {
   const date = new Date(value);
@@ -242,6 +279,11 @@ export class AgentSurfaceView {
   private readonly finalUpgradeSection: HTMLElement;
   /** Task id whose upgrade candidates were already requested once. */
   private finalUpgradeListedFor: string | null = null;
+
+  // --- Tabs: one surface visible at a time keeps the panel short ------------
+  private readonly surface: HTMLElement;
+  private readonly tabButtons: Record<AgentTab, HTMLButtonElement>;
+  private readonly tabBadges = {} as Record<AgentTab, HTMLElement>;
   private readonly finalUpgradeInputs: {
     readonly sourceTaskId: HTMLInputElement;
     readonly expectedSourceTaskRevision: HTMLInputElement;
@@ -254,6 +296,35 @@ export class AgentSurfaceView {
     this.callbacks = callbacks;
 
     const container = this.el("div", "agent-surface");
+    this.surface = container;
+
+    // ---- Tabs -------------------------------------------------------------
+    // Only the chosen surface is shown (CSS keys off data-tab). Decisions and
+    // native questions stay above Builder and Helper so they are never buried.
+    const tabs = this.el("div", "agent-tabs");
+    tabs.setAttribute("role", "tablist");
+    const makeTab = (tab: AgentTab, label: string): HTMLButtonElement => {
+      const button = this.el("button", "agent-tab") as HTMLButtonElement;
+      button.type = "button";
+      button.dataset.tab = tab;
+      button.setAttribute("role", "tab");
+      const text = this.el("span", "agent-tab-label");
+      text.textContent = label;
+      const badge = this.el("span", "agent-tab-badge");
+      badge.hidden = true;
+      this.tabBadges[tab] = badge;
+      button.appendChild(text);
+      button.appendChild(badge);
+      button.addEventListener("click", () => this.selectTab(tab));
+      tabs.appendChild(button);
+      return button;
+    };
+    this.tabButtons = {
+      builder: makeTab("builder", "빌더"),
+      helper: makeTab("helper", "도우미"),
+      record: makeTab("record", "학습 기록"),
+    };
+    container.appendChild(tabs);
 
     // ---- Builder ----------------------------------------------------------
     const builder = this.el("section", "agent-builder");
@@ -575,6 +646,7 @@ export class AgentSurfaceView {
       userGoal,
     };
 
+    this.selectTab("builder");
     root.appendChild(container);
   }
 
@@ -595,6 +667,29 @@ export class AgentSurfaceView {
     this.renderNativeQuestions(vm.nativeQuestions);
     this.renderWorker(vm.worker);
     this.renderNotice(vm.notice);
+    this.renderTabBadges(vm);
+  }
+
+  /** Show one surface. Pending decisions/questions stay visible on Builder and Helper. */
+  selectTab(tab: AgentTab): void {
+    this.surface.dataset.tab = tab;
+    for (const [name, button] of Object.entries(this.tabButtons)) {
+      const active = name === tab;
+      button.setAttribute("aria-selected", String(active));
+      button.tabIndex = active ? 0 : -1;
+    }
+  }
+
+  /** Small counts so work waiting on another tab is noticed without scrolling. */
+  private renderTabBadges(vm: AgentViewModel): void {
+    const waiting = vm.decisions.filter((d) => !d.resolved).length + vm.nativeQuestions.length;
+    const badge = (tab: AgentTab, text: string) => {
+      const el = this.tabBadges[tab];
+      el.hidden = text === "";
+      el.textContent = text;
+    };
+    badge("builder", waiting > 0 ? String(waiting) : "");
+    badge("helper", vm.helper.phase === "RUNNING" ? "…" : "");
   }
 
   /** Clear only project-bound local state when History changes project. */
@@ -1080,7 +1175,7 @@ export class AgentSurfaceView {
     block.dataset.decisionId = decision.decisionId;
 
     const category = this.el("div", "agent-decision-category");
-    category.textContent = decision.category;
+    category.textContent = DECISION_CATEGORY_LABELS[decision.category] ?? decision.category;
     block.appendChild(category);
 
     const question = this.el("p", "agent-decision-question");
@@ -1098,14 +1193,14 @@ export class AgentSurfaceView {
     // Rationale input (forwarded verbatim, Req 5.2).
     const rationaleField = this.el("div", "agent-field");
     const rationaleLabel = this.el("label", "agent-field-label");
-    rationaleLabel.textContent = "이유 (선택)";
+    rationaleLabel.textContent = "고른 이유 (선택 · 적어 두면 학습 기록에 남아요)";
     const rationaleInput = this.el("textarea", "agent-decision-rationale") as HTMLTextAreaElement;
     rationaleInput.setAttribute("aria-label", "결정 이유");
     rationaleInput.rows = 2;
     rationaleInput.disabled = decision.resolved;
     rationaleField.appendChild(rationaleLabel);
     rationaleField.appendChild(rationaleInput);
-    block.appendChild(rationaleField);
+    // Appended after the choices below: options first, reasoning right after.
 
     // Options — one resolve control per option; recommended marked.
     const options = this.el("div", "agent-decision-options");
@@ -1163,8 +1258,13 @@ export class AgentSurfaceView {
       );
     });
     block.appendChild(acceptRecommended);
+    block.appendChild(rationaleField);
 
-    // Custom-proposal control.
+    // Custom-proposal control, folded: most turns pick an option.
+    const custom = this.el("details", "agent-decision-custom-group");
+    const customSummary = this.el("summary", "agent-decision-custom-summary");
+    customSummary.textContent = "다른 방식 직접 제안하기";
+    custom.appendChild(customSummary);
     const customField = this.el("div", "agent-field");
     const customLabel = this.el("label", "agent-field-label");
     customLabel.textContent = "직접 제안";
@@ -1174,7 +1274,7 @@ export class AgentSurfaceView {
     customInput.disabled = decision.resolved;
     customField.appendChild(customLabel);
     customField.appendChild(customInput);
-    block.appendChild(customField);
+    custom.appendChild(customField);
 
     const customSubmit = this.el("button", "agent-decision-custom-submit") as HTMLButtonElement;
     customSubmit.type = "button";
@@ -1193,7 +1293,8 @@ export class AgentSurfaceView {
         false,
       );
     });
-    block.appendChild(customSubmit);
+    custom.appendChild(customSubmit);
+    block.appendChild(custom);
 
     // Ask-helper affordance for this decision (Req 4).
     const askHelper = this.el("button", "agent-decision-ask-helper") as HTMLButtonElement;
@@ -1366,11 +1467,11 @@ export class AgentSurfaceView {
       return;
     }
     // Display-only: stage + role + raw code (no product branching, Req 12.1).
-    const role = worker.role ? ` · ${worker.role}` : "";
+    const role = worker.role ? WORKER_ROLE_LABELS[worker.role] ?? worker.role : "";
     const guidance = workerStatusGuidance(worker.code);
-    this.workerStatus.textContent = guidance
-      ? `${guidance} (${worker.code})`
-      : `작업 상태: ${worker.stage}${role} (${worker.code})`;
+    const stage = WORKER_STAGE_LABELS[worker.stage];
+    this.workerStatus.textContent = guidance ?? (stage ? `${role ? `${role} · ` : ""}${stage}` : `작업 상태: ${worker.code}`);
+    this.workerStatus.title = worker.code;
   }
 
   /** Renders the surface notice (code + message via `textContent`, Req 2.7). */

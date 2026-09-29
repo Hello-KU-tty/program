@@ -1780,6 +1780,97 @@ export function buildWebviewHtml(
     }
     .agent-surface [hidden] { display: none !important; }
 
+    /* ---- Tabs: one surface at a time keeps the panel short ---- */
+    .agent-tabs {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      display: flex;
+      gap: var(--sp-1);
+      padding: var(--sp-1);
+      margin: calc(-1 * var(--sp-2)) calc(-1 * var(--sp-3)) 0;
+      background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+      border-bottom: 1px solid var(--vscode-panel-border, color-mix(in srgb, var(--vscode-foreground) 14%, transparent));
+    }
+    .agent-surface .agent-tab {
+      flex: 1 1 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: var(--sp-1);
+      border: none;
+      border-radius: var(--radius-md);
+      padding: var(--sp-1) var(--sp-2);
+      color: var(--vscode-descriptionForeground);
+      background: transparent;
+    }
+    .agent-surface .agent-tab[aria-selected="true"] {
+      color: var(--vscode-foreground);
+      background: color-mix(in srgb, var(--vscode-foreground) 10%, transparent);
+      box-shadow: inset 0 -2px 0 0 var(--vscode-focusBorder, var(--accent));
+    }
+    .agent-tab-badge {
+      min-width: 16px;
+      padding: 0 5px;
+      border-radius: var(--radius-pill);
+      font-size: 0.75em;
+      font-weight: 700;
+      line-height: 16px;
+      color: #fff;
+      background: var(--vscode-charts-orange, #f5a524);
+    }
+
+    /* Order on screen (DOM order is unchanged): status, then anything waiting
+       on the learner, then the chosen surface, then the post-completion offer. */
+    .agent-tabs { order: 0; }
+    .agent-worker-status, .agent-notice { order: 1; }
+    .agent-decisions, .agent-native-questions { order: 2; }
+    .agent-builder, .agent-helper, .agent-evidence { order: 3; }
+    .agent-final-upgrade { order: 4; }
+
+    .agent-surface:not([data-tab="builder"]) .agent-builder,
+    .agent-surface:not([data-tab="builder"]) .agent-final-upgrade,
+    .agent-surface:not([data-tab="helper"]) .agent-helper,
+    .agent-surface:not([data-tab="record"]) .agent-evidence,
+    .agent-surface[data-tab="record"] .agent-decisions,
+    .agent-surface[data-tab="record"] .agent-native-questions {
+      display: none !important;
+    }
+    /* Folded secondary controls (custom proposal). */
+    .agent-decision-custom-group > summary {
+      cursor: pointer;
+      font-size: 0.9em;
+      color: var(--vscode-descriptionForeground);
+      padding: var(--sp-1) 0;
+    }
+    .agent-decision-custom-group[open] > summary { margin-bottom: var(--sp-2); }
+    .agent-decision-custom-group[open] { display: flex; flex-direction: column; gap: var(--sp-2); }
+
+    /* Worker status is ambient: one quiet line, raw code in the tooltip. */
+    .agent-worker-status {
+      font-size: 0.82em;
+      padding: var(--sp-1) var(--sp-2);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* The tab already names the surface; drop the repeated big heading. */
+    .agent-builder-heading, .agent-helper-heading { display: none; }
+
+    /* Composer stays reachable at the bottom while the conversation scrolls. */
+    .agent-builder .agent-composer,
+    .agent-helper .agent-composer {
+      position: sticky;
+      bottom: calc(-1 * var(--sp-4));
+      z-index: 1;
+      margin: 0 calc(-1 * var(--sp-3)) calc(-1 * var(--sp-3));
+      padding: var(--sp-2) var(--sp-3) var(--sp-3);
+      background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+      border-top: 1px solid var(--vscode-panel-border, color-mix(in srgb, var(--vscode-foreground) 14%, transparent));
+      border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+    }
+
     /* ---- Section cards ---- */
     .agent-builder,
     .agent-helper,

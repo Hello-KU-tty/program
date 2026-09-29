@@ -492,9 +492,9 @@ describe("native worker status line", () => {
       view.render({ ...initialAgentViewModel(), worker: { stage: "DIAGNOSTIC", role: null, code: "WORKSPACE_WINDOW_AVAILABLE" } } as AgentViewModel);
       expect(status().hidden).toBe(false);
       expect(status().textContent).toContain("그 창에서 처리");
-      expect(status().textContent).toContain("(WORKSPACE_WINDOW_AVAILABLE)");
+      expect(status().attributes.title ?? status().title).toBe("WORKSPACE_WINDOW_AVAILABLE");
       view.render({ ...initialAgentViewModel(), worker: { stage: "AGENT_RUNNING", role: "DISCOVERY", code: "AGENT_RUNNING_DISCOVERY" } } as AgentViewModel);
-      expect(status().textContent).toBe("작업 상태: AGENT_RUNNING · DISCOVERY (AGENT_RUNNING_DISCOVERY)");
+      expect(status().textContent).toBe("탐색 · 에이전트가 작업 중이에요");
     } finally { restore(); }
   });
 });
@@ -619,6 +619,44 @@ describe("backend B8/B9 tool guidance", () => {
       ] }));
       expect(byClass(root, "agent-tool-row-tool").map((e) => e.textContent)).toEqual(["기타 도구", "사용자 확인", "Core 작업"]);
       expect(byClass(root, "agent-tool-row-hint")[0].textContent).toContain("검증을 실행하지 않아");
+    } finally { restore(); }
+  });
+});
+
+describe("final upgrade is a suggestion after completion", () => {
+  it("stays hidden until the task completes, then lists candidates once", () => {
+    let lists = 0;
+    const { root, view, restore } = mount({ ...noopCallbacks(), onListFinalUpgrade: () => lists++ });
+    try {
+      const section = () => byClass(root, "agent-final-upgrade")[0];
+      view.render(vmWithBuilder({ phase: "RUNNING", taskId: "task_1" }));
+      expect(section().hidden).toBe(true);
+      expect(lists).toBe(0);
+      view.render(vmWithBuilder({ phase: "TASK_COMPLETED", taskId: "task_1", taskRevision: 3 }));
+      expect(section().hidden).toBe(false);
+      view.render(vmWithBuilder({ phase: "TASK_COMPLETED", taskId: "task_1", taskRevision: 3 }));
+      expect(lists).toBe(1);
+      expect(byClass(root, "agent-final-upgrade-references")[0].hidden).toBe(true);
+      view.render(vmWithBuilder({ phase: "IDLE", taskId: "task_2" }));
+      expect(section().hidden).toBe(true);
+    } finally { restore(); }
+  });
+
+  it("lets the learner pick a candidate instead of typing its id", () => {
+    const { root, view, restore } = mount();
+    try {
+      view.render(vmWithBuilder({ phase: "TASK_COMPLETED", taskId: "task_1", taskRevision: 3 }));
+      view.renderFinalUpgrade([
+        { id: "trace_a", basisCount: 1, createdAt: "2026-09-28T00:00:00Z" },
+        { id: "trace_b", basisCount: 2, createdAt: "2026-09-28T01:00:00Z" },
+      ]);
+      const trace = byClass(root, "agent-input personalization-trace-id")[0];
+      const rows = byClass(root, "agent-final-upgrade-candidate");
+      expect(rows.map((r) => r.attributes["aria-pressed"])).toEqual(["false", "false"]);
+      expect(byClass(root, "agent-final-upgrade-candidate-id")[1].textContent).toBe("개선 제안 2");
+      rows[1].click();
+      expect(trace.value).toBe("trace_b");
+      expect(rows.map((r) => r.attributes["aria-pressed"])).toEqual(["false", "true"]);
     } finally { restore(); }
   });
 });
