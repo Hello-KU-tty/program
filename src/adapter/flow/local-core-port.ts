@@ -282,7 +282,7 @@ export class LocalCoreDiscoveryPort implements DiscoveryPort, SpecPort, HistoryP
       return ok(contractToProgramPreparedTask(response));
     } catch (e) { return err(...classify(e, "prepareBuilderTask failed")); }
   }
-  async returnToDiscovery(req: { projectId: string; discoverySessionId: string }, env: RequestEnvelope): Promise<PortResult<RestoredFlow>> {
+  async returnToDiscovery(req: { projectId: string; discoverySessionId: string; input?: DiscoveryInput }, env: RequestEnvelope): Promise<PortResult<RestoredFlow>> {
     try {
       const before = await this.snapshot(req.projectId);
       const session = before.discoverySession;
@@ -293,7 +293,8 @@ export class LocalCoreDiscoveryPort implements DiscoveryPort, SpecPort, HistoryP
       // here: the next preview waits for the learner's explicit submit.
       await this.client.execute({ ...uiMetadata(session.correlationId), kind: "UI_RETURN_TO_DISCOVERY",
         projectId: req.projectId, discoverySessionId: session.id, expectedSessionRevision: session.revision,
-        expectedSpecRevision: before.learningSpec?.revision ?? 0, idempotencyKey: env.idempotencyKey });
+        expectedSpecRevision: before.learningSpec?.revision ?? 0, idempotencyKey: env.idempotencyKey,
+        ...(req.input ? { input: req.input } : {}) });
       return this.restoreFlow(req.projectId, env);
     } catch (e) { return err(...classify(e, "returnToDiscovery failed")); }
   }

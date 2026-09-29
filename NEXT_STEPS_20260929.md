@@ -1,5 +1,26 @@
 # 앞으로 고칠 것과 점검할 것 (2026-09-29)
 
+## 2026-09-29 후속 작업 결과 (0.0.10)
+
+**실측 담당/예정:** 프론트 실측은 **이쪽(core 작업 환경)에서 현재 제출 후보 확장을 Kiro에 적용해 진행할 예정**이다. 사용자 직접 사용을 위한 창과 대상 Workspace Trust도 준비한다. 확장 설치·Trust는 사용자가 승인했으며, 이번 변경은 `hurdoo` 계정으로 `Hello-KU-tty/core`, `Hello-KU-tty/program`에 commit/push한다. 아래 미커밋/실측 미완료 문구는 이전 자동 검증 시점의 기록이며 실제 관측 결과는 후속 인계로 구분한다.
+
+이 절은 아래 최초 인계의 현재 상태/바로 할 일을 갱신한다. 최초 기록과 당시 실측은 그대로 보존한다.
+
+- backend8265e9d에는 e3532b7이 이미 포함되어 있다. 새 kit **frontend-handoff-20260929-2 / 2026.09.29.2**를 실제 program에 적용했고 관리 파일118개 hash를 검증했다. 새 적용 receipt는 `.vibe-helper-kit.json`이다.
+- kit 이름·버전·이전 기준의 소스 하드코딩을 없앴다. 실제 적용 파일 hash와 receipt/manifest를 대조하는 `--program`, `--verification` 방식은 [새 kit 절차](../core/docs/FRONTEND_HANDOFF.md)를 따른다.
+- 외부 JS/CMD/EXE pnpm의 공용 shim 교체를 정확한 descriptor/launcher와 같은 제품 상위 버전 조건에서 검증했다. Node 변경·변조·downgrade 거절은 유지했다.
+- Spec의 이전 후보 보기는 저장 Session/Spec/candidate/input을 보존하며 모델0이다. 현재 Spec 재열기도 모델0이다. 명시적 새 후보 받기에서만 같은 Project의 새 Session과 preview1회를 생성한다.
+- package/package-lock **0.0.10**, Node24.19.0 pin 유지. 실제 frontend typecheck·753 tests·build, actual consumer PASS. backend 전체 check와 native169도 PASS.
+- 제품0.0.10 VSIX 생성 및 Kiro1.1.70 CLI 설치/목록 확인을 마쳤다. 이 PC는 설치 전 기존0.0.9가 없어 기존 프로젝트 upgrade PASS로 세지 않는다. 실제 Kiro 재시작/activation·Agent는 미검증이다.
+- source ZIP781개 파일을 새로 풀어 lockfile 설치, backend 전체 check, frontend753, panel build/native169+source selector6, actual consumer를 통과했다. 검사 후781개 hash 일치. 실제 모델0.
+- 모든 변경은 현재 미커밋이다. commit/push/외부 제출은 하지 않았다. 옛 push 명령을 이번 작업에서 실행하지 않았다.
+
+남은 실측: 최신 크레딧/Overages 관측(누적900·신규중단880 유지), 기존 프로젝트/Trust 확인, B6/B7/B8/B11과 vertical flow·History·fallback 영상. B3 durable 실패/abandon은 여전히 미구현이다. 사람 pilot·baseline과 정확한 제출 형식도 별도 조건이다.
+
+산출물·hash·잔여 항목은 [제출 전 결과](../core/docs/SUBMISSION_READINESS_20260929.md), 소스 재현 명령은 [재현 보고서](../core/docs/SOURCE_REPRODUCIBILITY_20260929.md)를 기준으로 한다. 아래 최초 기록의0.0.9/하드코딩/push 권고는 현재 완료 상태로 오해하지 않는다.
+
+---
+
 프론트(`program`)와 백엔드(`core`)를 함께 기준으로 정리했다. 실측은 이 문서의 **2. 실측 점검** 순서대로 진행하고, 결과는 `LIVE_TEST_CHECKLIST.html`의 "결과 Markdown 복사"로 남긴다.
 
 ## 0. 현재 상태

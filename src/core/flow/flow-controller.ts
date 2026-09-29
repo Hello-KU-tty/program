@@ -215,6 +215,7 @@ export class FlowController {
   // machine above. Populated by loadHistory(); never starts a run or mutates.
   private history: HistoryProjectView[] = [];
   private historyLoading = false;
+  private reviewingDiscovery = false;
 
   /**
    * The current native-support verdict projected into every snapshot
@@ -385,7 +386,8 @@ export class FlowController {
    * webview projection can never mutate host state.
    */
   snapshot(): FlowSnapshot {
-    return buildFlowSnapshot(this.toState(), this.notices, this.flowSupport);
+    const snapshot = buildFlowSnapshot(this.toState(), this.notices, this.flowSupport);
+    return this.reviewingDiscovery ? { ...snapshot, phase: "discovery_workspace", reviewingDiscovery: true } : snapshot;
   }
 
   /** Drop local callbacks on panel disposal; never cancel or replay Core work. */
@@ -515,6 +517,22 @@ export class FlowController {
       return;
     }
 
+    if (this.reviewingDiscovery && this.project && this.session) {
+      const projectId = this.project.id, discoverySessionId = this.session.id;
+      const port = this.ports.spec.returnToDiscovery;
+      if (!port) {
+        this.emitNotice("discovery", "error", "지금 연결에서는 새 후보를 요청할 수 없어요.");
+        this.notifyChange();
+        return;
+      }
+      await this.runOp("discovery", "regenerateDiscovery",
+        env => port.call(this.ports.spec, { projectId, discoverySessionId, input }, env),
+        this.spec?.revision ?? 0,
+        async restored => { this.applyRestoredFlow(restored); await this.generateFirstPreview(true); },
+        error => this.emitNotice("discovery", "error", runtimeErrorMessage(error.message, "새 후보를 요청하지 못했습니다. 저장된 후보를 다시 확인해 주세요.")));
+      return;
+    }
+
     // The existing submit button is also the explicit retry gesture. Preserve
     // Core identity when a failed preview is resubmitted with unchanged input.
     if (this.session && !this.previewRound && !this.spec && !this.selectedCandidate &&
@@ -608,6 +626,17 @@ export class FlowController {
    * intents append the resulting round while preserving the basket.
    */
   async submitFeedback(feedbackInput: DiscoveryFeedbackInput): Promise<{ accepted: boolean }> {
+    if (this.reviewingDiscovery) {
+      if (this.isInProgress("discovery") || this.isInProgress("spec")) return { accepted: false };
+      const selected = this.selectedCandidate;
+      if (feedbackInput.intent === "SELECT" && feedbackInput.targets.length === 1 && selected && refKey(feedbackInput.targets[0]) === refKey(selected)) {
+        this.reviewingDiscovery = false;
+        this.emitNotice("spec", "info", "");
+        this.notifyChange();
+        return { accepted: true };
+      }
+      return { accepted: false };
+    }
     if (!this.canMutate("discovery")) return { accepted: false };
     const validation = validateFeedback(feedbackInput);
     if (!validation.ok) {
@@ -817,33 +846,17 @@ export class FlowController {
   }
 
   /**
-   * "다른 주제로 돌아가기" (BRIEF §8): leave Spec review for a fresh Discovery
-   * session on the same project. No Agent is called; the start form keeps the
-   * previous input, and a new preview starts only when the learner resubmits.
+   * Show saved candidates immediately. Only explicit regeneration supersedes
+   * the draft and creates a fresh session; navigation never mutates Core.
    */
   async returnToDiscovery(): Promise<void> {
     const project = this.project;
     const session = this.session;
     if (project === null || session === null || project.status !== "SPEC_REVIEW") return;
-    const port = this.ports.spec.returnToDiscovery;
-    if (!port) {
-      this.emitNotice("spec", "error", "지금 연결에서는 탐색으로 돌아갈 수 없어요.");
-      this.notifyChange();
-      return;
-    }
-    await this.runOp(
-      "spec",
-      "returnToDiscovery",
-      (env) => port.call(this.ports.spec, { projectId: project.id, discoverySessionId: session.id }, env),
-      this.spec?.revision ?? 0,
-      (restored) => {
-        this.applyRestoredFlow(restored);
-        this.emitNotice("discovery", "info", "");
-      },
-      (error) => {
-        this.emitNotice("spec", "error", runtimeErrorMessage(error.message, "탐색으로 돌아가지 못했습니다. 다시 시도해 주세요."));
-      },
-    );
+    if (this.isInProgress("discovery") || this.isInProgress("spec")) return;
+    this.reviewingDiscovery = true;
+    this.emitNotice("discovery", "info", "저장된 후보를 다시 보고 있어요. 현재 스펙으로 돌아가거나 위 입력으로 새 후보를 요청할 수 있어요.");
+    this.notifyChange();
   }
 
   /**
@@ -852,6 +865,7 @@ export class FlowController {
    * reopened from History, and in-flight Core runs keep going.
    */
   async goToStart(): Promise<void> {
+    this.reviewingDiscovery = false;
     ++this.tokenCounter; // late results of the left project are ignored
     this.stopRecovery();
     for (const surface of ["discovery", "spec"] as const) {
@@ -943,6 +957,7 @@ export class FlowController {
   }
 
   private applyRestoredFlow(s: RestoredFlow): void {
+    this.reviewingDiscovery = false;
     this.project = s.project;
     this.lastSuccessfulStatus = s.project.status;
     this.session = s.session;

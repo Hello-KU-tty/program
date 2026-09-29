@@ -126,12 +126,12 @@ export interface SpecPort {
 
   /**
    * Leave Spec review for a fresh Discovery session on the same project
-   * (BRIEF §8 "다른 주제로 돌아가기"). Supersedes the draft spec without any
-   * Agent call; a new preview is only generated on a later explicit submit.
+   * after an explicit new-candidate request. Navigation alone does not call
+   * this mutation. It supersedes the draft; the controller owns the next run.
    * Optional: ports without it make the controller show a notice instead.
    */
   returnToDiscovery?(
-    req: { projectId: string; discoverySessionId: string },
+    req: { projectId: string; discoverySessionId: string; input?: DiscoveryInput },
     env: RequestEnvelope,
   ): Promise<PortResult<RestoredFlow>>;
 }

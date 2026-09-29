@@ -845,6 +845,7 @@ describe("navigation: return to Discovery and go to start", () => {
         discoverySession: contractSession({ status: "SELECTED", correlationId: "corr_session" }),
         previewRound: contractPreviewRound(),
         learningSpec: contractSpec(2, "DRAFT", 1),
+        selectedCandidate: contractCandidate("cand_1", 1),
       }),
       project: { id: "project_1", status: "SPEC_REVIEW" },
     };
@@ -892,7 +893,7 @@ describe("navigation: return to Discovery and go to start", () => {
     expect(h.execute).not.toHaveBeenCalled();
   });
 
-  it("controller returns to the start form with the input kept, then resubmit retries on the same project", async () => {
+  it("controller shows saved candidates without mutation, then explicit regeneration starts once on the same project", async () => {
     const h = returnHarness();
     const port = new LocalCoreDiscoveryPort(h.client);
     const controller = new FlowController({ discovery: port, spec: port, restore: port });
@@ -901,18 +902,76 @@ describe("navigation: return to Discovery and go to start", () => {
 
     await controller.returnToDiscovery();
     const snap = controller.snapshot();
-    expect(snap.phase).toBe("discovery_start");
+    expect(snap.phase).toBe("discovery_workspace");
+    expect(snap.reviewingDiscovery).toBe(true);
     expect(snap.project?.id).toBe("project_1");
     expect(snap.input?.learningGoal).toBe(INPUT.learningGoal);
-    expect(snap.spec).toBeNull();
+    expect(snap.spec?.revision).toBe(2);
+    expect(snap.previewRound).not.toBeNull();
+    expect(h.execute).not.toHaveBeenCalled();
     expect(h.startRun).not.toHaveBeenCalled();
 
-    // Same input -> explicit retry on the new session, not a new project.
+    // The existing mutation is deferred until this explicit request.
     await controller.startDiscovery(snap.input!);
     expect(h.startRun).toHaveBeenCalledOnce();
     expect(h.startRun.mock.calls[0][0]).toMatchObject({
       kind: "DISCOVERY", phase: "PREVIEW", projectId: "project_1", discoverySessionId: "discovery_session_2",
     });
+    expect(h.execute).toHaveBeenCalledOnce();
+    expect(h.execute.mock.calls[0][0]).toMatchObject({ kind: "UI_RETURN_TO_DISCOVERY", input: snap.input });
+  });
+
+  it("reopens the existing Spec from saved candidates with no Core mutation or model call", async () => {
+    const h = returnHarness();
+    const port = new LocalCoreDiscoveryPort(h.client);
+    const controller = new FlowController({ discovery: port, spec: port, restore: port });
+    await controller.restoreSavedProject("project_1");
+    const before = controller.snapshot();
+    await controller.returnToDiscovery();
+    expect(await controller.submitFeedback({ intent: "SELECT", targets: [{ candidateId: "other", revision: 1 }] })).toEqual({ accepted: false });
+    expect(await controller.submitFeedback({ intent: "SELECT", targets: [before.selectedCandidate!] })).toEqual({ accepted: true });
+    expect(controller.snapshot().phase).toBe("spec_review");
+    expect(controller.snapshot().spec).toEqual(before.spec);
+    expect(h.execute).not.toHaveBeenCalled();
+    expect(h.startRun).not.toHaveBeenCalled();
+  });
+
+  it("preserves saved candidates and draft on failed explicit regeneration", async () => {
+    const h = returnHarness();
+    const port = new LocalCoreDiscoveryPort(h.client);
+    const controller = new FlowController({ discovery: port, spec: port, restore: port });
+    await controller.restoreSavedProject("project_1");
+    await controller.returnToDiscovery();
+    const before = controller.snapshot();
+    h.execute.mockRejectedValueOnce(new Error("offline"));
+    await controller.startDiscovery({ ...INPUT, learningGoal: "새 목표" });
+    expect(controller.snapshot().previewRound).toEqual(before.previewRound);
+    expect(controller.snapshot().spec).toEqual(before.spec);
+    expect(controller.snapshot().reviewingDiscovery).toBe(true);
+    expect(h.execute).toHaveBeenCalledOnce();
+    expect(h.execute.mock.calls[0][0]).toMatchObject({ input: { learningGoal: "새 목표" } });
+    expect(h.startRun).not.toHaveBeenCalled();
+  });
+
+  it("deduplicates explicit regeneration and ignores its late result after leaving the project", async () => {
+    const h = returnHarness();
+    const port = new LocalCoreDiscoveryPort(h.client);
+    const controller = new FlowController({ discovery: port, spec: port, restore: port });
+    await controller.restoreSavedProject("project_1");
+    await controller.returnToDiscovery();
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const original = h.execute.getMockImplementation()!;
+    h.execute.mockImplementationOnce(async req => { await gate; return original(req); });
+    const pending = controller.startDiscovery(INPUT);
+    await vi.waitFor(() => expect(h.execute).toHaveBeenCalledOnce());
+    await controller.startDiscovery(INPUT);
+    await controller.goToStart();
+    release();
+    await pending;
+    expect(controller.snapshot().project).toBeNull();
+    expect(h.execute).toHaveBeenCalledOnce();
+    expect(h.startRun).not.toHaveBeenCalled();
   });
 
   it("goToStart clears the screen only and reloads History without touching Core state", async () => {

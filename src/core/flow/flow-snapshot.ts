@@ -72,6 +72,8 @@ export const DEFAULT_FLOW_SUPPORT: FlowSupport = { mode: "mock", experimental: f
 export interface FlowSnapshot {
   /** The derived shell phase (Req 12.2, 12.3). */
   phase: FlowPhase;
+  /** Viewing saved candidates from Spec; the Core session remains selected. */
+  reviewingDiscovery?: boolean;
   /** The current project, or null before discovery starts. */
   project: Project | null;
   /** The retained discovery input (survives failures for resubmission). */
