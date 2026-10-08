@@ -116,7 +116,7 @@ export interface FlowRenderCallbacks {
 /** Korean labels for a project's lifecycle status in the History list. */
 const HISTORY_STATUS_LABELS: Readonly<Record<string, string>> = {
   DISCOVERY: "탐색 중",
-  SPEC_REVIEW: "스펙 검토",
+  SPEC_REVIEW: "계획 확인",
   BUILDING: "만드는 중",
   COMPLETED: "완료",
 };
@@ -196,6 +196,13 @@ export class DiscoveryStartView {
   private unavailable = false;
 
   private lastInputKey?: string;
+
+  /** The goal form and History, hidden while candidates are being found. */
+  private readonly formSection: HTMLElement;
+  private readonly historySection: HTMLElement;
+  /** Loading card shown instead of the form while candidates are being found. */
+  private readonly loadingCard: HTMLElement;
+  private readonly loadingGoal: HTMLElement;
 
   constructor(root: HTMLElement, callbacks: FlowRenderCallbacks) {
     this.doc = root.ownerDocument;
@@ -282,15 +289,31 @@ export class DiscoveryStartView {
     this.historyMoreButton = historyMore;
 
     container.appendChild(history);
+    this.historySection = history;
 
-    // Agent_Run_Banner (Req 4.6) — hidden by default.
+    // Loading card (Req 4.6): replaces the form while candidates are being
+    // found, so the learner is not left editing a form that no longer applies.
+    const loading = this.el("div", "flow-start-loading");
+    loading.hidden = true;
     const banner = this.el("div", "flow-agent-banner");
     banner.setAttribute("role", "status");
     banner.setAttribute("aria-live", "polite");
-    banner.textContent = "후보를 찾고 있어요…";
-    banner.hidden = true;
-    container.appendChild(banner);
+    banner.textContent = "프로젝트 후보를 찾고 있어요…";
+    loading.appendChild(banner);
     this.agentBanner = banner;
+    const loadingGoal = this.el("p", "flow-start-loading-goal");
+    loading.appendChild(loadingGoal);
+    this.loadingGoal = loadingGoal;
+    const loadingHint = this.el("p", "flow-start-loading-hint");
+    loadingHint.textContent = "보통 20~40초쯤 걸려요. 후보가 준비되면 바로 보여 드릴게요.";
+    loading.appendChild(loadingHint);
+    container.appendChild(loading);
+    this.loadingCard = loading;
+
+    // The goal form below is one section so it can give way to the loading card.
+    const form = this.el("div", "flow-start-form");
+    container.appendChild(form);
+    this.formSection = form;
 
     // Required Learning Goal input (Req 4.1).
     const goalField = this.el("div", "flow-field");
@@ -308,19 +331,19 @@ export class DiscoveryStartView {
     });
     goalField.appendChild(goalLabel);
     goalField.appendChild(goalInput);
-    container.appendChild(goalField);
+    form.appendChild(goalField);
     this.goalInput = goalInput;
 
     // Length / validation indicator (Req 4.3).
     const indicator = this.el("div", "flow-length-indicator");
     indicator.setAttribute("aria-live", "polite");
     indicator.hidden = true;
-    container.appendChild(indicator);
+    form.appendChild(indicator);
     this.lengthIndicator = indicator;
 
     // Optional personalNeed (Req 4.1).
     this.personalNeedInput = this.buildOptionalField(
-      container,
+      form,
       "이걸 배우고 싶은 이유 (선택)",
       "개인적인 필요",
       "personalNeed",
@@ -328,7 +351,7 @@ export class DiscoveryStartView {
 
     // Optional recentFriction (Req 4.1).
     this.frictionInput = this.buildOptionalField(
-      container,
+      form,
       "최근에 겪은 불편함 (선택)",
       "최근의 어려움",
       "recentFriction",
@@ -351,7 +374,7 @@ export class DiscoveryStartView {
     });
     levelField.appendChild(levelLabel);
     levelField.appendChild(levelSelect);
-    container.appendChild(levelField);
+    form.appendChild(levelField);
     this.levelSelect = levelSelect;
 
     // Submit control (Req 4).
@@ -360,7 +383,7 @@ export class DiscoveryStartView {
     submit.textContent = "후보 만나기";
     submit.disabled = true;
     submit.addEventListener("click", () => this.attemptSubmit());
-    container.appendChild(submit);
+    form.appendChild(submit);
     this.submitButton = submit;
 
     root.appendChild(container);
@@ -411,6 +434,12 @@ export class DiscoveryStartView {
     this.submitButton.textContent = snapshot.reviewingDiscovery ? "새 후보 받기" : "후보 만나기";
     this.unavailable = snapshot.flowSupport.mode === "unavailable";
     this.agentBanner.hidden = !this.discoveryInProgress;
+    this.loadingCard.hidden = !this.discoveryInProgress;
+    this.formSection.hidden = this.discoveryInProgress;
+    this.historySection.hidden = this.discoveryInProgress;
+    const goal = (snapshot.input?.learningGoal ?? this.goalInput.value).trim();
+    this.loadingGoal.textContent = goal ? `배우고 싶은 것: ${goal}` : "";
+    this.loadingGoal.hidden = goal.length === 0;
 
     // Native-support banner (guide §10-1) from the non-sensitive verdict.
     this.renderSupportBanner(snapshot);
@@ -697,14 +726,18 @@ export class DiscoveryWorkspace {
     const composer = this.el("div", "flow-composer");
 
     const composerLabel = this.el("label", "flow-field-label");
-    composerLabel.textContent = "어떻게 다듬을까요? (선택 입력)";
+    composerLabel.textContent = "어떻게 보완할까요?";
     composer.appendChild(composerLabel);
 
+    const composerHint = this.el("p", "flow-composer-hint");
+    composerHint.textContent = "원하는 방향을 적어 주세요. 바구니에 담은 후보가 있으면 그 후보를 바탕으로 고쳐요. 비워 두고 누르면 다른 후보를 더 보여 드려요.";
+    composer.appendChild(composerHint);
+
     const composerInput = this.el("textarea", "flow-composer-input") as HTMLTextAreaElement;
-    composerInput.setAttribute("aria-label", "다듬기 요청");
+    composerInput.setAttribute("aria-label", "보완 요청");
     composerInput.setAttribute(
       "placeholder",
-      "예: 두 후보를 합쳐서 더 실용적인 방향으로 만들어 주세요",
+      "예: 혼자 쓰는 것보다 친구와 같이 쓰는 쪽이면 좋겠어요",
     );
     composerInput.rows = 3;
     composerInput.maxLength = MAX_REFINEMENT_TEXT;
@@ -718,13 +751,10 @@ export class DiscoveryWorkspace {
     composer.appendChild(message);
     this.composerMessage = message;
 
-    // Composer action buttons (Req 7.2/7.4/7.6/7.7).
+    // One composer action (Req 7): the text and basket decide what Core does.
     const actions = this.el("div", "flow-composer-actions");
     const actionSpecs: readonly { action: RefinementAction; label: string }[] = [
-      { action: "narrow", label: "좁히기" },
-      { action: "merge", label: "합치기" },
-      { action: "new_direction", label: "새 방향" },
-      { action: "show_more", label: "더 보기" },
+      { action: "refine", label: "보완하기" },
     ];
     for (const spec of actionSpecs) {
       const button = this.el("button", "flow-composer-action") as HTMLButtonElement;
@@ -762,6 +792,11 @@ export class DiscoveryWorkspace {
 
     this.discoveryInProgress = snapshot.discoveryInProgress;
     this.agentBanner.hidden = !this.discoveryInProgress;
+    // While the next round is generated, earlier candidates give way to the banner.
+    this.roundsRegion.hidden = this.discoveryInProgress;
+    this.agentBanner.textContent = snapshot.rounds.length > 0 || snapshot.previewRound
+      ? "말씀하신 방향으로 후보를 다시 찾고 있어요…"
+      : "후보를 준비하고 있어요…";
 
     // Disable composer + select controls while a discovery op is in flight
     // (Req 5.5, 7.11); re-enable otherwise (Req 7.12).
@@ -791,7 +826,7 @@ export class DiscoveryWorkspace {
       control.toggle.setAttribute("aria-pressed", selected ? "true" : "false");
       control.toggle.disabled = this.discoveryInProgress || snapshot.reviewingDiscovery === true;
       const currentSpec = snapshot.selectedCandidate && control.reference === refKey(snapshot.selectedCandidate);
-      control.select.textContent = snapshot.reviewingDiscovery && currentSpec ? "현재 스펙 다시 보기" : "이걸로 진행";
+      control.select.textContent = snapshot.reviewingDiscovery && currentSpec ? "현재 계획 다시 보기" : "이걸로 진행";
       control.select.disabled = this.discoveryInProgress || this.unavailable || (snapshot.reviewingDiscovery === true && !currentSpec);
     }
     if (rebuilt && focused) {
@@ -817,6 +852,15 @@ export class DiscoveryWorkspace {
     }
     const basket = new Set(snapshot.basket);
 
+    // Only the latest round is shown; earlier ones fold under "이전 후보 보기"
+    // so the learner compares the current set without scrolling past old ones.
+    const rounds = [...snapshot.rounds].sort((a, b) => a.roundIndex - b.roundIndex);
+    const earlier = this.el("details", "flow-rounds-earlier");
+    const earlierSummary = this.el("summary", "flow-rounds-earlier-toggle");
+    earlierSummary.textContent = `이전 후보 보기 (${rounds.length})`;
+    earlier.appendChild(earlierSummary);
+    const target = (latest: boolean) => (latest ? this.roundsRegion : earlier);
+
     // Preview round as the base set of 10 cards (Req 5.1, 5.2).
     const preview = snapshot.previewRound;
     if (preview) {
@@ -834,16 +878,18 @@ export class DiscoveryWorkspace {
           this.buildPreviewCard(item, basket, enrichedByRef.get(refKey(previewRef(item)))),
         );
       }
-      this.roundsRegion.appendChild(section);
+      target(rounds.length === 0).appendChild(section);
     }
 
-    // Accumulated feedback rounds in ascending roundIndex (Req 5.4).
+    // Feedback rounds in ascending roundIndex (Req 5.4); the last one is current.
     // Labels follow display order, not Core's roundIndex: Core numbers
     // feedback rounds from 1, which would repeat the preview's "1".
-    const rounds = [...snapshot.rounds].sort((a, b) => a.roundIndex - b.roundIndex);
     for (const [position, round] of rounds.entries()) {
-      this.roundsRegion.appendChild(this.buildRoundSection(round, basket, enrichedByRef, position + 1));
+      target(position === rounds.length - 1).appendChild(
+        this.buildRoundSection(round, basket, enrichedByRef, position + 1),
+      );
     }
+    if (rounds.length > 0) this.roundsRegion.appendChild(earlier);
   }
 
   /**
@@ -883,7 +929,7 @@ export class DiscoveryWorkspace {
   ): HTMLElement {
     const section = this.el("div", "flow-round");
     const header = this.el("div", "flow-round-header");
-    header.textContent = `다듬은 후보 ${position}`;
+    header.textContent = `보완한 후보 ${position}`;
     section.appendChild(header);
 
     const rationale = this.el("p", "flow-round-rationale");
@@ -1092,7 +1138,13 @@ export class DiscoveryWorkspace {
     const text = this.composerInput.value;
 
     let targets: CandidateRevisionReference[];
-    if (action === "narrow") {
+    if (action === "refine") {
+      if (selection.length > MAX_FEEDBACK_TARGETS) {
+        this.showComposerMessage(`후보는 최대 ${MAX_FEEDBACK_TARGETS}개까지 골라 보완할 수 있어요.`);
+        return;
+      }
+      targets = selection;
+    } else if (action === "narrow") {
       // Req 7.3: narrow requires exactly 1 selected candidate.
       if (selection.length !== 1) {
         this.showComposerMessage("좁히기는 후보를 정확히 1개 선택해야 해요.");
@@ -1215,8 +1267,8 @@ export class SpecReview {
   private readonly refineInput: HTMLTextAreaElement;
   /** The refine ("다듬기") button. */
   private readonly refineButton: HTMLButtonElement;
-  /** The confirm ("이걸로 시작") button. */
-  private readonly confirmButton: HTMLButtonElement;
+  /** The confirm ("이걸로 시작") buttons: at the top and above the refine input. */
+  private readonly confirmButtons: HTMLButtonElement[] = [];
   private readonly returnButton: HTMLButtonElement;
 
   /** True while a spec op is in flight (mirrors the last snapshot). */
@@ -1229,14 +1281,17 @@ export class SpecReview {
     const container = this.el("div", "flow-spec");
 
     const heading = this.el("h1", "flow-spec-heading");
-    heading.textContent = "이 스펙으로 시작할까요?";
+    heading.textContent = "이 계획대로 만들어 볼까요?";
     container.appendChild(heading);
+
+    // Confirm control (Req 11.1) at the top, for a learner who is already happy.
+    container.appendChild(this.buildConfirmButton("flow-spec-confirm flow-spec-confirm-top"));
 
     // Agent_Run_Banner (Req 10.4, 11.6) — hidden by default.
     const banner = this.el("div", "flow-agent-banner");
     banner.setAttribute("role", "status");
     banner.setAttribute("aria-live", "polite");
-    banner.textContent = "스펙을 다듬고 있어요…";
+    banner.textContent = "말씀하신 내용으로 계획을 고치고 있어요…";
     banner.hidden = true;
     container.appendChild(banner);
     this.agentBanner = banner;
@@ -1246,15 +1301,17 @@ export class SpecReview {
     container.appendChild(content);
     this.contentRegion = content;
 
-    // Refine composer (Req 10.1).
+    // Refine composer (Req 10.1). The confirm control comes first, so starting
+    // and refining read as two separate choices.
     const composer = this.el("div", "flow-spec-composer");
+    composer.appendChild(this.buildConfirmButton("flow-spec-confirm"));
 
     const refineLabel = this.el("label", "flow-field-label");
-    refineLabel.textContent = "더 다듬고 싶은 부분이 있나요? (선택 입력)";
+    refineLabel.textContent = "고치고 싶은 부분이 있나요? (선택)";
     composer.appendChild(refineLabel);
 
     const refineInput = this.el("textarea", "flow-spec-refine-input") as HTMLTextAreaElement;
-    refineInput.setAttribute("aria-label", "스펙 다듬기 요청");
+    refineInput.setAttribute("aria-label", "계획 고치기 요청");
     refineInput.setAttribute(
       "placeholder",
       "예: 목표 사용자를 더 구체적으로 좁혀 주세요",
@@ -1266,18 +1323,10 @@ export class SpecReview {
 
     const refineButton = this.el("button", "flow-spec-refine-button") as HTMLButtonElement;
     refineButton.type = "button";
-    refineButton.textContent = "다듬기";
+    refineButton.textContent = "이 내용으로 고치기";
     refineButton.addEventListener("click", () => this.attemptRefine());
     composer.appendChild(refineButton);
     this.refineButton = refineButton;
-
-    // Confirm control (Req 11.1) — prominent "이걸로 시작".
-    const confirmButton = this.el("button", "flow-spec-confirm") as HTMLButtonElement;
-    confirmButton.type = "button";
-    confirmButton.textContent = "이걸로 시작";
-    confirmButton.addEventListener("click", () => this.attemptConfirm());
-    composer.appendChild(confirmButton);
-    this.confirmButton = confirmButton;
 
     // "다른 주제로 돌아가기" (BRIEF §8): back to Discovery without an Agent call.
     const returnButton = this.el("button", "flow-spec-return") as HTMLButtonElement;
@@ -1319,11 +1368,21 @@ export class SpecReview {
     // (Req 10.4, 11.6); re-enable otherwise.
     this.refineInput.disabled = this.specInProgress;
     this.refineButton.disabled = this.specInProgress;
-    this.confirmButton.disabled = this.specInProgress;
+    for (const button of this.confirmButtons) button.disabled = this.specInProgress;
     // Returning only needs a settled spec surface, not a ready spec draft.
     this.returnButton.disabled = generating || snapshot.flowSupport.mode === "unavailable";
 
     this.rebuildContent(snapshot.spec);
+  }
+
+  /** One "이걸로 시작" control; every copy confirms the same spec (Req 11.1). */
+  private buildConfirmButton(className: string): HTMLButtonElement {
+    const button = this.el("button", className) as HTMLButtonElement;
+    button.type = "button";
+    button.textContent = "이걸로 시작";
+    button.addEventListener("click", () => this.attemptConfirm());
+    this.confirmButtons.push(button);
+    return button;
   }
 
   /**
@@ -1338,7 +1397,7 @@ export class SpecReview {
 
     if (!spec) {
       const loading = this.el("p", "flow-spec-loading");
-      loading.textContent = "스펙을 준비하고 있어요…";
+      loading.textContent = "만들 프로젝트의 계획을 세우고 있어요…";
       this.contentRegion.appendChild(loading);
       return;
     }
@@ -1373,8 +1432,12 @@ export class SpecReview {
     // Expected decisions (Req 9.5).
     const decisionsSection = this.el("div", "flow-spec-decisions");
     const decisionsHeading = this.el("h2", "flow-spec-section-heading");
-    decisionsHeading.textContent = "함께 정할 결정들";
+    decisionsHeading.textContent = "만들면서 정하게 될 것들";
     decisionsSection.appendChild(decisionsHeading);
+    // FR-SPEC-007: the list is a heads-up; real decisions are asked when they arise.
+    const decisionsNote = this.el("p", "flow-spec-decisions-note");
+    decisionsNote.textContent = "실제로 필요해지는 순간에 Kiro 채팅에서 하나씩 물어봐요. 여기 없는 결정이 생길 수도 있어요.";
+    decisionsSection.appendChild(decisionsNote);
     for (const decision of spec.expectedDecisions) {
       decisionsSection.appendChild(this.buildDecision(decision));
     }

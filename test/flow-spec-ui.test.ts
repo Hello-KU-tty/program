@@ -147,7 +147,7 @@ describe("SpecReview (task 12.3)", () => {
   it("renders a minimal loading state when the spec is not ready yet", () => {
     view.render(snapshot({ spec: null }));
     expect(byClass(root, "flow-spec")[0].hidden).toBe(false);
-    expect(byClass(root, "flow-spec-loading")[0].textContent).toBe("스펙을 준비하고 있어요…");
+    expect(byClass(root, "flow-spec-loading")[0].textContent).toBe("만들 프로젝트의 계획을 세우고 있어요…");
     restore();
   });
 
@@ -272,6 +272,33 @@ describe("SpecReview (task 12.3)", () => {
     expect(byClass(root, "flow-spec-refine-input")[0].disabled).toBe(false);
     expect(byClass(root, "flow-spec-refine-button")[0].disabled).toBe(false);
     expect(byClass(root, "flow-spec-confirm")[0].disabled).toBe(false);
+    restore();
+  });
+  it("offers 이걸로 시작 at the top and again above the refine input (feedback 5)", () => {
+    view.render(snapshot());
+    const all = root.queryAll(() => true);
+    const confirms = all.filter((e) => e.textContent === "이걸로 시작");
+    expect(confirms).toHaveLength(2);
+    const heading = byClass(root, "flow-spec-heading")[0];
+    const content = byClass(root, "flow-spec-content")[0];
+    const refineLabel = all.find((e) => e.textContent === "고치고 싶은 부분이 있나요? (선택)")!;
+    expect(all.indexOf(heading)).toBeLessThan(all.indexOf(confirms[0]));
+    expect(all.indexOf(confirms[0])).toBeLessThan(all.indexOf(content));
+    expect(all.indexOf(confirms[1])).toBeLessThan(all.indexOf(refineLabel));
+    for (const button of confirms) button.click();
+    expect(callbacks.confirmCount).toBe(2);
+    view.render(snapshot({ specInProgress: true }));
+    expect(confirms.every((button) => button.disabled)).toBe(true);
+    restore();
+  });
+
+  it("presents expected decisions as asked when they arise in Kiro chat (FR-SPEC-007)", () => {
+    view.render(snapshot());
+    const section = byClass(root, "flow-spec-decisions")[0];
+    expect(section.queryAll((e) => e.className === "flow-spec-section-heading")[0].textContent).toBe(
+      "만들면서 정하게 될 것들",
+    );
+    expect(byClass(root, "flow-spec-decisions-note")[0].textContent).toContain("필요해지는 순간에");
     restore();
   });
 });

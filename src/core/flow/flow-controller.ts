@@ -735,7 +735,7 @@ export class FlowController {
         this.spec = spec;
       },
       (error) => {
-        this.emitNotice("spec", "error", runtimeErrorMessage(error.message, "스펙 초안을 생성하지 못했습니다. 다시 시도해 주세요."));
+        this.emitNotice("spec", "error", runtimeErrorMessage(error.message, "계획을 만들지 못했어요. 다시 시도해 주세요."));
       },
     );
   }
@@ -766,7 +766,7 @@ export class FlowController {
       },
       (error) => {
         // Retain the prior revision (Req 10.5).
-        this.emitNotice("spec", "error", runtimeErrorMessage(error.message, "스펙을 다듬지 못했습니다. 다시 시도해 주세요."));
+        this.emitNotice("spec", "error", runtimeErrorMessage(error.message, "계획을 고치지 못했어요. 다시 시도해 주세요."));
       },
     );
   }
@@ -803,7 +803,7 @@ export class FlowController {
       (error) => {
         if (error.code === "revision_conflict") {
           // Leave status unchanged (Req 11.9).
-          this.emitNotice("spec", "error", "스펙이 변경되었습니다. 다시 확인해 주세요.");
+          this.emitNotice("spec", "error", "계획이 바뀌었어요. 다시 확인해 주세요.");
           return;
         }
         // Restore prior status (Req 11.7).
@@ -811,7 +811,7 @@ export class FlowController {
           this.project.status = priorStatus;
         }
         this.lastSuccessfulStatus = priorStatus;
-        this.emitNotice("spec", "error", runtimeErrorMessage(error.message, "스펙을 확정하지 못했습니다. 다시 시도해 주세요."));
+        this.emitNotice("spec", "error", runtimeErrorMessage(error.message, "계획을 확정하지 못했어요. 다시 시도해 주세요."));
       },
     );
   }
@@ -858,7 +858,7 @@ export class FlowController {
     if (project === null || session === null || project.status !== "SPEC_REVIEW") return;
     if (this.isInProgress("discovery") || this.isInProgress("spec")) return;
     this.reviewingDiscovery = true;
-    this.emitNotice("discovery", "info", "저장된 후보를 다시 보고 있어요. 현재 스펙으로 돌아가거나 위 입력으로 새 후보를 요청할 수 있어요.");
+    this.emitNotice("discovery", "info", "저장된 후보를 다시 보고 있어요. 현재 계획으로 돌아가거나 위 입력으로 새 후보를 요청할 수 있어요.");
     this.notifyChange();
   }
 

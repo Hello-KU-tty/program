@@ -9,7 +9,7 @@ describe("untrusted flow message boundary", () => {
     { type: "startDiscovery", input: { learningGoal: "x".repeat(240), personalNeed: "x".repeat(4000), recentFriction: "문제", interestAreas: Array(12).fill("x".repeat(120)), currentLevel: "BEGINNER", freeContext: "선택 입력" } },
     { type: "toggleBasket", ref },
     { type: "selectCandidate", target: ref },
-    ...["narrow", "merge", "new_direction", "show_more"].map((action) => ({ type: "submitRefinement", action, text: "", targets: [ref] })),
+    ...["refine", "narrow", "merge", "new_direction", "show_more"].map((action) => ({ type: "submitRefinement", action, text: "", targets: [ref] })),
     { type: "refineSpec", message: "학습 범위를 줄여 주세요" },
     { type: "confirmSpec" },
     { type: "draftChangedFlow", field: "learningGoal", text: "" },

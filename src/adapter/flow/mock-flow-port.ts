@@ -440,7 +440,7 @@ export class MockDiscoveryPort implements DiscoveryPort, SpecPort, HistoryPort {
           ok: false,
           error: {
             code: "revision_conflict",
-            message: "스펙이 변경되어 확정할 수 없습니다",
+            message: "계획이 바뀌어 확정할 수 없어요",
           },
         };
       }

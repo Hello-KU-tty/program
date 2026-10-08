@@ -852,7 +852,7 @@ export class AgentSurfaceView {
 
     if (this.readyToStart && builder.phase === "IDLE") {
       this.builderNextHint.hidden = false;
-      this.builderNextHint.textContent = "스펙과 작업이 준비됐어요. ‘빌더 시작’을 누르면 확정한 스펙으로 만들기를 시작해요. 추가 요청은 선택 입력이에요.";
+      this.builderNextHint.textContent = "계획과 작업이 준비됐어요. ‘빌더 시작’을 누르면 확정한 계획으로 만들기를 시작해요. 추가 요청은 선택 입력이에요.";
     } else if (builder.phase === "TASK_COMPLETED") {
       this.builderNextHint.hidden = false;
       this.builderNextHint.textContent = "완료한 내용에 이어 실행, 설명, 수정 요청을 계속 보내 주세요. 도우미에게도 언제든 질문할 수 있어요.";

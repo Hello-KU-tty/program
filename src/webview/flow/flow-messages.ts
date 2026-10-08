@@ -31,7 +31,8 @@ import { MAX_DISCOVERY_CONTEXT_LENGTH } from "../../core/flow/flow-limits";
  * - `new_direction` — abandon the current framing for a fresh direction
  * - `show_more`     — request more candidates
  */
-export type RefinementAction = "narrow" | "merge" | "new_direction" | "show_more";
+/** `refine` is the single composer action; the others remain valid protocol values. */
+export type RefinementAction = "refine" | "narrow" | "merge" | "new_direction" | "show_more";
 
 /**
  * Host -> Webview messages (full-projection hydration + surface notices).
@@ -168,7 +169,7 @@ export function parseWebviewToHostFlow(value: unknown): WebviewToHostFlow | null
       break;
     case "submitRefinement":
       valid = onlyKeys(value, ["type", "action", "text", "targets"]) &&
-        ["narrow", "merge", "new_direction", "show_more"].includes(value.action as string) &&
+        ["refine", "narrow", "merge", "new_direction", "show_more"].includes(value.action as string) &&
         isText(value.text, 4000, true) && Array.isArray(value.targets) &&
         value.targets.length <= 100 && Array.from(value.targets).every(isReference);
       break;

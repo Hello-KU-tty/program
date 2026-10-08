@@ -676,12 +676,12 @@ describe("FlowController properties", () => {
         expect(h.controller.getProject()!.status).toBe(statusBefore);
         expect(JSON.stringify(h.controller.getSpec())).toBe(specBefore);
         expect(h.controller.isInProgress("spec")).toBe(false);
-        // A "spec changed" notice is surfaced (controller copy: 스펙이 변경되었습니다).
+        // A "plan changed" notice is surfaced (controller copy: 계획이 바뀌었어요).
         const added = h.controller.notices.slice(noticesBefore);
         expect(added).toHaveLength(1);
         expect(added[0].surface).toBe("spec");
         expect(added[0].kind).toBe("error");
-        expect(added[0].message).toContain("스펙이 변경되었습니다");
+        expect(added[0].message).toContain("계획이 바뀌었어요");
       }),
       { numRuns: NUM_RUNS },
     );
