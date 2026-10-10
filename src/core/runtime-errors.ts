@@ -25,6 +25,11 @@ const failures: Readonly<Record<string, { code: RuntimeErrorCode | "unknown"; me
   NATIVE_ENDPOINT_MISSING: { code: "window_missing", message: "현재 Kiro 창의 에이전트 연결이 아직 준비되지 않았어요. 이 창의 확장 준비 상태와 Workspace Trust를 확인한 뒤 같은 프로젝트에서 다시 시도해 주세요." },
   NATIVE_ENDPOINT_INVALID: { code: "window_invalid", message: "Kiro 창 연결 정보를 확인할 수 없어요. 지원되는 Kiro 버전인지 확인하고 창을 다시 불러온 뒤(Reload Window) 다시 시도해 주세요." },
   NATIVE_WINDOW_ID_INVALID: { code: "window_invalid", message: "Kiro 창 연결 정보를 확인할 수 없어요. 지원되는 Kiro 버전인지 확인하고 창을 다시 불러온 뒤(Reload Window) 다시 시도해 주세요." },
+  // Kiro-native host (finals): Discovery, Helper and Analyst run through kiro-cli.
+  KIRO_CLI_NOT_INSTALLED: { code: "unknown", message: "Kiro CLI(kiro-cli)를 찾지 못했어요. kiro.dev 안내대로 Kiro CLI를 설치하고 Kiro를 완전히 껐다 켠 뒤 ‘Vibe Helper: Retry Core Connection’을 실행해 주세요." },
+  KIRO_CLI_LOGIN_REQUIRED: { code: "auth_required", message: "Kiro CLI 로그인이 필요해요. 터미널에서 ‘kiro-cli login’을 실행한 뒤 ‘Vibe Helper: Retry Core Connection’을 실행해 주세요. 이전 기록은 계속 볼 수 있어요." },
+  KIRO_BIND_TASK_NOT_READY: { code: "unknown", message: "계획을 확정하고 작업이 준비된 뒤에 Kiro 채팅에서 열 수 있어요." },
+  KIRO_NATIVE_NOT_ENABLED: { code: "unknown", message: "이 Core는 Kiro 채팅 연결을 지원하지 않아요. 확장을 다시 설치해 주세요." },
 };
 
 /**
@@ -78,6 +83,8 @@ const displayOnlyGuidance: Readonly<Record<string, string>> = {
   TASK_VALIDATION_NOT_RUN: "빌드·테스트 같은 검증을 실행하지 않아 작업 완료가 거절됐어요. 빌더에게 테스트를 실행한 뒤 완료해 달라고 요청해 주세요.",
   // Rejected before any model call: the role's Core tools never appeared.
   NATIVE_ROLE_CATALOG_UNVERIFIED: "에이전트가 Core 도구를 준비하지 못해 요청을 보내지 않았어요(사용량은 차감되지 않아요). 진행 중인 작업이 없는지 확인하고, 도우미 창이 열려 있다면 닫은 뒤 다시 시도해 주세요.",
+  // Kiro-native Core: the Builder runs in the learner's Kiro chat, never from the panel.
+  BUILDER_RUNS_IN_HOST_CHAT: "만들기는 Kiro 채팅에서 진행돼요. ‘Kiro 채팅에서 열기’를 눌러 이 Project를 연결해 주세요.",
 };
 
 /** Guidance to show next to a raw error code, or undefined when none is known. */

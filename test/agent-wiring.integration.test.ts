@@ -110,9 +110,11 @@ class FakeWebview implements MessagingWebview {
  * and the wiring await. It reports a live, worker-ready status so the wiring
  * treats it exactly as a product-mode managed host.
  */
-function fakeHost(client: FakeCoreClient, worker: FakeNativeWorker): FrontendHost {
+function fakeHost(client: FakeCoreClient, worker: FakeNativeWorker,
+  extras: Partial<FrontendHost> = {}): FrontendHost {
   const status: HostStatus = { phase: "CORE_CONNECTED", native: "WORKER_READY" };
   return {
+    ...extras,
     client,
     worker,
     prepare: async () => ({ client }),
@@ -175,14 +177,14 @@ function decisionRequiredSnapshot() {
  * Wire the webview to the live agent surface through a fake managed host, then
  * await `agentReady` so the async `ManagedAgentPort` construction has settled.
  */
-async function wire(clientOptions: FakeCoreClientOptions) {
+async function wire(clientOptions: FakeCoreClientOptions, hostExtras: Partial<FrontendHost> = {}) {
   const client = new FakeCoreClient(clientOptions);
   const worker = new FakeNativeWorker();
   const globalState = new FakeGlobalState({ "bhlr.lastProjectId": PROJECT_ID });
   const webview = new FakeWebview();
 
   const wired = wireWebviewMessaging(webview, {
-    managedHost: Promise.resolve(fakeHost(client, worker)),
+    managedHost: Promise.resolve(fakeHost(client, worker, hostExtras)),
     globalState,
   });
 
@@ -258,6 +260,46 @@ describe("explicit Spec-to-Builder handoff guard", () => {
       } finally { wired.messageSubscription.dispose(); }
     },
   );
+});
+
+describe("Kiro-native host: '이걸로 시작' connects the Project to Kiro chat", () => {
+  it("opens the confirmed Project in Kiro once and never starts a panel Builder run", async () => {
+    const base = fakeSnapshot();
+    const opened: string[] = [];
+    const { client, webview, wired } = await wire({ restoreProjectResult: {
+      resolve: fakeSnapshot({ currentTask: { ...base.currentTask, status: "PENDING" } }),
+    } }, {
+      openProjectInKiro: async (projectId: string) => {
+        opened.push(projectId);
+        return { projectId, taskId: TASK_ID, openedNewWindow: false, folder: "REGISTERED" as const };
+      },
+    });
+    try {
+      await wired.ready;
+      const agent = (await wired.agentReady)!;
+      expect(agent.controller.getViewModel().hostChat).toEqual({ opening: false });
+      const flow = wired.flowController;
+      vi.spyOn(flow, "getProject").mockReturnValue({ id: PROJECT_ID, title: "Synthetic", learningGoal: "Synthetic", status: "SPEC_REVIEW" });
+      vi.spyOn(flow, "getSession").mockReturnValue({ projectId: PROJECT_ID } as NonNullable<ReturnType<typeof flow.getSession>>);
+      vi.spyOn(flow, "getSpec").mockReturnValue({ status: "CONFIRMED" } as NonNullable<ReturnType<typeof flow.getSpec>>);
+      let prepared: ReturnType<typeof flow.getPreparedTask> = null;
+      vi.spyOn(flow, "getPreparedTask").mockImplementation(() => prepared);
+      vi.spyOn(flow, "confirmSpec").mockImplementation(async () => {
+        prepared = { projectId: PROJECT_ID, workspacePath: "", status: "READY" };
+      });
+      await flow.loadHistory();
+      await webview.send({ type: "confirmSpec" });
+      expect(opened).toEqual([PROJECT_ID]);
+      expect(client.startRunInputs).toHaveLength(0);
+      expect(agent.controller.getViewModel().notice).toMatchObject({ kind: "info", code: "KIRO_CHAT_REGISTERED" });
+      // The explicit button gesture also connects; a panel start never reaches Core.
+      await webview.send({ kind: "builder/openInKiro" });
+      await webview.send({ kind: "builder/start", message: "build it" });
+      await new Promise(resolve => setTimeout(resolve, 10));
+      expect(opened).toEqual([PROJECT_ID, PROJECT_ID]);
+      expect(client.startRunInputs).toHaveLength(0);
+    } finally { wired.messageSubscription.dispose(); }
+  });
 });
 
 /**

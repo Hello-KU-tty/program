@@ -77,6 +77,8 @@ export type NativeAnswerInput =
  *   verbatim rationale (Req 5).
  * - `builder/resumeAfterDecision`: explicit Builder resume; never auto-resumed
  *   as a side effect of resolution (Req 5.3).
+ * - `builder/openInKiro`: Kiro-native host only; connect the bound Project to
+ *   the learner's Kiro chat, where the Builder runs.
  * - `native/answer`: submit exactly the user's native-question answer (Req 7).
  * - `workspace/open`: open the generated workspace for a task (Req 8).
  * - `result/launch`: launch the running result (Req 9).
@@ -102,6 +104,7 @@ export type AgentAction =
       readonly helperUsed: boolean;
     }
   | { readonly kind: "builder/resumeAfterDecision" }
+  | { readonly kind: "builder/openInKiro" }
   | {
       readonly kind: "native/answer";
       readonly requestId: string;
@@ -286,6 +289,7 @@ export function parseAgentAction(raw: unknown): AgentAction | null {
     }
 
     case "builder/resumeAfterDecision":
+    case "builder/openInKiro":
       return { kind };
 
     case "native/answer": {
