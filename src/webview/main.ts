@@ -312,6 +312,9 @@ export function bootstrap(
     onResumeAfterDecision: () => {
       client.postAgent({ kind: "builder/resumeAfterDecision" });
     },
+    onOpenInKiro: () => {
+      client.postAgent({ kind: "builder/openInKiro" });
+    },
     onNativeAnswer: (requestId, nativeJobId, answer) => {
       client.postAgent({ kind: "native/answer", requestId, nativeJobId, answer });
     },

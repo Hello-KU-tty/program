@@ -305,6 +305,9 @@ export function wireWebviewMessaging(
         openExternal: async (url) => {
           await vscode.env.openExternal(vscode.Uri.parse(url));
         },
+        // Kiro-native host (finals): the Builder runs in the learner's Kiro chat.
+        ...(typeof host.openProjectInKiro === "function"
+          ? { openInKiro: (projectId: string) => host.openProjectInKiro(projectId) } : {}),
       });
       agentDispatcher = new AgentDispatcher(agentController, (m) =>
         webview.postMessage(m),
@@ -400,6 +403,7 @@ export function wireWebviewMessaging(
         await agentHolder.controller.refreshProject();
         // "이걸로 시작" is one explicit user gesture: confirm, prepare, then
         // start once. Never reach this path on History/reload or after leaving.
+        // On a Kiro-native host "start" means connecting the Project to Kiro chat.
         const prepared = flowController.getPreparedTask();
         const builder = agentHolder.controller.getViewModel().builder;
         if (confirmProject && navigation === navigationVersion && !disposed &&
@@ -408,7 +412,8 @@ export function wireWebviewMessaging(
           prepared.projectId === confirmProject && builder.readyToStart && builder.taskId &&
           !startedPreparedTasks.has(builder.taskId)) {
           startedPreparedTasks.add(builder.taskId);
-          await agentHolder.controller.startBuilder("");
+          if (agentHolder.controller.getViewModel().hostChat) await agentHolder.controller.openInKiro();
+          else await agentHolder.controller.startBuilder("");
         }
         if (flowIntent.type === "openHistoryProject") void agentHolder.controller.recover();
       }

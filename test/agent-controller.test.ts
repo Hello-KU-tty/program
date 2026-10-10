@@ -21,7 +21,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
-import { AgentSurfaceController } from "../src/core/agent/agent-controller";
+import { AgentSurfaceController, type AgentControllerDeps } from "../src/core/agent/agent-controller";
 import { ManagedAgentPort } from "../src/adapter/agent/managed-agent-port";
 import type { AgentRunPort } from "../src/adapter/agent/agent-run-port";
 import type { LocalRunInput } from "../vendor/frontend-client";
@@ -288,6 +288,7 @@ function buildHarness(options: {
   client?: FakeCoreClientOptions;
   worker?: FakeNativeWorker;
   seedProjectId?: boolean;
+  openInKiro?: AgentControllerDeps["openInKiro"];
 } = {}) {
   const client = new FakeCoreClient(options.client ?? {});
   const worker = options.worker ?? new FakeNativeWorker();
@@ -320,6 +321,7 @@ function buildHarness(options: {
     openExternal: async (u: string) => {
       openedUrls.push(u);
     },
+    ...(options.openInKiro ? { openInKiro: options.openInKiro } : {}),
   });
 
   return {
@@ -931,5 +933,74 @@ describe("AgentSurfaceController — open generated workspace", () => {
     expect(h.controller.getViewModel().notice?.code).toBe("RUN_ACTIVE");
     // Never issued the prepare command.
     expect(h.client.executeKinds).not.toContain("UI_PREPARE_BUILDER_SESSION");
+  });
+});
+
+describe("AgentSurfaceController — Kiro-native host runs the Builder in Kiro chat", () => {
+  type Opened = Awaited<ReturnType<NonNullable<AgentControllerDeps["openInKiro"]>>>;
+  const opened = (folder: Opened["folder"]): Opened =>
+    ({ projectId: PROJECT_ID, taskId: TASK_ID, openedNewWindow: folder === "GENERATED", folder });
+
+  it("never starts a panel Builder run; start and resume point to Kiro chat", async () => {
+    const h = buildHarness({ openInKiro: async () => opened("REGISTERED") });
+    expect(h.controller.getViewModel().hostChat).toEqual({ opening: false });
+    await h.controller.startBuilder("build the tracker");
+    await h.controller.resumeAfterDecision();
+    expect(h.startBuilderCount()).toBe(0);
+    expect(h.builderStartRunCount()).toBe(0);
+    expect(h.controller.getViewModel().builder.phase).toBe("IDLE");
+    expect(h.controller.getViewModel().notice).toMatchObject({ kind: "info", code: "BUILDER_RUNS_IN_HOST_CHAT" });
+  });
+
+  it("connects the bound Project once per gesture and reports where it opened", async () => {
+    const calls: string[] = [];
+    let release!: (value: Opened) => void;
+    const h = buildHarness({ openInKiro: projectId => {
+      calls.push(projectId);
+      return new Promise<Opened>(resolve => { release = resolve; });
+    } });
+    const first = h.controller.openInKiro();
+    const second = h.controller.openInKiro();
+    await Promise.resolve();
+    expect(calls).toEqual([PROJECT_ID]);
+    expect(h.controller.getViewModel().hostChat).toEqual({ opening: true });
+    release(opened("GENERATED"));
+    await Promise.all([first, second]);
+    expect(h.controller.getViewModel().hostChat).toEqual({ opening: false });
+    expect(h.controller.getViewModel().notice).toMatchObject({ kind: "info", code: "KIRO_CHAT_GENERATED" });
+    expect(h.controller.getViewModel().notice?.message).toContain("새 창");
+  });
+
+  it("stays silent when the learner declines the new window", async () => {
+    const h = buildHarness({ openInKiro: async () => opened("CANCELLED") });
+    await h.controller.openInKiro();
+    expect(h.controller.getViewModel().notice).toBeNull();
+    expect(h.controller.getViewModel().hostChat).toEqual({ opening: false });
+  });
+
+  it("maps host refusals to fixed guidance and never echoes free text", async () => {
+    const refused = buildHarness({ openInKiro: async () => { throw new Error("KIRO_BIND_TASK_NOT_READY"); } });
+    await refused.controller.openInKiro();
+    expect(refused.controller.getViewModel().notice).toMatchObject({ kind: "error", code: "KIRO_BIND_TASK_NOT_READY" });
+    expect(refused.controller.getViewModel().notice?.message).toContain("계획을 확정");
+
+    const odd = buildHarness({ openInKiro: async () => { throw new Error("/Users/learner token=abc"); } });
+    await odd.controller.openInKiro();
+    expect(odd.controller.getViewModel().notice?.code).toBe("UNKNOWN");
+    expect(JSON.stringify(odd.controller.getViewModel())).not.toContain("learner");
+    expect(odd.controller.getViewModel().hostChat).toEqual({ opening: false });
+  });
+
+  it("requires a bound Project and is inert on other hosts", async () => {
+    const calls: string[] = [];
+    const unbound = buildHarness({ seedProjectId: false, openInKiro: async projectId => { calls.push(projectId); return opened("REGISTERED"); } });
+    await unbound.controller.openInKiro();
+    expect(calls).toEqual([]);
+    expect(unbound.controller.getViewModel().notice?.code).toBe("PROJECT_REQUIRED");
+
+    const other = buildHarness();
+    expect(other.controller.getViewModel().hostChat).toBeUndefined();
+    await other.controller.openInKiro();
+    expect(other.controller.getViewModel().notice).toBeNull();
   });
 });
