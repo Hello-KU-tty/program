@@ -99,6 +99,9 @@ export interface AgentControllerDeps {
 const OPEN_IN_KIRO_NOTICES = {
   REGISTERED: "이 폴더를 Project로 연결했어요. Kiro 채팅에서 새 세션(+)을 열어 만들기를 시작하세요. 도우미는 새 탭에서 vibe-helper 에이전트를 고르면 돼요.",
   GENERATED: "Project 폴더를 새 창으로 열었어요. 그 창의 Kiro 채팅에서 새 세션(+)을 열어 만들기를 시작하세요.",
+  // Kiro read this window before the folder was trusted (on Windows, every newly opened folder),
+  // so its hooks and MCP stay off until a reload; the host already offers the reload.
+  RELOAD_REQUIRED: "이 폴더를 Project로 연결했어요. 이 창은 폴더를 신뢰하기 전에 열려서, 알림의 ‘다시 로드’(또는 Developer: Reload Window)로 창을 다시 로드한 뒤 Kiro 채팅 새 세션(+)에서 시작하세요.",
 } as const;
 const BUILDER_IN_KIRO_CHAT = "만들기는 Kiro 채팅에서 진행돼요. 아직 연결하지 않았다면 ‘Kiro 채팅에서 열기’를 누르고, 연결했다면 Kiro 채팅에서 이어서 요청하세요.";
 
@@ -1211,7 +1214,9 @@ export class AgentSurfaceController {
     try {
       const opened = await open(projectId);
       if (!this.isCurrentBinding(binding) || opened.folder === "CANCELLED") return;
-      this.notice("info", `KIRO_CHAT_${opened.folder}`, OPEN_IN_KIRO_NOTICES[opened.folder]);
+      const outcome = opened.folder === "REGISTERED" && opened.reloadRequired === true
+        ? "RELOAD_REQUIRED" : opened.folder;
+      this.notice("info", `KIRO_CHAT_${outcome}`, OPEN_IN_KIRO_NOTICES[outcome]);
     } catch (error) {
       if (!this.isCurrentBinding(binding)) return;
       const code = safeRuntimeCode(error instanceof Error ? error.message : undefined);
