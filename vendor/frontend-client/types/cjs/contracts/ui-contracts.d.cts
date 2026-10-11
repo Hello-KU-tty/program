@@ -214,6 +214,23 @@ export declare const uiResolveDecisionCommandSchema: z.ZodObject<{
         customProposal: z.ZodOptional<z.ZodString>;
         rationale: z.ZodOptional<z.ZodString>;
         helperUsed: z.ZodBoolean;
+        chatSource: z.ZodOptional<z.ZodObject<{
+            mappedBy: z.ZodLiteral<"BUILDER">;
+            userMessageIds: z.ZodArray<z.ZodString>;
+            linkedMessages: z.ZodOptional<z.ZodArray<z.ZodObject<{
+                conversationId: z.ZodString;
+                messageId: z.ZodString;
+                tab: z.ZodEnum<{
+                    BUILDER: "BUILDER";
+                    HELPER: "HELPER";
+                }>;
+                timing: z.ZodEnum<{
+                    AFTER_REQUEST: "AFTER_REQUEST";
+                    BEFORE_REQUEST: "BEFORE_REQUEST";
+                }>;
+            }, z.core.$strict>>>;
+            builderSummary: z.ZodOptional<z.ZodString>;
+        }, z.core.$strict>>;
         resolvedAt: z.ZodISODateTime;
         source: z.ZodObject<{
             kind: z.ZodLiteral<"USER">;
@@ -300,6 +317,40 @@ export declare const uiRecordHelperExchangeCommandSchema: z.ZodObject<{
     }>>;
     closeConversation: z.ZodBoolean;
 }, z.core.$strict>;
+/**
+ * A message the learner typed into the host coding chat (for example Kiro), forwarded by the
+ * user-side host adapter. Core stores it as user-authored Activity for later Evidence analysis.
+ */
+export declare const uiRecordChatMessageCommandSchema: z.ZodObject<{
+    schemaVersion: z.ZodLiteral<1>;
+    correlationId: z.ZodString;
+    actor: z.ZodObject<{
+        kind: z.ZodLiteral<"UI">;
+    }, z.core.$strict>;
+    kind: z.ZodLiteral<"UI_RECORD_CHAT_MESSAGE">;
+    idempotencyKey: z.ZodString;
+    projectId: z.ZodString;
+    taskId: z.ZodOptional<z.ZodString>;
+    conversationId: z.ZodString;
+    message: z.ZodString;
+}, z.core.$strict>;
+/**
+ * The Builder's reply at the end of a Kiro chat turn, read by the user-side hook runner from the
+ * Kiro session record (K10). Core stores it as Agent-authored context, never as user Evidence.
+ */
+export declare const uiRecordBuilderChatTurnCommandSchema: z.ZodObject<{
+    schemaVersion: z.ZodLiteral<1>;
+    correlationId: z.ZodString;
+    actor: z.ZodObject<{
+        kind: z.ZodLiteral<"UI">;
+    }, z.core.$strict>;
+    kind: z.ZodLiteral<"UI_RECORD_BUILDER_CHAT_TURN">;
+    idempotencyKey: z.ZodString;
+    projectId: z.ZodString;
+    taskId: z.ZodOptional<z.ZodString>;
+    conversationId: z.ZodString;
+    reply: z.ZodString;
+}, z.core.$strict>;
 export declare const uiRetryAnalysisCommandSchema: z.ZodObject<{
     schemaVersion: z.ZodLiteral<1>;
     correlationId: z.ZodString;
@@ -328,6 +379,29 @@ export declare const uiReadAnalysisJobsQuerySchema: z.ZodObject<{
     }>>;
     limit: z.ZodInt;
 }, z.core.$strict>;
+/** Next Move suggestions for the Project's latest finished Task (SPEC 5.8.1). */
+export declare const uiReadNextMoveQuerySchema: z.ZodObject<{
+    schemaVersion: z.ZodLiteral<1>;
+    correlationId: z.ZodString;
+    actor: z.ZodObject<{
+        kind: z.ZodLiteral<"UI">;
+    }, z.core.$strict>;
+    kind: z.ZodLiteral<"UI_READ_NEXT_MOVE">;
+    projectId: z.ZodString;
+}, z.core.$strict>;
+/** Starts a new attempt after both automatic attempts failed; the only Next Move button. */
+export declare const uiRetryNextMoveCommandSchema: z.ZodObject<{
+    schemaVersion: z.ZodLiteral<1>;
+    correlationId: z.ZodString;
+    actor: z.ZodObject<{
+        kind: z.ZodLiteral<"UI">;
+    }, z.core.$strict>;
+    kind: z.ZodLiteral<"UI_RETRY_NEXT_MOVE">;
+    idempotencyKey: z.ZodString;
+    projectId: z.ZodString;
+    nextMoveJobId: z.ZodString;
+    expectedJobRevision: z.ZodInt;
+}, z.core.$strict>;
 export declare const uiReadEvidenceTraceQuerySchema: z.ZodObject<{
     schemaVersion: z.ZodLiteral<1>;
     correlationId: z.ZodString;
@@ -337,6 +411,16 @@ export declare const uiReadEvidenceTraceQuerySchema: z.ZodObject<{
     kind: z.ZodLiteral<"UI_READ_EVIDENCE_TRACE">;
     projectId: z.ZodString;
     conceptId: z.ZodOptional<z.ZodString>;
+}, z.core.$strict>;
+/** Learner-level guidance rendered from Core Concept State, for hosts to place in Agent context. */
+export declare const uiReadLearnerProfileQuerySchema: z.ZodObject<{
+    schemaVersion: z.ZodLiteral<1>;
+    correlationId: z.ZodString;
+    actor: z.ZodObject<{
+        kind: z.ZodLiteral<"UI">;
+    }, z.core.$strict>;
+    kind: z.ZodLiteral<"UI_READ_LEARNER_PROFILE">;
+    maxConcepts: z.ZodOptional<z.ZodInt>;
 }, z.core.$strict>;
 export declare const uiLaunchResultCommandSchema: z.ZodObject<{
     schemaVersion: z.ZodLiteral<1>;
@@ -411,6 +495,16 @@ export declare const preparedBuilderTaskDescriptorSchema: z.ZodObject<{
             personalizationTraceId: z.ZodString;
             userGoal: z.ZodString;
         }, z.core.$strict>>;
+        nextMove: z.ZodOptional<z.ZodObject<{
+            nextMoveJobId: z.ZodString;
+            number: z.ZodInt;
+            title: z.ZodString;
+            summary: z.ZodString;
+            source: z.ZodObject<{
+                kind: z.ZodLiteral<"AGENT">;
+                role: z.ZodLiteral<"DISCOVERY">;
+            }, z.core.$strict>;
+        }, z.core.$strict>>;
         sequence: z.ZodInt;
         status: z.ZodEnum<{
             ACTIVE: "ACTIVE";
@@ -443,6 +537,32 @@ export declare const helperExchangeReceiptSchema: z.ZodObject<{
         OPEN: "OPEN";
         PENDING_ANALYSIS: "PENDING_ANALYSIS";
     }>;
+}, z.core.$strict>;
+export declare const chatMessageReceiptSchema: z.ZodObject<{
+    schemaVersion: z.ZodLiteral<1>;
+    correlationId: z.ZodString;
+    conversationId: z.ZodString;
+    messageId: z.ZodString;
+    eventId: z.ZodString;
+    episode: z.ZodOptional<z.ZodObject<{
+        id: z.ZodString;
+        revision: z.ZodInt;
+        type: z.ZodEnum<{
+            BUILD_TASK: "BUILD_TASK";
+            DECISION: "DECISION";
+            FINAL_UPGRADE: "FINAL_UPGRADE";
+        }>;
+        decisionId: z.ZodOptional<z.ZodString>;
+    }, z.core.$strict>>;
+}, z.core.$strict>;
+export declare const learnerProfileViewSchema: z.ZodObject<{
+    schemaVersion: z.ZodLiteral<1>;
+    correlationId: z.ZodString;
+    profileVersion: z.ZodString;
+    conceptIds: z.ZodArray<z.ZodString>;
+    omittedCount: z.ZodInt;
+    text: z.ZodString;
+    digest: z.ZodString;
 }, z.core.$strict>;
 export declare const uiRequestSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     schemaVersion: z.ZodLiteral<1>;
@@ -651,6 +771,23 @@ export declare const uiRequestSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         customProposal: z.ZodOptional<z.ZodString>;
         rationale: z.ZodOptional<z.ZodString>;
         helperUsed: z.ZodBoolean;
+        chatSource: z.ZodOptional<z.ZodObject<{
+            mappedBy: z.ZodLiteral<"BUILDER">;
+            userMessageIds: z.ZodArray<z.ZodString>;
+            linkedMessages: z.ZodOptional<z.ZodArray<z.ZodObject<{
+                conversationId: z.ZodString;
+                messageId: z.ZodString;
+                tab: z.ZodEnum<{
+                    BUILDER: "BUILDER";
+                    HELPER: "HELPER";
+                }>;
+                timing: z.ZodEnum<{
+                    AFTER_REQUEST: "AFTER_REQUEST";
+                    BEFORE_REQUEST: "BEFORE_REQUEST";
+                }>;
+            }, z.core.$strict>>>;
+            builderSummary: z.ZodOptional<z.ZodString>;
+        }, z.core.$strict>>;
         resolvedAt: z.ZodISODateTime;
         source: z.ZodObject<{
             kind: z.ZodLiteral<"USER">;
@@ -736,6 +873,30 @@ export declare const uiRequestSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     actor: z.ZodObject<{
         kind: z.ZodLiteral<"UI">;
     }, z.core.$strict>;
+    kind: z.ZodLiteral<"UI_RECORD_CHAT_MESSAGE">;
+    idempotencyKey: z.ZodString;
+    projectId: z.ZodString;
+    taskId: z.ZodOptional<z.ZodString>;
+    conversationId: z.ZodString;
+    message: z.ZodString;
+}, z.core.$strict>, z.ZodObject<{
+    schemaVersion: z.ZodLiteral<1>;
+    correlationId: z.ZodString;
+    actor: z.ZodObject<{
+        kind: z.ZodLiteral<"UI">;
+    }, z.core.$strict>;
+    kind: z.ZodLiteral<"UI_RECORD_BUILDER_CHAT_TURN">;
+    idempotencyKey: z.ZodString;
+    projectId: z.ZodString;
+    taskId: z.ZodOptional<z.ZodString>;
+    conversationId: z.ZodString;
+    reply: z.ZodString;
+}, z.core.$strict>, z.ZodObject<{
+    schemaVersion: z.ZodLiteral<1>;
+    correlationId: z.ZodString;
+    actor: z.ZodObject<{
+        kind: z.ZodLiteral<"UI">;
+    }, z.core.$strict>;
     kind: z.ZodLiteral<"UI_RETRY_ANALYSIS">;
     idempotencyKey: z.ZodString;
     projectId: z.ZodString;
@@ -762,9 +923,36 @@ export declare const uiRequestSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     actor: z.ZodObject<{
         kind: z.ZodLiteral<"UI">;
     }, z.core.$strict>;
+    kind: z.ZodLiteral<"UI_READ_NEXT_MOVE">;
+    projectId: z.ZodString;
+}, z.core.$strict>, z.ZodObject<{
+    schemaVersion: z.ZodLiteral<1>;
+    correlationId: z.ZodString;
+    actor: z.ZodObject<{
+        kind: z.ZodLiteral<"UI">;
+    }, z.core.$strict>;
+    kind: z.ZodLiteral<"UI_RETRY_NEXT_MOVE">;
+    idempotencyKey: z.ZodString;
+    projectId: z.ZodString;
+    nextMoveJobId: z.ZodString;
+    expectedJobRevision: z.ZodInt;
+}, z.core.$strict>, z.ZodObject<{
+    schemaVersion: z.ZodLiteral<1>;
+    correlationId: z.ZodString;
+    actor: z.ZodObject<{
+        kind: z.ZodLiteral<"UI">;
+    }, z.core.$strict>;
     kind: z.ZodLiteral<"UI_READ_EVIDENCE_TRACE">;
     projectId: z.ZodString;
     conceptId: z.ZodOptional<z.ZodString>;
+}, z.core.$strict>, z.ZodObject<{
+    schemaVersion: z.ZodLiteral<1>;
+    correlationId: z.ZodString;
+    actor: z.ZodObject<{
+        kind: z.ZodLiteral<"UI">;
+    }, z.core.$strict>;
+    kind: z.ZodLiteral<"UI_READ_LEARNER_PROFILE">;
+    maxConcepts: z.ZodOptional<z.ZodInt>;
 }, z.core.$strict>, z.ZodObject<{
     schemaVersion: z.ZodLiteral<1>;
     correlationId: z.ZodString;
@@ -779,4 +967,6 @@ export type UiRequest = z.infer<typeof uiRequestSchema>;
 export type GeneratedResultDescriptor = z.infer<typeof generatedResultDescriptorSchema>;
 export type PreparedBuilderTaskDescriptor = z.infer<typeof preparedBuilderTaskDescriptorSchema>;
 export type HelperExchangeReceipt = z.infer<typeof helperExchangeReceiptSchema>;
+export type ChatMessageReceipt = z.infer<typeof chatMessageReceiptSchema>;
+export type LearnerProfileView = z.infer<typeof learnerProfileViewSchema>;
 export type BuilderSessionBindingDescriptor = z.infer<typeof builderSessionBindingDescriptorSchema>;

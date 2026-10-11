@@ -128,6 +128,10 @@ class StubController {
   async prepareFinalUpgrade(input: unknown): Promise<void> {
     this.record("prepareFinalUpgrade", input);
   }
+
+  async retryNextMove(): Promise<void> {
+    this.record("retryNextMove");
+  }
 }
 
 /**
@@ -330,6 +334,11 @@ describe("AgentDispatcher — each valid action reaches its controller method (R
     expect(controller.calls).toEqual([
       { method: "listFinalUpgradeCandidates", args: [] },
     ]);
+  });
+
+  it("nextMove/retry -> retryNextMove()", async () => {
+    await dispatcher.handle({ kind: "nextMove/retry", nextMoveJobId: "forged" });
+    expect(controller.calls).toEqual([{ method: "retryNextMove", args: [] }]);
   });
 
   it("finalUpgrade/prepare -> prepareFinalUpgrade({ ... })", async () => {

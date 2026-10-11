@@ -43,12 +43,32 @@ export interface AgentViewModel {
    * (`BUILDER_RUNS_IN_HOST_CHAT`). The panel then offers "Kiro 채팅에서 열기".
    */
   readonly hostChat?: HostChatViewModel;
+  /**
+   * Kiro-native host only: Agent-authored ways to grow the project after the
+   * latest finished Task (Core `UI_READ_NEXT_MOVE`). Suggestions only; the
+   * learner starts one by saying it in Kiro chat, so there is no start button.
+   */
+  readonly nextMove?: NextMoveViewModel;
 }
 
 /** Kiro-native Builder connection state (no path, no token). */
 export interface HostChatViewModel {
   /** An open-in-Kiro request is in flight (host dialogs may be showing). */
   readonly opening: boolean;
+}
+
+/** Next Move card state. `NONE` hides the card (no finished latest Task). */
+export interface NextMoveViewModel {
+  readonly status: "NONE" | "GENERATING" | "READY" | "FAILED";
+  readonly moves: readonly {
+    readonly number: number;
+    readonly title: string;
+    readonly summary: string;
+    readonly benefit: string;
+    readonly size: "SMALL" | "MEDIUM";
+  }[];
+  /** An explicit "다시 만들기" request is in flight. */
+  readonly retrying: boolean;
 }
 
 /** Builder turn projection. `phase` is the display-only turn state. */

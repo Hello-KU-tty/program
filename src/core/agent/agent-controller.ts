@@ -30,6 +30,7 @@ import type {
   AgentRunPort,
 } from "../../adapter/agent/agent-run-port";
 import type { NativeInputPort } from "../../adapter/agent/native-input-port";
+import { type Clock, SystemClock, type TimerId } from "../clock";
 import { errorGuidance, runtimeErrorMessage, safeRuntimeCode } from "../runtime-errors";
 import {
   classifyNativeWorkerStatus,
@@ -42,6 +43,7 @@ import {
   type FinalUpgradeCandidate,
   isRunActive,
   type LocalRun,
+  type NextMoveView,
   type ProjectEvidenceTrace,
   type ProjectSessionSnapshot,
   type RunEventView,
@@ -62,6 +64,7 @@ import {
   type HelperViewModel,
   initialAgentViewModel,
   type NativeQuestionViewModel,
+  type NextMoveViewModel,
   type NoticeViewModel,
 } from "./agent-view-model";
 import { classifyTurn, phaseFromOutcome, reduceEvent } from "./builder-turn";
@@ -93,7 +96,17 @@ export interface AgentControllerDeps {
    * the panel never starts a Builder run and offers this instead.
    */
   readonly openInKiro?: (projectId: string) => ReturnType<FrontendHost["openProjectInKiro"]>;
+  /** Timer source for the Kiro-native Next Move refresh. Defaults to {@link SystemClock}. */
+  readonly clock?: Clock;
 }
+
+/**
+ * Kiro-native: Core has no push channel to the panel, so the Next Move card is
+ * re-read while the learner works in Kiro chat. Faster while suggestions are
+ * being generated (about 10 s), slower otherwise.
+ */
+export const NEXT_MOVE_REFRESH_MS = { GENERATING: 1_500, IDLE: 4_000 } as const;
+const NEXT_MOVE_STATUSES: ReadonlySet<string> = new Set(["NONE", "GENERATING", "READY", "FAILED"]);
 
 /** Notices after connecting a Project to Kiro chat; CANCELLED stays silent. */
 const OPEN_IN_KIRO_NOTICES = {
@@ -147,7 +160,15 @@ export class AgentSurfaceController {
   private disposed = false;
   private bindingVersion = 0;
 
+  private readonly clock: Clock;
+  /** Kiro-native Next Move refresh: one pending timer at most. */
+  private nextMoveTimer: TimerId | null = null;
+  /** Host-only retry target and the Task the shown suggestions belong to. */
+  private nextMoveJob: { id: string; revision: number; sourceTaskId: string | null } | null = null;
+  private nextMoveRead = false;
+
   constructor(private readonly deps: AgentControllerDeps) {
+    this.clock = deps.clock ?? new SystemClock();
     this.vm = this.freshViewModel();
     // Worker status + user-input changes are async, non-intent-driven mutations
     // (design §B.5): subscribe once here and re-project on every notify.
@@ -169,7 +190,9 @@ export class AgentSurfaceController {
   /** The IDLE projection; a Kiro-native host also gets its hostChat state. */
   private freshViewModel(): AgentViewModel {
     const vm = initialAgentViewModel();
-    return this.deps.openInKiro ? { ...vm, hostChat: { opening: false } } : vm;
+    return this.deps.openInKiro
+      ? { ...vm, hostChat: { opening: false }, nextMove: { status: "NONE", moves: [], retrying: false } }
+      : vm;
   }
 
   private isCurrentBinding(binding: number): boolean {
@@ -195,12 +218,18 @@ export class AgentSurfaceController {
     this.cancelRequested = false;
     this.lastProjectId = projectId;
     this.vm = this.freshViewModel();
+    this.nextMoveJob = null;
+    this.nextMoveRead = false;
     this.refreshNativeQuestions();
     this.deps.onChange();
+    this.scheduleNextMove(0);
   }
 
   async refreshProject(): Promise<void> {
-    if (!this.disposed && this.lastProjectId) await this.reprojectFromSnapshot(this.lastProjectId);
+    if (!this.disposed && this.lastProjectId) {
+      await this.reprojectFromSnapshot(this.lastProjectId);
+      this.scheduleNextMove(0);
+    }
   }
 
   // --- BEHAVIORS (task 5.2): start a Builder run + supervise its stream ---
@@ -1219,6 +1248,87 @@ export class AgentSurfaceController {
     }
   }
 
+  // --- Kiro-native: Next Move (다음 한 걸음) ---
+
+  /** Arm the single Next Move refresh timer (Kiro-native host, bound Project only). */
+  private scheduleNextMove(delay: number): void {
+    if (!this.deps.openInKiro || this.disposed || !this.lastProjectId) return;
+    if (this.nextMoveTimer !== null) this.clock.clearTimeout(this.nextMoveTimer);
+    this.nextMoveTimer = this.clock.setTimeout(() => {
+      this.nextMoveTimer = null;
+      void this.readNextMove().finally(() => {
+        // A bind or retry may have armed a sooner read meanwhile; keep it.
+        if (this.nextMoveTimer !== null) return;
+        this.scheduleNextMove(this.vm.nextMove?.status === "GENERATING"
+          ? NEXT_MOVE_REFRESH_MS.GENERATING : NEXT_MOVE_REFRESH_MS.IDLE);
+      });
+    }, delay);
+  }
+
+  /** Read Core's Next Move view. A failed read keeps the last card; Core may be restarting. */
+  private async readNextMove(): Promise<void> {
+    const projectId = this.lastProjectId;
+    if (this.disposed || !projectId) return;
+    const binding = this.bindingVersion;
+    const res = await this.deps.port.execute({ ...uiMetadata(), kind: "UI_READ_NEXT_MOVE", projectId });
+    if (this.isCurrentBinding(binding) && res.ok) await this.applyNextMove(projectId, res.value);
+  }
+
+  private async applyNextMove(projectId: string, view: NextMoveView): Promise<void> {
+    if (typeof view !== "object" || view === null || !NEXT_MOVE_STATUSES.has(view.status) ||
+      !Array.isArray(view.moves)) return;
+    const previousTask = this.nextMoveJob?.sourceTaskId ?? null;
+    const firstRead = !this.nextMoveRead;
+    this.nextMoveRead = true;
+    this.nextMoveJob = view.nextMoveJobId && view.jobRevision !== undefined
+      ? { id: view.nextMoveJobId, revision: view.jobRevision, sourceTaskId: view.sourceTaskId ?? null }
+      : null;
+    const nextMove: NextMoveViewModel = {
+      status: view.status,
+      moves: view.status === "READY"
+        ? view.moves.map(({ number, title, summary, benefit, size }) => ({ number, title, summary, benefit, size }))
+        : [],
+      retrying: this.vm.nextMove?.retrying ?? false,
+    };
+    if (JSON.stringify(nextMove) !== JSON.stringify(this.vm.nextMove)) {
+      this.vm = { ...this.vm, nextMove };
+      this.deps.onChange();
+    }
+    // A Task finished in Kiro chat, or a follow-up Task started there: the
+    // panel learns it here first, so the Builder header re-reads the snapshot.
+    if (!firstRead && previousTask !== (this.nextMoveJob?.sourceTaskId ?? null))
+      await this.reprojectFromSnapshot(projectId, true);
+  }
+
+  /**
+   * "다시 만들기": one new attempt after both automatic attempts failed (Core
+   * `UI_RETRY_NEXT_MOVE`). The card's only button. Non-throwing.
+   */
+  async retryNextMove(): Promise<void> {
+    const projectId = this.lastProjectId;
+    const job = this.nextMoveJob;
+    const shown = this.vm.nextMove;
+    if (!this.deps.openInKiro || this.disposed || !projectId || !job ||
+      shown?.status !== "FAILED" || shown.retrying) return;
+    const binding = this.bindingVersion;
+    this.setNextMoveRetrying(true);
+    const res = await this.deps.port.execute({
+      ...uiMetadata(), kind: "UI_RETRY_NEXT_MOVE", idempotencyKey: entityId("idem"),
+      projectId, nextMoveJobId: job.id, expectedJobRevision: job.revision,
+    });
+    if (!this.isCurrentBinding(binding)) return;
+    this.setNextMoveRetrying(false);
+    if (res.ok) await this.applyNextMove(projectId, res.value);
+    else this.notice("error", res.error.raw, "다음 한 걸음을 다시 만들지 못했어요. 잠시 뒤 다시 시도해 주세요.");
+    this.scheduleNextMove(res.ok ? NEXT_MOVE_REFRESH_MS.GENERATING : 0);
+  }
+
+  private setNextMoveRetrying(retrying: boolean): void {
+    if (!this.vm.nextMove) return;
+    this.vm = { ...this.vm, nextMove: { ...this.vm.nextMove, retrying } };
+    this.deps.onChange();
+  }
+
   // --- BEHAVIOR (task 5.8): workspace open / launch / evidence / final upgrade ---
 
   /**
@@ -1659,6 +1769,8 @@ export class AgentSurfaceController {
   dispose(): void {
     this.disposed = true;
     this.bindingVersion++;
+    if (this.nextMoveTimer !== null) this.clock.clearTimeout(this.nextMoveTimer);
+    this.nextMoveTimer = null;
     this.watches.builder?.abort();
     this.watches.helper?.abort();
     this.unsubStatus?.();

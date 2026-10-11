@@ -44,6 +44,7 @@ import type {
   HelperConversationViewModel,
   HelperViewModel,
   NativeQuestionViewModel,
+  NextMoveViewModel,
   NoticeViewModel,
   ToolRowViewModel,
 } from "../../core/agent/agent-view-model";
@@ -109,6 +110,8 @@ export interface AgentRenderCallbacks {
     readonly personalizationTraceId: string;
     readonly userGoal: string;
   }): void;
+  /** Kiro-native: generate Next Move suggestions again after a failure (`nextMove/retry`). */
+  onRetryNextMove(): void;
 }
 
 /** Korean labels for the Builder turn display phase. */
@@ -285,6 +288,13 @@ export class AgentSurfaceView {
   private readonly finalUpgradeSection: HTMLElement;
   /** Task id whose upgrade candidates were already requested once. */
   private finalUpgradeListedFor: string | null = null;
+  /** Kiro-native Next Move card (replaces the final upgrade there). */
+  private readonly nextMoveSection: HTMLElement;
+  private readonly nextMoveStatus: HTMLElement;
+  private readonly nextMoveList: HTMLElement;
+  private readonly nextMoveNote: HTMLElement;
+  private readonly nextMoveRetryButton: HTMLButtonElement;
+  private nextMoveRenderKey: string | undefined;
 
   // --- Tabs: one surface visible at a time keeps the panel short ------------
   private readonly surface: HTMLElement;
@@ -663,6 +673,36 @@ export class AgentSurfaceView {
       userGoal,
     };
 
+    // ---- Next Move (Kiro-native) ------------------------------------------
+    // Ways to grow the project after a finished Task. A suggestion only: there
+    // is no start button; the learner says a number or an idea in Kiro chat.
+    const nextMove = this.el("section", "agent-next-move");
+    nextMove.setAttribute("aria-label", "다음 한 걸음");
+    nextMove.hidden = true;
+    this.nextMoveSection = nextMove;
+    const nextMoveLabel = this.el("h1", "agent-section-heading");
+    nextMoveLabel.textContent = "다음 한 걸음";
+    nextMove.appendChild(nextMoveLabel);
+    this.nextMoveStatus = this.el("p", "agent-next-move-status");
+    this.nextMoveStatus.setAttribute("role", "status");
+    this.nextMoveStatus.setAttribute("aria-live", "polite");
+    nextMove.appendChild(this.nextMoveStatus);
+    this.nextMoveList = this.el("ol", "agent-next-move-list");
+    this.nextMoveList.setAttribute("aria-label", "다음 한 걸음 후보");
+    nextMove.appendChild(this.nextMoveList);
+    this.nextMoveNote = this.el("p", "agent-next-move-note");
+    this.nextMoveNote.textContent = "마음에 드는 게 있으면 Kiro 채팅에 번호나 원하는 방향을 말해 주세요. 지금 안 해도 돼요.";
+    nextMove.appendChild(this.nextMoveNote);
+    this.nextMoveRetryButton = this.el("button", "agent-next-move-retry") as HTMLButtonElement;
+    this.nextMoveRetryButton.type = "button";
+    this.nextMoveRetryButton.textContent = "다시 만들기";
+    this.nextMoveRetryButton.hidden = true;
+    this.nextMoveRetryButton.addEventListener("click", () => {
+      if (!this.nextMoveRetryButton.hidden && !this.nextMoveRetryButton.disabled) this.callbacks.onRetryNextMove();
+    });
+    nextMove.appendChild(this.nextMoveRetryButton);
+    container.appendChild(nextMove);
+
     this.selectTab("builder");
     root.appendChild(container);
   }
@@ -679,6 +719,7 @@ export class AgentSurfaceView {
    */
   render(vm: AgentViewModel): void {
     this.renderBuilder(vm.builder, vm.hostChat);
+    this.renderNextMove(vm.hostChat ? vm.nextMove : undefined);
     this.renderHelper(vm.helper);
     this.renderDecisions(vm.decisions);
     this.renderNativeQuestions(vm.nativeQuestions);
@@ -716,6 +757,9 @@ export class AgentSurfaceView {
     this.upgradeTaskKey = undefined;
     this.finalUpgradeListedFor = null;
     this.finalUpgradeSection.hidden = true;
+    this.nextMoveRenderKey = undefined;
+    this.nextMoveList.textContent = "";
+    this.nextMoveSection.hidden = true;
     this.renderedTaskId = null;
     this.workspaceOpenButton.hidden = true;
     this.resultLaunchButton.hidden = true;
@@ -830,7 +874,8 @@ export class AgentSurfaceView {
     this.readyToStart = !!builder.readyToStart && !!builder.taskId;
     this.renderedTaskId = builder.taskId;
     // Final upgrade is a suggestion after completion, never shown up front.
-    const upgradeOffered = builder.phase === "TASK_COMPLETED" && builder.taskId !== null;
+    // Kiro-native hosts offer Next Move instead (renderNextMove).
+    const upgradeOffered = !hostChat && builder.phase === "TASK_COMPLETED" && builder.taskId !== null;
     this.finalUpgradeSection.hidden = !upgradeOffered;
     if (upgradeOffered && this.finalUpgradeListedFor !== builder.taskId) {
       this.finalUpgradeListedFor = builder.taskId;
@@ -935,6 +980,53 @@ export class AgentSurfaceView {
     this.workspaceOpenButton.disabled = inFlight || !builder.taskId;
     this.resultLaunchButton.hidden = !completed || !builder.taskId;
     this.resultLaunchButton.disabled = inFlight || !builder.taskId;
+  }
+
+  /**
+   * Kiro-native Next Move card: a generating line, three suggestions with the
+   * "say it in Kiro chat" note, or a failure with the card's only button.
+   * Hidden while the latest Task is not finished (`NONE`).
+   */
+  private renderNextMove(nextMove: NextMoveViewModel | undefined): void {
+    const status = nextMove?.status ?? "NONE";
+    this.nextMoveSection.hidden = status === "NONE";
+    this.nextMoveSection.dataset.status = status;
+    this.nextMoveStatus.hidden = status === "READY" || status === "NONE";
+    this.nextMoveStatus.textContent = status === "GENERATING"
+      ? "이번 작업을 바탕으로 다음에 해 볼 만한 것을 고르고 있어요…"
+      : status === "FAILED"
+        ? "다음 한 걸음을 만들지 못했어요. 다시 만들거나, 하고 싶은 것을 Kiro 채팅에 바로 말해도 돼요."
+        : "";
+    this.nextMoveNote.hidden = status !== "READY";
+    this.nextMoveRetryButton.hidden = status !== "FAILED";
+    this.nextMoveRetryButton.disabled = !!nextMove?.retrying;
+    const moves = status === "READY" && nextMove ? nextMove.moves : [];
+    const key = JSON.stringify(moves);
+    if (key === this.nextMoveRenderKey) return;
+    this.nextMoveRenderKey = key;
+    this.nextMoveList.textContent = "";
+    for (const move of moves) {
+      const item = this.el("li", "agent-next-move-item");
+      const head = this.el("div", "agent-next-move-head");
+      const number = this.el("span", "agent-next-move-number");
+      number.textContent = String(move.number);
+      head.appendChild(number);
+      const title = this.el("span", "agent-next-move-title");
+      title.textContent = move.title;
+      head.appendChild(title);
+      const size = this.el("span", "agent-next-move-size");
+      size.textContent = move.size === "SMALL" ? "작음" : "보통";
+      size.setAttribute("title", move.size === "SMALL" ? "작업 크기: 작음" : "작업 크기: 보통");
+      head.appendChild(size);
+      item.appendChild(head);
+      const summary = this.el("p", "agent-next-move-summary");
+      summary.textContent = move.summary;
+      item.appendChild(summary);
+      const benefit = this.el("p", "agent-next-move-benefit");
+      benefit.textContent = `좋아지는 점: ${move.benefit}`;
+      item.appendChild(benefit);
+      this.nextMoveList.appendChild(item);
+    }
   }
 
   /**

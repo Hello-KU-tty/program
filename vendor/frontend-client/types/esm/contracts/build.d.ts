@@ -1,4 +1,9 @@
 import { z } from 'zod';
+/**
+ * Decisions not applied yet in one Task. Kiro chat applies chosen options at finish (K10), so
+ * chosen ones stay active until then; the cap bounds the Live Context payload.
+ */
+export declare const MAX_ACTIVE_DECISIONS = 30;
 export declare const builderTaskStatusSchema: z.ZodEnum<{
     ACTIVE: "ACTIVE";
     BLOCKED: "BLOCKED";
@@ -45,6 +50,16 @@ export declare const builderTaskSchema: z.ZodObject<{
         sourceTaskId: z.ZodString;
         personalizationTraceId: z.ZodString;
         userGoal: z.ZodString;
+    }, z.core.$strict>>;
+    nextMove: z.ZodOptional<z.ZodObject<{
+        nextMoveJobId: z.ZodString;
+        number: z.ZodInt;
+        title: z.ZodString;
+        summary: z.ZodString;
+        source: z.ZodObject<{
+            kind: z.ZodLiteral<"AGENT">;
+            role: z.ZodLiteral<"DISCOVERY">;
+        }, z.core.$strict>;
     }, z.core.$strict>>;
     sequence: z.ZodInt;
     status: z.ZodEnum<{
@@ -444,6 +459,7 @@ export declare const decisionRequestSchema: z.ZodObject<{
         eventId: z.ZodString;
     }, z.core.$strict>], "kind">>;
     independentWorkCanContinue: z.ZodBoolean;
+    replacesDecisionId: z.ZodOptional<z.ZodString>;
     requestedAt: z.ZodISODateTime;
     source: z.ZodObject<{
         kind: z.ZodLiteral<"AGENT">;
@@ -454,6 +470,40 @@ export declare const decisionRequestSchema: z.ZodObject<{
         REDACTED: "REDACTED";
         VERIFIED_REDACTED: "VERIFIED_REDACTED";
     }>;
+}, z.core.$strict>;
+/**
+ * A learner message Core linked to a chat-resolved Decision. `tab` says where the learner wrote
+ * it; `timing` is relative to when the question was first asked.
+ */
+export declare const decisionLinkedMessageSchema: z.ZodObject<{
+    conversationId: z.ZodString;
+    messageId: z.ZodString;
+    tab: z.ZodEnum<{
+        BUILDER: "BUILDER";
+        HELPER: "HELPER";
+    }>;
+    timing: z.ZodEnum<{
+        AFTER_REQUEST: "AFTER_REQUEST";
+        BEFORE_REQUEST: "BEFORE_REQUEST";
+    }>;
+}, z.core.$strict>;
+/** Present only when the Builder mapped the learner's own chat messages to this resolution. */
+export declare const decisionChatSourceSchema: z.ZodObject<{
+    mappedBy: z.ZodLiteral<"BUILDER">;
+    userMessageIds: z.ZodArray<z.ZodString>;
+    linkedMessages: z.ZodOptional<z.ZodArray<z.ZodObject<{
+        conversationId: z.ZodString;
+        messageId: z.ZodString;
+        tab: z.ZodEnum<{
+            BUILDER: "BUILDER";
+            HELPER: "HELPER";
+        }>;
+        timing: z.ZodEnum<{
+            AFTER_REQUEST: "AFTER_REQUEST";
+            BEFORE_REQUEST: "BEFORE_REQUEST";
+        }>;
+    }, z.core.$strict>>>;
+    builderSummary: z.ZodOptional<z.ZodString>;
 }, z.core.$strict>;
 export declare const decisionResolutionSchema: z.ZodObject<{
     schemaVersion: z.ZodLiteral<1>;
@@ -472,6 +522,23 @@ export declare const decisionResolutionSchema: z.ZodObject<{
     customProposal: z.ZodOptional<z.ZodString>;
     rationale: z.ZodOptional<z.ZodString>;
     helperUsed: z.ZodBoolean;
+    chatSource: z.ZodOptional<z.ZodObject<{
+        mappedBy: z.ZodLiteral<"BUILDER">;
+        userMessageIds: z.ZodArray<z.ZodString>;
+        linkedMessages: z.ZodOptional<z.ZodArray<z.ZodObject<{
+            conversationId: z.ZodString;
+            messageId: z.ZodString;
+            tab: z.ZodEnum<{
+                BUILDER: "BUILDER";
+                HELPER: "HELPER";
+            }>;
+            timing: z.ZodEnum<{
+                AFTER_REQUEST: "AFTER_REQUEST";
+                BEFORE_REQUEST: "BEFORE_REQUEST";
+            }>;
+        }, z.core.$strict>>>;
+        builderSummary: z.ZodOptional<z.ZodString>;
+    }, z.core.$strict>>;
     resolvedAt: z.ZodISODateTime;
     source: z.ZodObject<{
         kind: z.ZodLiteral<"USER">;
@@ -608,6 +675,43 @@ export declare const builderApplyDecisionToolInputSchema: z.ZodObject<{
         nextActions: z.ZodArray<z.ZodString>;
     }, z.core.$strict>;
 }, z.core.$strict>;
+export declare const chatDecisionSelectionSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
+    kind: z.ZodLiteral<"OPTION">;
+    optionNumber: z.ZodInt;
+}, z.core.$strict>, z.ZodObject<{
+    kind: z.ZodLiteral<"RECOMMENDATION">;
+}, z.core.$strict>, z.ZodObject<{
+    kind: z.ZodLiteral<"CUSTOM">;
+    proposalQuote: z.ZodString;
+}, z.core.$strict>], "kind">;
+/** A verbatim excerpt of the learner's own chat message. Core locates the message by the quote. */
+export declare const chatDecisionCitationSchema: z.ZodObject<{
+    quote: z.ZodString;
+    messageId: z.ZodOptional<z.ZodString>;
+}, z.core.$strict>;
+export declare const builderResolveDecisionFromChatToolInputSchema: z.ZodObject<{
+    __tool_use_purpose: z.ZodOptional<z.ZodString>;
+    schemaVersion: z.ZodLiteral<1>;
+    projectId: z.ZodString;
+    taskId: z.ZodString;
+    decisionId: z.ZodString;
+    correlationId: z.ZodString;
+    idempotencyKey: z.ZodString;
+    selection: z.ZodDiscriminatedUnion<[z.ZodObject<{
+        kind: z.ZodLiteral<"OPTION">;
+        optionNumber: z.ZodInt;
+    }, z.core.$strict>, z.ZodObject<{
+        kind: z.ZodLiteral<"RECOMMENDATION">;
+    }, z.core.$strict>, z.ZodObject<{
+        kind: z.ZodLiteral<"CUSTOM">;
+        proposalQuote: z.ZodString;
+    }, z.core.$strict>], "kind">;
+    citedUserMessages: z.ZodArray<z.ZodObject<{
+        quote: z.ZodString;
+        messageId: z.ZodOptional<z.ZodString>;
+    }, z.core.$strict>>;
+    rationaleQuote: z.ZodOptional<z.ZodString>;
+}, z.core.$strict>;
 export declare const validationResultSchema: z.ZodObject<{
     name: z.ZodString;
     status: z.ZodEnum<{
@@ -655,6 +759,7 @@ export declare const taskCompletionReportSchema: z.ZodObject<{
     acceptanceResults: z.ZodArray<z.ZodObject<{
         criterionKey: z.ZodString;
         status: z.ZodEnum<{
+            CHANGED_BY_DECISION: "CHANGED_BY_DECISION";
             FAILED: "FAILED";
             PASSED: "PASSED";
         }>;
@@ -697,6 +802,7 @@ export declare const taskCompletionReportSchema: z.ZodObject<{
             kind: z.ZodLiteral<"EVENT">;
             eventId: z.ZodString;
         }, z.core.$strict>], "kind">>;
+        decisionId: z.ZodOptional<z.ZodString>;
     }, z.core.$strict>>;
     validationResults: z.ZodArray<z.ZodObject<{
         name: z.ZodString;
@@ -777,6 +883,7 @@ export declare const builderCompleteTaskToolInputSchema: z.ZodObject<{
         acceptanceResults: z.ZodArray<z.ZodObject<{
             criterionKey: z.ZodString;
             status: z.ZodEnum<{
+                CHANGED_BY_DECISION: "CHANGED_BY_DECISION";
                 FAILED: "FAILED";
                 PASSED: "PASSED";
             }>;
@@ -819,6 +926,7 @@ export declare const builderCompleteTaskToolInputSchema: z.ZodObject<{
                 kind: z.ZodLiteral<"EVENT">;
                 eventId: z.ZodString;
             }, z.core.$strict>], "kind">>;
+            decisionId: z.ZodOptional<z.ZodString>;
         }, z.core.$strict>>;
         validationResults: z.ZodArray<z.ZodObject<{
             name: z.ZodString;
@@ -891,3 +999,6 @@ export type BuilderUpdateLiveContextToolInput = z.infer<typeof builderUpdateLive
 export type BuilderRequestDecisionToolInput = z.infer<typeof builderRequestDecisionToolInputSchema>;
 export type BuilderApplyDecisionToolInput = z.infer<typeof builderApplyDecisionToolInputSchema>;
 export type BuilderCompleteTaskToolInput = z.infer<typeof builderCompleteTaskToolInputSchema>;
+export type DecisionChatSource = z.infer<typeof decisionChatSourceSchema>;
+export type ChatDecisionSelection = z.infer<typeof chatDecisionSelectionSchema>;
+export type ChatDecisionCitation = z.infer<typeof chatDecisionCitationSchema>;

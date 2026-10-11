@@ -86,6 +86,8 @@ export type NativeAnswerInput =
  * - `evidence/retry`: retry a failed analysis job (Req 10.5).
  * - `finalUpgrade/list`: list eligible final-upgrade candidates (Req 11.1).
  * - `finalUpgrade/prepare`: prepare a final-upgrade task (Req 11.2).
+ * - `nextMove/retry`: Kiro-native host only; generate the Next Move
+ *   suggestions again after both automatic attempts failed.
  */
 export type AgentAction =
   | { readonly kind: "builder/start"; readonly message: string }
@@ -126,7 +128,8 @@ export type AgentAction =
       readonly expectedSourceTaskRevision: number;
       readonly personalizationTraceId: string;
       readonly userGoal: string;
-    };
+    }
+  | { readonly kind: "nextMove/retry" };
 
 /**
  * Host -> Webview: full hydrate or targeted patch + notices. Safe DTOs only.
@@ -323,6 +326,7 @@ export function parseAgentAction(raw: unknown): AgentAction | null {
         : null;
 
     case "finalUpgrade/list":
+    case "nextMove/retry":
       return { kind };
 
     case "finalUpgrade/prepare":

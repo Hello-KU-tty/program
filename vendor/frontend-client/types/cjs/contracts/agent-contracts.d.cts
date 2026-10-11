@@ -33,6 +33,18 @@ export declare const builderGetDecisionResultQuerySchema: z.ZodObject<{
     taskId: z.ZodString;
     decisionId: z.ZodString;
 }, z.core.$strict>;
+/** Small Builder read for chat hosts: revisions and the Decisions still waiting on someone. */
+export declare const builderGetBuildStatusQuerySchema: z.ZodObject<{
+    schemaVersion: z.ZodLiteral<1>;
+    correlationId: z.ZodString;
+    actor: z.ZodObject<{
+        kind: z.ZodLiteral<"AGENT">;
+        role: z.ZodLiteral<"BUILDER">;
+    }, z.core.$strict>;
+    kind: z.ZodLiteral<"BUILDER_GET_BUILD_STATUS">;
+    projectId: z.ZodString;
+    taskId: z.ZodString;
+}, z.core.$strict>;
 export declare const helperGetContextQuerySchema: z.ZodObject<{
     schemaVersion: z.ZodLiteral<1>;
     correlationId: z.ZodString;
@@ -657,6 +669,33 @@ export declare const builderApplyDecisionCommandSchema: z.ZodObject<{
         nextActions: z.ZodArray<z.ZodString>;
     }, z.core.$strict>;
 }, z.core.$strict>;
+export declare const builderResolveDecisionFromChatCommandSchema: z.ZodObject<{
+    projectId: z.ZodString;
+    taskId: z.ZodString;
+    decisionId: z.ZodString;
+    selection: z.ZodDiscriminatedUnion<[z.ZodObject<{
+        kind: z.ZodLiteral<"OPTION">;
+        optionNumber: z.ZodInt;
+    }, z.core.$strict>, z.ZodObject<{
+        kind: z.ZodLiteral<"RECOMMENDATION">;
+    }, z.core.$strict>, z.ZodObject<{
+        kind: z.ZodLiteral<"CUSTOM">;
+        proposalQuote: z.ZodString;
+    }, z.core.$strict>], "kind">;
+    citedUserMessages: z.ZodArray<z.ZodObject<{
+        quote: z.ZodString;
+        messageId: z.ZodOptional<z.ZodString>;
+    }, z.core.$strict>>;
+    rationaleQuote: z.ZodOptional<z.ZodString>;
+    schemaVersion: z.ZodLiteral<1>;
+    correlationId: z.ZodString;
+    actor: z.ZodObject<{
+        kind: z.ZodLiteral<"AGENT">;
+        role: z.ZodLiteral<"BUILDER">;
+    }, z.core.$strict>;
+    kind: z.ZodLiteral<"BUILDER_RESOLVE_DECISION_FROM_CHAT">;
+    idempotencyKey: z.ZodString;
+}, z.core.$strict>;
 export declare const builderCompleteTaskCommandSchema: z.ZodObject<{
     schemaVersion: z.ZodLiteral<1>;
     correlationId: z.ZodString;
@@ -677,6 +716,7 @@ export declare const builderCompleteTaskCommandSchema: z.ZodObject<{
         acceptanceResults: z.ZodArray<z.ZodObject<{
             criterionKey: z.ZodString;
             status: z.ZodEnum<{
+                CHANGED_BY_DECISION: "CHANGED_BY_DECISION";
                 FAILED: "FAILED";
                 PASSED: "PASSED";
             }>;
@@ -719,6 +759,7 @@ export declare const builderCompleteTaskCommandSchema: z.ZodObject<{
                 kind: z.ZodLiteral<"EVENT">;
                 eventId: z.ZodString;
             }, z.core.$strict>], "kind">>;
+            decisionId: z.ZodOptional<z.ZodString>;
         }, z.core.$strict>>;
         validationResults: z.ZodArray<z.ZodObject<{
             name: z.ZodString;
@@ -1334,6 +1375,16 @@ export declare const builderAgentRequestSchema: z.ZodDiscriminatedUnion<[z.ZodOb
         kind: z.ZodLiteral<"AGENT">;
         role: z.ZodLiteral<"BUILDER">;
     }, z.core.$strict>;
+    kind: z.ZodLiteral<"BUILDER_GET_BUILD_STATUS">;
+    projectId: z.ZodString;
+    taskId: z.ZodString;
+}, z.core.$strict>, z.ZodObject<{
+    schemaVersion: z.ZodLiteral<1>;
+    correlationId: z.ZodString;
+    actor: z.ZodObject<{
+        kind: z.ZodLiteral<"AGENT">;
+        role: z.ZodLiteral<"BUILDER">;
+    }, z.core.$strict>;
     kind: z.ZodLiteral<"BUILDER_START_TASK">;
     idempotencyKey: z.ZodString;
     projectId: z.ZodString;
@@ -1559,6 +1610,32 @@ export declare const builderAgentRequestSchema: z.ZodDiscriminatedUnion<[z.ZodOb
         nextActions: z.ZodArray<z.ZodString>;
     }, z.core.$strict>;
 }, z.core.$strict>, z.ZodObject<{
+    projectId: z.ZodString;
+    taskId: z.ZodString;
+    decisionId: z.ZodString;
+    selection: z.ZodDiscriminatedUnion<[z.ZodObject<{
+        kind: z.ZodLiteral<"OPTION">;
+        optionNumber: z.ZodInt;
+    }, z.core.$strict>, z.ZodObject<{
+        kind: z.ZodLiteral<"RECOMMENDATION">;
+    }, z.core.$strict>, z.ZodObject<{
+        kind: z.ZodLiteral<"CUSTOM">;
+        proposalQuote: z.ZodString;
+    }, z.core.$strict>], "kind">;
+    citedUserMessages: z.ZodArray<z.ZodObject<{
+        quote: z.ZodString;
+        messageId: z.ZodOptional<z.ZodString>;
+    }, z.core.$strict>>;
+    rationaleQuote: z.ZodOptional<z.ZodString>;
+    schemaVersion: z.ZodLiteral<1>;
+    correlationId: z.ZodString;
+    actor: z.ZodObject<{
+        kind: z.ZodLiteral<"AGENT">;
+        role: z.ZodLiteral<"BUILDER">;
+    }, z.core.$strict>;
+    kind: z.ZodLiteral<"BUILDER_RESOLVE_DECISION_FROM_CHAT">;
+    idempotencyKey: z.ZodString;
+}, z.core.$strict>, z.ZodObject<{
     schemaVersion: z.ZodLiteral<1>;
     correlationId: z.ZodString;
     actor: z.ZodObject<{
@@ -1578,6 +1655,7 @@ export declare const builderAgentRequestSchema: z.ZodDiscriminatedUnion<[z.ZodOb
         acceptanceResults: z.ZodArray<z.ZodObject<{
             criterionKey: z.ZodString;
             status: z.ZodEnum<{
+                CHANGED_BY_DECISION: "CHANGED_BY_DECISION";
                 FAILED: "FAILED";
                 PASSED: "PASSED";
             }>;
@@ -1620,6 +1698,7 @@ export declare const builderAgentRequestSchema: z.ZodDiscriminatedUnion<[z.ZodOb
                 kind: z.ZodLiteral<"EVENT">;
                 eventId: z.ZodString;
             }, z.core.$strict>], "kind">>;
+            decisionId: z.ZodOptional<z.ZodString>;
         }, z.core.$strict>>;
         validationResults: z.ZodArray<z.ZodObject<{
             name: z.ZodString;
@@ -1686,6 +1765,133 @@ export declare const builderAgentRequestSchema: z.ZodDiscriminatedUnion<[z.ZodOb
             REDACTED: "REDACTED";
             VERIFIED_REDACTED: "VERIFIED_REDACTED";
         }>;
+    }, z.core.$strict>;
+}, z.core.$strict>, z.ZodObject<{
+    schemaVersion: z.ZodLiteral<1>;
+    correlationId: z.ZodString;
+    actor: z.ZodObject<{
+        kind: z.ZodLiteral<"AGENT">;
+        role: z.ZodLiteral<"BUILDER">;
+    }, z.core.$strict>;
+    projectId: z.ZodString;
+    taskId: z.ZodString;
+    kind: z.ZodLiteral<"BUILDER_CHAT_CHECK_PROGRESS">;
+}, z.core.$strict>, z.ZodObject<{
+    schemaVersion: z.ZodLiteral<1>;
+    correlationId: z.ZodString;
+    actor: z.ZodObject<{
+        kind: z.ZodLiteral<"AGENT">;
+        role: z.ZodLiteral<"BUILDER">;
+    }, z.core.$strict>;
+    projectId: z.ZodString;
+    taskId: z.ZodString;
+    kind: z.ZodLiteral<"BUILDER_CHAT_SAVE_PROGRESS">;
+    idempotencyKey: z.ZodString;
+    note: z.ZodObject<{
+        kind: z.ZodEnum<{
+            DIRECTION_CHANGE: "DIRECTION_CHANGE";
+            ERROR_REPLAN: "ERROR_REPLAN";
+            PLAN: "PLAN";
+            TEST_START: "TEST_START";
+        }>;
+        summary: z.ZodString;
+        stage: z.ZodOptional<z.ZodString>;
+        changes: z.ZodOptional<z.ZodArray<z.ZodString>>;
+        nextSteps: z.ZodOptional<z.ZodArray<z.ZodString>>;
+        files: z.ZodOptional<z.ZodArray<z.ZodString>>;
+        concepts: z.ZodOptional<z.ZodArray<z.ZodString>>;
+        nextMove: z.ZodOptional<z.ZodPreprocess<z.ZodInt>>;
+    }, z.core.$strict>;
+}, z.core.$strict>, z.ZodObject<{
+    schemaVersion: z.ZodLiteral<1>;
+    correlationId: z.ZodString;
+    actor: z.ZodObject<{
+        kind: z.ZodLiteral<"AGENT">;
+        role: z.ZodLiteral<"BUILDER">;
+    }, z.core.$strict>;
+    projectId: z.ZodString;
+    taskId: z.ZodString;
+    kind: z.ZodLiteral<"BUILDER_CHAT_ASK_CHOICE">;
+    idempotencyKey: z.ZodString;
+    choice: z.ZodObject<{
+        category: z.ZodEnum<{
+            API_CONTRACT: "API_CONTRACT";
+            ARCHITECTURE: "ARCHITECTURE";
+            AUTHENTICATION: "AUTHENTICATION";
+            AUTHORIZATION: "AUTHORIZATION";
+            COST_DEPLOYMENT: "COST_DEPLOYMENT";
+            DATA_MODEL: "DATA_MODEL";
+            LEARNING_CONCEPT: "LEARNING_CONCEPT";
+            PRODUCT_BEHAVIOR: "PRODUCT_BEHAVIOR";
+            RETENTION_DELETION: "RETENTION_DELETION";
+            SECURITY_PRIVACY: "SECURITY_PRIVACY";
+        }>;
+        question: z.ZodString;
+        whyNow: z.ZodString;
+        options: z.ZodArray<z.ZodObject<{
+            label: z.ZodString;
+            description: z.ZodString;
+            tradeoffs: z.ZodOptional<z.ZodArray<z.ZodString>>;
+        }, z.core.$strict>>;
+        recommended: z.ZodInt;
+        recommendationReason: z.ZodString;
+        blocksWork: z.ZodBoolean;
+        blockingReason: z.ZodOptional<z.ZodString>;
+        concepts: z.ZodOptional<z.ZodArray<z.ZodString>>;
+        files: z.ZodOptional<z.ZodArray<z.ZodString>>;
+    }, z.core.$strict>;
+}, z.core.$strict>, z.ZodObject<{
+    schemaVersion: z.ZodLiteral<1>;
+    correlationId: z.ZodString;
+    actor: z.ZodObject<{
+        kind: z.ZodLiteral<"AGENT">;
+        role: z.ZodLiteral<"BUILDER">;
+    }, z.core.$strict>;
+    projectId: z.ZodString;
+    taskId: z.ZodString;
+    kind: z.ZodLiteral<"BUILDER_CHAT_SAVE_CHOICE">;
+    idempotencyKey: z.ZodString;
+    answer: z.ZodObject<{
+        decisionId: z.ZodOptional<z.ZodString>;
+        choice: z.ZodUnion<readonly [z.ZodPreprocess<z.ZodInt>, z.ZodLiteral<"recommended">, z.ZodLiteral<"custom">]>;
+        customSummary: z.ZodOptional<z.ZodString>;
+    }, z.core.$strict>;
+}, z.core.$strict>, z.ZodObject<{
+    schemaVersion: z.ZodLiteral<1>;
+    correlationId: z.ZodString;
+    actor: z.ZodObject<{
+        kind: z.ZodLiteral<"AGENT">;
+        role: z.ZodLiteral<"BUILDER">;
+    }, z.core.$strict>;
+    projectId: z.ZodString;
+    taskId: z.ZodString;
+    kind: z.ZodLiteral<"BUILDER_CHAT_FINISH_TASK">;
+    idempotencyKey: z.ZodString;
+    report: z.ZodObject<{
+        implemented: z.ZodArray<z.ZodString>;
+        acceptance: z.ZodArray<z.ZodObject<{
+            key: z.ZodString;
+            passed: z.ZodBoolean;
+            changedByDecisionId: z.ZodOptional<z.ZodString>;
+        }, z.core.$strict>>;
+        checks: z.ZodArray<z.ZodObject<{
+            name: z.ZodString;
+            passed: z.ZodBoolean;
+            summary: z.ZodString;
+        }, z.core.$strict>>;
+        decisionsApplied: z.ZodOptional<z.ZodArray<z.ZodObject<{
+            decisionId: z.ZodString;
+            how: z.ZodString;
+        }, z.core.$strict>>>;
+        concepts: z.ZodOptional<z.ZodArray<z.ZodObject<{
+            name: z.ZodString;
+            why: z.ZodString;
+            files: z.ZodOptional<z.ZodArray<z.ZodString>>;
+        }, z.core.$strict>>>;
+        deviations: z.ZodOptional<z.ZodArray<z.ZodString>>;
+        remaining: z.ZodOptional<z.ZodArray<z.ZodString>>;
+        limitations: z.ZodOptional<z.ZodArray<z.ZodString>>;
+        files: z.ZodOptional<z.ZodArray<z.ZodString>>;
     }, z.core.$strict>;
 }, z.core.$strict>], "kind">;
 export declare const helperAgentRequestSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
@@ -2259,6 +2465,16 @@ export declare const agentRequestSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         kind: z.ZodLiteral<"AGENT">;
         role: z.ZodLiteral<"BUILDER">;
     }, z.core.$strict>;
+    kind: z.ZodLiteral<"BUILDER_GET_BUILD_STATUS">;
+    projectId: z.ZodString;
+    taskId: z.ZodString;
+}, z.core.$strict>, z.ZodObject<{
+    schemaVersion: z.ZodLiteral<1>;
+    correlationId: z.ZodString;
+    actor: z.ZodObject<{
+        kind: z.ZodLiteral<"AGENT">;
+        role: z.ZodLiteral<"BUILDER">;
+    }, z.core.$strict>;
     kind: z.ZodLiteral<"BUILDER_START_TASK">;
     idempotencyKey: z.ZodString;
     projectId: z.ZodString;
@@ -2484,6 +2700,32 @@ export declare const agentRequestSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         nextActions: z.ZodArray<z.ZodString>;
     }, z.core.$strict>;
 }, z.core.$strict>, z.ZodObject<{
+    projectId: z.ZodString;
+    taskId: z.ZodString;
+    decisionId: z.ZodString;
+    selection: z.ZodDiscriminatedUnion<[z.ZodObject<{
+        kind: z.ZodLiteral<"OPTION">;
+        optionNumber: z.ZodInt;
+    }, z.core.$strict>, z.ZodObject<{
+        kind: z.ZodLiteral<"RECOMMENDATION">;
+    }, z.core.$strict>, z.ZodObject<{
+        kind: z.ZodLiteral<"CUSTOM">;
+        proposalQuote: z.ZodString;
+    }, z.core.$strict>], "kind">;
+    citedUserMessages: z.ZodArray<z.ZodObject<{
+        quote: z.ZodString;
+        messageId: z.ZodOptional<z.ZodString>;
+    }, z.core.$strict>>;
+    rationaleQuote: z.ZodOptional<z.ZodString>;
+    schemaVersion: z.ZodLiteral<1>;
+    correlationId: z.ZodString;
+    actor: z.ZodObject<{
+        kind: z.ZodLiteral<"AGENT">;
+        role: z.ZodLiteral<"BUILDER">;
+    }, z.core.$strict>;
+    kind: z.ZodLiteral<"BUILDER_RESOLVE_DECISION_FROM_CHAT">;
+    idempotencyKey: z.ZodString;
+}, z.core.$strict>, z.ZodObject<{
     schemaVersion: z.ZodLiteral<1>;
     correlationId: z.ZodString;
     actor: z.ZodObject<{
@@ -2503,6 +2745,7 @@ export declare const agentRequestSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         acceptanceResults: z.ZodArray<z.ZodObject<{
             criterionKey: z.ZodString;
             status: z.ZodEnum<{
+                CHANGED_BY_DECISION: "CHANGED_BY_DECISION";
                 FAILED: "FAILED";
                 PASSED: "PASSED";
             }>;
@@ -2545,6 +2788,7 @@ export declare const agentRequestSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
                 kind: z.ZodLiteral<"EVENT">;
                 eventId: z.ZodString;
             }, z.core.$strict>], "kind">>;
+            decisionId: z.ZodOptional<z.ZodString>;
         }, z.core.$strict>>;
         validationResults: z.ZodArray<z.ZodObject<{
             name: z.ZodString;
@@ -2611,6 +2855,133 @@ export declare const agentRequestSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
             REDACTED: "REDACTED";
             VERIFIED_REDACTED: "VERIFIED_REDACTED";
         }>;
+    }, z.core.$strict>;
+}, z.core.$strict>, z.ZodObject<{
+    schemaVersion: z.ZodLiteral<1>;
+    correlationId: z.ZodString;
+    actor: z.ZodObject<{
+        kind: z.ZodLiteral<"AGENT">;
+        role: z.ZodLiteral<"BUILDER">;
+    }, z.core.$strict>;
+    projectId: z.ZodString;
+    taskId: z.ZodString;
+    kind: z.ZodLiteral<"BUILDER_CHAT_CHECK_PROGRESS">;
+}, z.core.$strict>, z.ZodObject<{
+    schemaVersion: z.ZodLiteral<1>;
+    correlationId: z.ZodString;
+    actor: z.ZodObject<{
+        kind: z.ZodLiteral<"AGENT">;
+        role: z.ZodLiteral<"BUILDER">;
+    }, z.core.$strict>;
+    projectId: z.ZodString;
+    taskId: z.ZodString;
+    kind: z.ZodLiteral<"BUILDER_CHAT_SAVE_PROGRESS">;
+    idempotencyKey: z.ZodString;
+    note: z.ZodObject<{
+        kind: z.ZodEnum<{
+            DIRECTION_CHANGE: "DIRECTION_CHANGE";
+            ERROR_REPLAN: "ERROR_REPLAN";
+            PLAN: "PLAN";
+            TEST_START: "TEST_START";
+        }>;
+        summary: z.ZodString;
+        stage: z.ZodOptional<z.ZodString>;
+        changes: z.ZodOptional<z.ZodArray<z.ZodString>>;
+        nextSteps: z.ZodOptional<z.ZodArray<z.ZodString>>;
+        files: z.ZodOptional<z.ZodArray<z.ZodString>>;
+        concepts: z.ZodOptional<z.ZodArray<z.ZodString>>;
+        nextMove: z.ZodOptional<z.ZodPreprocess<z.ZodInt>>;
+    }, z.core.$strict>;
+}, z.core.$strict>, z.ZodObject<{
+    schemaVersion: z.ZodLiteral<1>;
+    correlationId: z.ZodString;
+    actor: z.ZodObject<{
+        kind: z.ZodLiteral<"AGENT">;
+        role: z.ZodLiteral<"BUILDER">;
+    }, z.core.$strict>;
+    projectId: z.ZodString;
+    taskId: z.ZodString;
+    kind: z.ZodLiteral<"BUILDER_CHAT_ASK_CHOICE">;
+    idempotencyKey: z.ZodString;
+    choice: z.ZodObject<{
+        category: z.ZodEnum<{
+            API_CONTRACT: "API_CONTRACT";
+            ARCHITECTURE: "ARCHITECTURE";
+            AUTHENTICATION: "AUTHENTICATION";
+            AUTHORIZATION: "AUTHORIZATION";
+            COST_DEPLOYMENT: "COST_DEPLOYMENT";
+            DATA_MODEL: "DATA_MODEL";
+            LEARNING_CONCEPT: "LEARNING_CONCEPT";
+            PRODUCT_BEHAVIOR: "PRODUCT_BEHAVIOR";
+            RETENTION_DELETION: "RETENTION_DELETION";
+            SECURITY_PRIVACY: "SECURITY_PRIVACY";
+        }>;
+        question: z.ZodString;
+        whyNow: z.ZodString;
+        options: z.ZodArray<z.ZodObject<{
+            label: z.ZodString;
+            description: z.ZodString;
+            tradeoffs: z.ZodOptional<z.ZodArray<z.ZodString>>;
+        }, z.core.$strict>>;
+        recommended: z.ZodInt;
+        recommendationReason: z.ZodString;
+        blocksWork: z.ZodBoolean;
+        blockingReason: z.ZodOptional<z.ZodString>;
+        concepts: z.ZodOptional<z.ZodArray<z.ZodString>>;
+        files: z.ZodOptional<z.ZodArray<z.ZodString>>;
+    }, z.core.$strict>;
+}, z.core.$strict>, z.ZodObject<{
+    schemaVersion: z.ZodLiteral<1>;
+    correlationId: z.ZodString;
+    actor: z.ZodObject<{
+        kind: z.ZodLiteral<"AGENT">;
+        role: z.ZodLiteral<"BUILDER">;
+    }, z.core.$strict>;
+    projectId: z.ZodString;
+    taskId: z.ZodString;
+    kind: z.ZodLiteral<"BUILDER_CHAT_SAVE_CHOICE">;
+    idempotencyKey: z.ZodString;
+    answer: z.ZodObject<{
+        decisionId: z.ZodOptional<z.ZodString>;
+        choice: z.ZodUnion<readonly [z.ZodPreprocess<z.ZodInt>, z.ZodLiteral<"recommended">, z.ZodLiteral<"custom">]>;
+        customSummary: z.ZodOptional<z.ZodString>;
+    }, z.core.$strict>;
+}, z.core.$strict>, z.ZodObject<{
+    schemaVersion: z.ZodLiteral<1>;
+    correlationId: z.ZodString;
+    actor: z.ZodObject<{
+        kind: z.ZodLiteral<"AGENT">;
+        role: z.ZodLiteral<"BUILDER">;
+    }, z.core.$strict>;
+    projectId: z.ZodString;
+    taskId: z.ZodString;
+    kind: z.ZodLiteral<"BUILDER_CHAT_FINISH_TASK">;
+    idempotencyKey: z.ZodString;
+    report: z.ZodObject<{
+        implemented: z.ZodArray<z.ZodString>;
+        acceptance: z.ZodArray<z.ZodObject<{
+            key: z.ZodString;
+            passed: z.ZodBoolean;
+            changedByDecisionId: z.ZodOptional<z.ZodString>;
+        }, z.core.$strict>>;
+        checks: z.ZodArray<z.ZodObject<{
+            name: z.ZodString;
+            passed: z.ZodBoolean;
+            summary: z.ZodString;
+        }, z.core.$strict>>;
+        decisionsApplied: z.ZodOptional<z.ZodArray<z.ZodObject<{
+            decisionId: z.ZodString;
+            how: z.ZodString;
+        }, z.core.$strict>>>;
+        concepts: z.ZodOptional<z.ZodArray<z.ZodObject<{
+            name: z.ZodString;
+            why: z.ZodString;
+            files: z.ZodOptional<z.ZodArray<z.ZodString>>;
+        }, z.core.$strict>>>;
+        deviations: z.ZodOptional<z.ZodArray<z.ZodString>>;
+        remaining: z.ZodOptional<z.ZodArray<z.ZodString>>;
+        limitations: z.ZodOptional<z.ZodArray<z.ZodString>>;
+        files: z.ZodOptional<z.ZodArray<z.ZodString>>;
     }, z.core.$strict>;
 }, z.core.$strict>, z.ZodObject<{
     schemaVersion: z.ZodLiteral<1>;
@@ -3486,6 +3857,16 @@ export declare const builderTaskContextSchema: z.ZodObject<{
             personalizationTraceId: z.ZodString;
             userGoal: z.ZodString;
         }, z.core.$strict>>;
+        nextMove: z.ZodOptional<z.ZodObject<{
+            nextMoveJobId: z.ZodString;
+            number: z.ZodInt;
+            title: z.ZodString;
+            summary: z.ZodString;
+            source: z.ZodObject<{
+                kind: z.ZodLiteral<"AGENT">;
+                role: z.ZodLiteral<"DISCOVERY">;
+            }, z.core.$strict>;
+        }, z.core.$strict>>;
         sequence: z.ZodInt;
         status: z.ZodEnum<{
             ACTIVE: "ACTIVE";
@@ -3517,6 +3898,7 @@ export declare const builderTaskContextSchema: z.ZodObject<{
         acceptanceResults: z.ZodArray<z.ZodObject<{
             criterionKey: z.ZodString;
             status: z.ZodEnum<{
+                CHANGED_BY_DECISION: "CHANGED_BY_DECISION";
                 FAILED: "FAILED";
                 PASSED: "PASSED";
             }>;
@@ -3559,6 +3941,7 @@ export declare const builderTaskContextSchema: z.ZodObject<{
                 kind: z.ZodLiteral<"EVENT">;
                 eventId: z.ZodString;
             }, z.core.$strict>], "kind">>;
+            decisionId: z.ZodOptional<z.ZodString>;
         }, z.core.$strict>>;
         validationResults: z.ZodArray<z.ZodObject<{
             name: z.ZodString;
@@ -3741,6 +4124,7 @@ export declare const builderTaskContextSchema: z.ZodObject<{
             eventId: z.ZodString;
         }, z.core.$strict>], "kind">>;
         independentWorkCanContinue: z.ZodBoolean;
+        replacesDecisionId: z.ZodOptional<z.ZodString>;
         requestedAt: z.ZodISODateTime;
         source: z.ZodObject<{
             kind: z.ZodLiteral<"AGENT">;
@@ -3769,6 +4153,23 @@ export declare const builderTaskContextSchema: z.ZodObject<{
         customProposal: z.ZodOptional<z.ZodString>;
         rationale: z.ZodOptional<z.ZodString>;
         helperUsed: z.ZodBoolean;
+        chatSource: z.ZodOptional<z.ZodObject<{
+            mappedBy: z.ZodLiteral<"BUILDER">;
+            userMessageIds: z.ZodArray<z.ZodString>;
+            linkedMessages: z.ZodOptional<z.ZodArray<z.ZodObject<{
+                conversationId: z.ZodString;
+                messageId: z.ZodString;
+                tab: z.ZodEnum<{
+                    BUILDER: "BUILDER";
+                    HELPER: "HELPER";
+                }>;
+                timing: z.ZodEnum<{
+                    AFTER_REQUEST: "AFTER_REQUEST";
+                    BEFORE_REQUEST: "BEFORE_REQUEST";
+                }>;
+            }, z.core.$strict>>>;
+            builderSummary: z.ZodOptional<z.ZodString>;
+        }, z.core.$strict>>;
         resolvedAt: z.ZodISODateTime;
         source: z.ZodObject<{
             kind: z.ZodLiteral<"USER">;
@@ -4135,6 +4536,16 @@ export declare const helperContextSchema: z.ZodObject<{
             personalizationTraceId: z.ZodString;
             userGoal: z.ZodString;
         }, z.core.$strict>>;
+        nextMove: z.ZodOptional<z.ZodObject<{
+            nextMoveJobId: z.ZodString;
+            number: z.ZodInt;
+            title: z.ZodString;
+            summary: z.ZodString;
+            source: z.ZodObject<{
+                kind: z.ZodLiteral<"AGENT">;
+                role: z.ZodLiteral<"DISCOVERY">;
+            }, z.core.$strict>;
+        }, z.core.$strict>>;
         sequence: z.ZodInt;
         status: z.ZodEnum<{
             ACTIVE: "ACTIVE";
@@ -4270,6 +4681,7 @@ export declare const helperContextSchema: z.ZodObject<{
             eventId: z.ZodString;
         }, z.core.$strict>], "kind">>;
         independentWorkCanContinue: z.ZodBoolean;
+        replacesDecisionId: z.ZodOptional<z.ZodString>;
         requestedAt: z.ZodISODateTime;
         source: z.ZodObject<{
             kind: z.ZodLiteral<"AGENT">;
@@ -4352,6 +4764,7 @@ export declare const helperContextSchema: z.ZodObject<{
             eventId: z.ZodString;
         }, z.core.$strict>], "kind">>;
         independentWorkCanContinue: z.ZodBoolean;
+        replacesDecisionId: z.ZodOptional<z.ZodString>;
         requestedAt: z.ZodISODateTime;
         source: z.ZodObject<{
             kind: z.ZodLiteral<"AGENT">;
@@ -4648,6 +5061,29 @@ export declare const helperContextSchema: z.ZodObject<{
             VERIFIED_REDACTED: "VERIFIED_REDACTED";
         }>;
     }, z.core.$strict>>;
+    nextMove: z.ZodOptional<z.ZodObject<{
+        status: z.ZodEnum<{
+            FAILED: "FAILED";
+            GENERATING: "GENERATING";
+            NONE: "NONE";
+            READY: "READY";
+        }>;
+        nextMoveJobId: z.ZodOptional<z.ZodString>;
+        jobRevision: z.ZodOptional<z.ZodInt>;
+        sourceTaskId: z.ZodOptional<z.ZodString>;
+        moves: z.ZodArray<z.ZodObject<{
+            title: z.ZodString;
+            summary: z.ZodString;
+            benefit: z.ZodString;
+            size: z.ZodEnum<{
+                MEDIUM: "MEDIUM";
+                SMALL: "SMALL";
+            }>;
+            number: z.ZodInt;
+        }, z.core.$strict>>;
+        failureCode: z.ZodOptional<z.ZodString>;
+        updatedAt: z.ZodOptional<z.ZodISODateTime>;
+    }, z.core.$strict>>;
     freshness: z.ZodObject<{
         currentContextVersion: z.ZodNullable<z.ZodInt>;
         observedContextVersion: z.ZodNullable<z.ZodInt>;
@@ -4799,6 +5235,11 @@ export declare const episodeContextSchema: z.ZodObject<{
             redactedExcerpt: z.ZodString;
         }, z.core.$strict>, z.ZodObject<{
             type: z.ZodLiteral<"HELPER_RESPONSE">;
+            conversationId: z.ZodString;
+            messageId: z.ZodString;
+            summary: z.ZodString;
+        }, z.core.$strict>, z.ZodObject<{
+            type: z.ZodLiteral<"BUILDER_CHAT_TURN">;
             conversationId: z.ZodString;
             messageId: z.ZodString;
             summary: z.ZodString;
@@ -5043,6 +5484,7 @@ export declare const episodeContextSchema: z.ZodObject<{
                 eventId: z.ZodString;
             }, z.core.$strict>], "kind">>;
             independentWorkCanContinue: z.ZodBoolean;
+            replacesDecisionId: z.ZodOptional<z.ZodString>;
             requestedAt: z.ZodISODateTime;
             source: z.ZodObject<{
                 kind: z.ZodLiteral<"AGENT">;
@@ -5071,6 +5513,23 @@ export declare const episodeContextSchema: z.ZodObject<{
             customProposal: z.ZodOptional<z.ZodString>;
             rationale: z.ZodOptional<z.ZodString>;
             helperUsed: z.ZodBoolean;
+            chatSource: z.ZodOptional<z.ZodObject<{
+                mappedBy: z.ZodLiteral<"BUILDER">;
+                userMessageIds: z.ZodArray<z.ZodString>;
+                linkedMessages: z.ZodOptional<z.ZodArray<z.ZodObject<{
+                    conversationId: z.ZodString;
+                    messageId: z.ZodString;
+                    tab: z.ZodEnum<{
+                        BUILDER: "BUILDER";
+                        HELPER: "HELPER";
+                    }>;
+                    timing: z.ZodEnum<{
+                        AFTER_REQUEST: "AFTER_REQUEST";
+                        BEFORE_REQUEST: "BEFORE_REQUEST";
+                    }>;
+                }, z.core.$strict>>>;
+                builderSummary: z.ZodOptional<z.ZodString>;
+            }, z.core.$strict>>;
             resolvedAt: z.ZodISODateTime;
             source: z.ZodObject<{
                 kind: z.ZodLiteral<"USER">;
@@ -5082,6 +5541,40 @@ export declare const episodeContextSchema: z.ZodObject<{
             }>;
         }, z.core.$strict>>;
     }, z.core.$strict>>;
+}, z.core.$strict>;
+export declare const buildStatusSchema: z.ZodObject<{
+    schemaVersion: z.ZodLiteral<1>;
+    correlationId: z.ZodString;
+    task: z.ZodObject<{
+        id: z.ZodString;
+        title: z.ZodString;
+        status: z.ZodEnum<{
+            ACTIVE: "ACTIVE";
+            BLOCKED: "BLOCKED";
+            CANCELLED: "CANCELLED";
+            COMPLETED: "COMPLETED";
+            FAILED: "FAILED";
+            PENDING: "PENDING";
+        }>;
+        revision: z.ZodInt;
+    }, z.core.$strict>;
+    contextVersion: z.ZodInt;
+    openDecisions: z.ZodArray<z.ZodObject<{
+        decisionId: z.ZodString;
+        question: z.ZodString;
+        state: z.ZodEnum<{
+            AWAITING_LEARNER: "AWAITING_LEARNER";
+            RESOLVED_NOT_APPLIED: "RESOLVED_NOT_APPLIED";
+        }>;
+        options: z.ZodArray<z.ZodObject<{
+            number: z.ZodInt;
+            label: z.ZodString;
+        }, z.core.$strict>>;
+        recommendedOptionNumber: z.ZodInt;
+        resolvedOptionNumber: z.ZodOptional<z.ZodInt>;
+        requestedAt: z.ZodISODateTime;
+    }, z.core.$strict>>;
+    omittedOpenDecisionCount: z.ZodInt;
 }, z.core.$strict>;
 export declare const decisionResultSchema: z.ZodObject<{
     schemaVersion: z.ZodLiteral<1>;
@@ -5157,6 +5650,7 @@ export declare const decisionResultSchema: z.ZodObject<{
             eventId: z.ZodString;
         }, z.core.$strict>], "kind">>;
         independentWorkCanContinue: z.ZodBoolean;
+        replacesDecisionId: z.ZodOptional<z.ZodString>;
         requestedAt: z.ZodISODateTime;
         source: z.ZodObject<{
             kind: z.ZodLiteral<"AGENT">;
@@ -5185,6 +5679,23 @@ export declare const decisionResultSchema: z.ZodObject<{
         customProposal: z.ZodOptional<z.ZodString>;
         rationale: z.ZodOptional<z.ZodString>;
         helperUsed: z.ZodBoolean;
+        chatSource: z.ZodOptional<z.ZodObject<{
+            mappedBy: z.ZodLiteral<"BUILDER">;
+            userMessageIds: z.ZodArray<z.ZodString>;
+            linkedMessages: z.ZodOptional<z.ZodArray<z.ZodObject<{
+                conversationId: z.ZodString;
+                messageId: z.ZodString;
+                tab: z.ZodEnum<{
+                    BUILDER: "BUILDER";
+                    HELPER: "HELPER";
+                }>;
+                timing: z.ZodEnum<{
+                    AFTER_REQUEST: "AFTER_REQUEST";
+                    BEFORE_REQUEST: "BEFORE_REQUEST";
+                }>;
+            }, z.core.$strict>>>;
+            builderSummary: z.ZodOptional<z.ZodString>;
+        }, z.core.$strict>>;
         resolvedAt: z.ZodISODateTime;
         source: z.ZodObject<{
             kind: z.ZodLiteral<"USER">;
@@ -5281,5 +5792,6 @@ export type HelperSourceExcerpt = z.infer<typeof helperSourceExcerptSchema>;
 export type HelperReferenceDetail = z.infer<typeof helperReferenceDetailSchema>;
 export type EpisodeContext = z.infer<typeof episodeContextSchema>;
 export type DecisionResult = z.infer<typeof decisionResultSchema>;
+export type BuildStatus = z.infer<typeof buildStatusSchema>;
 export type DecisionCommandReceipt = z.infer<typeof decisionCommandReceiptSchema>;
 export type CommandReceipt = z.infer<typeof commandReceiptSchema>;

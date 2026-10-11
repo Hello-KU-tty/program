@@ -38,6 +38,8 @@ import {
 } from "./support/fake-native-worker";
 import { FakeGlobalState } from "./support/fake-global-state";
 import { AgentDispatcher } from "../src/webview/agent/agent-dispatcher";
+import { FakeClock } from "./support/fake-clock";
+import { NEXT_MOVE_REFRESH_MS } from "../src/core/agent/agent-controller";
 
 const PROJECT_ID = "project_1";
 const TASK_ID = "task_1";
@@ -289,6 +291,7 @@ function buildHarness(options: {
   worker?: FakeNativeWorker;
   seedProjectId?: boolean;
   openInKiro?: AgentControllerDeps["openInKiro"];
+  clock?: FakeClock;
 } = {}) {
   const client = new FakeCoreClient(options.client ?? {});
   const worker = options.worker ?? new FakeNativeWorker();
@@ -322,6 +325,7 @@ function buildHarness(options: {
       openedUrls.push(u);
     },
     ...(options.openInKiro ? { openInKiro: options.openInKiro } : {}),
+    ...(options.clock ? { clock: options.clock } : {}),
   });
 
   return {
@@ -1002,5 +1006,151 @@ describe("AgentSurfaceController — Kiro-native host runs the Builder in Kiro c
     expect(other.controller.getViewModel().hostChat).toBeUndefined();
     await other.controller.openInKiro();
     expect(other.controller.getViewModel().notice).toBeNull();
+  });
+});
+
+describe("AgentSurfaceController — Kiro-native Next Move card", () => {
+  const JOB_ID = "next_move_job_1";
+  const moves = [1, 2, 3].map((number) => ({
+    number, title: `제안 ${number}`, summary: `설명 ${number}`, benefit: `좋아지는 점 ${number}`, size: "SMALL" as const,
+  }));
+  const none = { status: "NONE", moves: [] };
+  const job = (status: "GENERATING" | "READY" | "FAILED", extra: Record<string, unknown> = {}) => ({
+    status, nextMoveJobId: JOB_ID, jobRevision: status === "FAILED" ? 4 : 2, sourceTaskId: TASK_ID,
+    moves: status === "READY" ? moves : [], ...extra,
+  });
+  const kiroHarness = () => {
+    const clock = new FakeClock();
+    const h = buildHarness({ clock, openInKiro: async () => ({ projectId: PROJECT_ID, taskId: TASK_ID, openedNewWindow: false, folder: "REGISTERED" }) });
+    const reads = () => h.client.executeKinds.filter((kind) => kind === "UI_READ_NEXT_MOVE").length;
+    const script = (view: unknown) => { h.client.executeResultByKind.UI_READ_NEXT_MOVE = { resolve: view }; };
+    // Advance only once the next refresh is armed (it is armed after a read settles).
+    const tick = async (ms: number) => {
+      await vi.waitFor(() => expect(clock.pendingCount()).toBe(1));
+      clock.advance(ms);
+    };
+    return { ...h, clock, reads, script, tick };
+  };
+
+  it("follows a Task finished in Kiro chat from generating to three suggestions", async () => {
+    const h = kiroHarness();
+    h.script(none);
+    await h.controller.refreshProject();
+    await h.tick(0);
+    await vi.waitFor(() => expect(h.reads()).toBe(1));
+    expect(h.controller.getViewModel().nextMove).toEqual({ status: "NONE", moves: [], retrying: false });
+    const restores = vi.spyOn(h.client, "restoreProject");
+
+    // The Builder finished the Task in Kiro chat; the card is the first to know.
+    h.script(job("GENERATING"));
+    await h.tick(NEXT_MOVE_REFRESH_MS.IDLE);
+    await vi.waitFor(() => expect(h.controller.getViewModel().nextMove?.status).toBe("GENERATING"));
+    await vi.waitFor(() => expect(restores).toHaveBeenCalledTimes(1));
+
+    // Generating re-reads sooner, and suggestions arrive without concepts.
+    h.script(job("READY", { moves: moves.map((move) => ({ ...move, concepts: ["secret concept"] })) }));
+    await h.tick(NEXT_MOVE_REFRESH_MS.GENERATING);
+    await vi.waitFor(() => expect(h.controller.getViewModel().nextMove?.status).toBe("READY"));
+    expect(h.controller.getViewModel().nextMove?.moves).toEqual(moves);
+    expect(JSON.stringify(h.controller.getViewModel())).not.toContain("secret concept");
+    expect(JSON.stringify(h.controller.getViewModel())).not.toContain(JOB_ID);
+    // Same Task: no extra snapshot read; unchanged reads do not re-hydrate.
+    expect(restores).toHaveBeenCalledTimes(1);
+    const changes = h.changeCount();
+    await h.tick(NEXT_MOVE_REFRESH_MS.IDLE);
+    await vi.waitFor(() => expect(h.reads()).toBe(4));
+    expect(h.changeCount()).toBe(changes);
+
+    // A follow-up Task started from Kiro chat hides the card and refreshes the header.
+    h.script(none);
+    await h.tick(NEXT_MOVE_REFRESH_MS.IDLE);
+    await vi.waitFor(() => expect(h.controller.getViewModel().nextMove?.status).toBe("NONE"));
+    await vi.waitFor(() => expect(restores).toHaveBeenCalledTimes(2));
+    expect(h.client.executeKinds.filter((kind) => kind !== "UI_READ_NEXT_MOVE")).toEqual([]);
+  });
+
+  it("retries a failed job once with its id and revision, and only from the failure state", async () => {
+    const h = kiroHarness();
+    h.script(job("FAILED", { failureCode: "NEXT_MOVE_TIMEOUT" }));
+    await h.controller.refreshProject();
+    await h.tick(0);
+    await vi.waitFor(() => expect(h.controller.getViewModel().nextMove?.status).toBe("FAILED"));
+    const execute = vi.spyOn(h.client, "execute");
+    let release!: () => void;
+    h.client.executeResultByKind.UI_RETRY_NEXT_MOVE = { resolve: job("GENERATING", { jobRevision: 5 }) };
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    execute.mockImplementationOnce(async (request) => { await gate; return FakeCoreClient.prototype.execute.call(h.client, request); });
+    const first = h.controller.retryNextMove();
+    const second = h.controller.retryNextMove();
+    expect(h.controller.getViewModel().nextMove?.retrying).toBe(true);
+    release();
+    await Promise.all([first, second]);
+    const retries = execute.mock.calls.map(([request]) => request).filter((request) => request.kind === "UI_RETRY_NEXT_MOVE");
+    expect(retries).toHaveLength(1);
+    expect(retries[0]).toMatchObject({ projectId: PROJECT_ID, nextMoveJobId: JOB_ID, expectedJobRevision: 4 });
+    expect(h.controller.getViewModel().nextMove).toEqual({ status: "GENERATING", moves: [], retrying: false });
+    // Not failed any more: a stray retry does nothing.
+    await h.controller.retryNextMove();
+    expect(execute.mock.calls.filter(([request]) => request.kind === "UI_RETRY_NEXT_MOVE")).toHaveLength(1);
+  });
+
+  it("reports a refused retry with fixed guidance and keeps the failure card", async () => {
+    const h = kiroHarness();
+    h.script(job("FAILED"));
+    await h.controller.refreshProject();
+    await h.tick(0);
+    await vi.waitFor(() => expect(h.controller.getViewModel().nextMove?.status).toBe("FAILED"));
+    h.client.executeResultByKind.UI_RETRY_NEXT_MOVE = { throw: clientError("NEXT_MOVE_RETRY_NOT_ALLOWED", 400, "/Users/learner details") };
+    await h.controller.retryNextMove();
+    const vm = h.controller.getViewModel();
+    expect(vm.notice).toMatchObject({ kind: "error", code: "NEXT_MOVE_RETRY_NOT_ALLOWED" });
+    expect(vm.notice?.message).toContain("다시 만들지 못했어요");
+    expect(JSON.stringify(vm)).not.toContain("learner");
+    expect(vm.nextMove).toEqual({ status: "FAILED", moves: [], retrying: false });
+  });
+
+  it("keeps the last card when Core cannot be read, and stops after dispose", async () => {
+    const h = kiroHarness();
+    h.script(job("READY"));
+    await h.controller.refreshProject();
+    await h.tick(0);
+    await vi.waitFor(() => expect(h.controller.getViewModel().nextMove?.status).toBe("READY"));
+    h.client.executeResultByKind.UI_READ_NEXT_MOVE = { throw: clientError("CORE_UNAVAILABLE", 503) };
+    await h.tick(NEXT_MOVE_REFRESH_MS.IDLE);
+    await vi.waitFor(() => expect(h.reads()).toBe(2));
+    expect(h.controller.getViewModel().nextMove?.status).toBe("READY");
+    expect(h.controller.getViewModel().notice).toBeNull();
+    // Malformed views are ignored too.
+    h.script({ status: "SOMETHING", moves: [] });
+    await h.tick(NEXT_MOVE_REFRESH_MS.IDLE);
+    await vi.waitFor(() => expect(h.reads()).toBe(3));
+    expect(h.controller.getViewModel().nextMove?.status).toBe("READY");
+    h.controller.dispose();
+    h.clock.advance(NEXT_MOVE_REFRESH_MS.IDLE * 3 + 1);
+    await Promise.resolve();
+    expect(h.reads()).toBe(3);
+  });
+
+  it("starts over for another Project and never reads on other hosts", async () => {
+    const h = kiroHarness();
+    h.script(job("READY"));
+    await h.controller.refreshProject();
+    await h.tick(0);
+    await vi.waitFor(() => expect(h.controller.getViewModel().nextMove?.status).toBe("READY"));
+    h.script(none);
+    h.controller.bindProject("project_other");
+    expect(h.controller.getViewModel().nextMove).toEqual({ status: "NONE", moves: [], retrying: false });
+    await h.tick(0);
+    await vi.waitFor(() => expect(h.reads()).toBe(2));
+
+    const clock = new FakeClock();
+    const other = buildHarness({ clock });
+    await other.controller.refreshProject();
+    clock.advance(NEXT_MOVE_REFRESH_MS.IDLE * 3);
+    await Promise.resolve();
+    expect(other.client.executeKinds).not.toContain("UI_READ_NEXT_MOVE");
+    expect(other.controller.getViewModel().nextMove).toBeUndefined();
+    await other.controller.retryNextMove();
+    expect(other.client.executeKinds).not.toContain("UI_RETRY_NEXT_MOVE");
   });
 });

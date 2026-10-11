@@ -22,6 +22,7 @@ var dist_exports = {};
 __export(dist_exports, {
   ANALYSIS_MAX_ATTEMPTS: () => ANALYSIS_MAX_ATTEMPTS,
   ANALYSIS_SOFT_TIMEOUT_MS: () => ANALYSIS_SOFT_TIMEOUT_MS,
+  BUILDER_CHAT_TURN_MAX_CHARS: () => BUILDER_CHAT_TURN_MAX_CHARS,
   CREW_APP_VERSION: () => CREW_APP_VERSION,
   CREW_UI_PROTOCOL_VERSION: () => CREW_UI_PROTOCOL_VERSION,
   CURRENT_SCHEMA_VERSION: () => CURRENT_SCHEMA_VERSION,
@@ -32,6 +33,10 @@ __export(dist_exports, {
   LocalClientError: () => LocalClientError,
   LocalCoreClient: () => LocalCoreClient,
   LocalProgramAdapter: () => LocalProgramAdapter,
+  MAX_ACTIVE_DECISIONS: () => MAX_ACTIVE_DECISIONS,
+  NEXT_MOVE_COUNT: () => NEXT_MOVE_COUNT,
+  NEXT_MOVE_MAX_ATTEMPTS: () => NEXT_MOVE_MAX_ATTEMPTS,
+  NEXT_MOVE_SOFT_TIMEOUT_MS: () => NEXT_MOVE_SOFT_TIMEOUT_MS,
   acceptanceCriterionSchema: () => acceptanceCriterionSchema,
   acceptedEvidenceSchema: () => acceptedEvidenceSchema,
   activityEventSchema: () => activityEventSchema,
@@ -62,15 +67,29 @@ __export(dist_exports, {
   baselineResultIdSchema: () => baselineResultIdSchema,
   baselineResultSchema: () => baselineResultSchema,
   buildCheckpointSchema: () => buildCheckpointSchema,
+  buildStatusSchema: () => buildStatusSchema,
   builderAgentRequestSchema: () => builderAgentRequestSchema,
   builderApplyDecisionCommandSchema: () => builderApplyDecisionCommandSchema,
   builderApplyDecisionToolInputSchema: () => builderApplyDecisionToolInputSchema,
+  builderChatAskChoiceCommandSchema: () => builderChatAskChoiceCommandSchema,
+  builderChatAskChoiceReceiptSchema: () => builderChatAskChoiceReceiptSchema,
+  builderChatCheckProgressQuerySchema: () => builderChatCheckProgressQuerySchema,
+  builderChatFinishTaskCommandSchema: () => builderChatFinishTaskCommandSchema,
+  builderChatFinishTaskReceiptSchema: () => builderChatFinishTaskReceiptSchema,
+  builderChatProgressSchema: () => builderChatProgressSchema,
+  builderChatSaveChoiceCommandSchema: () => builderChatSaveChoiceCommandSchema,
+  builderChatSaveChoiceReceiptSchema: () => builderChatSaveChoiceReceiptSchema,
+  builderChatSaveProgressCommandSchema: () => builderChatSaveProgressCommandSchema,
+  builderChatSaveProgressReceiptSchema: () => builderChatSaveProgressReceiptSchema,
   builderCompleteTaskCommandSchema: () => builderCompleteTaskCommandSchema,
   builderCompleteTaskToolInputSchema: () => builderCompleteTaskToolInputSchema,
+  builderGetBuildStatusQuerySchema: () => builderGetBuildStatusQuerySchema,
   builderGetDecisionResultQuerySchema: () => builderGetDecisionResultQuerySchema,
   builderGetTaskQuerySchema: () => builderGetTaskQuerySchema,
   builderRequestDecisionCommandSchema: () => builderRequestDecisionCommandSchema,
   builderRequestDecisionToolInputSchema: () => builderRequestDecisionToolInputSchema,
+  builderResolveDecisionFromChatCommandSchema: () => builderResolveDecisionFromChatCommandSchema,
+  builderResolveDecisionFromChatToolInputSchema: () => builderResolveDecisionFromChatToolInputSchema,
   builderSessionBindingDescriptorSchema: () => builderSessionBindingDescriptorSchema,
   builderStartTaskCommandSchema: () => builderStartTaskCommandSchema,
   builderTaskContextSchema: () => builderTaskContextSchema,
@@ -96,6 +115,9 @@ __export(dist_exports, {
   candidateRoundSchema: () => candidateRoundSchema,
   candidateScopeSuggestionSchema: () => candidateScopeSuggestionSchema,
   canonicalConceptSchema: () => canonicalConceptSchema,
+  chatDecisionCitationSchema: () => chatDecisionCitationSchema,
+  chatDecisionSelectionSchema: () => chatDecisionSelectionSchema,
+  chatMessageReceiptSchema: () => chatMessageReceiptSchema,
   classifyBuilderTurn: () => classifyBuilderTurn,
   classifyNativeWorkerStatus: () => classifyNativeWorkerStatus,
   codeReferenceSchema: () => codeReferenceSchema,
@@ -123,9 +145,11 @@ __export(dist_exports, {
   decisionApplicationIdSchema: () => decisionApplicationIdSchema,
   decisionApplicationSchema: () => decisionApplicationSchema,
   decisionCategorySchema: () => decisionCategorySchema,
+  decisionChatSourceSchema: () => decisionChatSourceSchema,
   decisionCommandReceiptSchema: () => decisionCommandReceiptSchema,
   decisionContextDraftSchema: () => decisionContextDraftSchema,
   decisionIdSchema: () => decisionIdSchema,
+  decisionLinkedMessageSchema: () => decisionLinkedMessageSchema,
   decisionOptionDraftSchema: () => decisionOptionDraftSchema,
   decisionOptionIdSchema: () => decisionOptionIdSchema,
   decisionOptionSchema: () => decisionOptionSchema,
@@ -206,8 +230,20 @@ __export(dist_exports, {
   helperSourceExcerptSchema: () => helperSourceExcerptSchema,
   idempotencyKeySchema: () => idempotencyKeySchema,
   isRunActive: () => isRunActive,
+  kiroChatAskChoiceSchema: () => kiroChatAskChoiceSchema,
+  kiroChatAskChoiceToolInputSchema: () => kiroChatAskChoiceToolInputSchema,
+  kiroChatCheckProgressToolInputSchema: () => kiroChatCheckProgressToolInputSchema,
+  kiroChatChoiceOptionSchema: () => kiroChatChoiceOptionSchema,
+  kiroChatFinishTaskSchema: () => kiroChatFinishTaskSchema,
+  kiroChatFinishTaskToolInputSchema: () => kiroChatFinishTaskToolInputSchema,
+  kiroChatProgressKindSchema: () => kiroChatProgressKindSchema,
+  kiroChatProgressNoteSchema: () => kiroChatProgressNoteSchema,
+  kiroChatSaveChoiceSchema: () => kiroChatSaveChoiceSchema,
+  kiroChatSaveChoiceToolInputSchema: () => kiroChatSaveChoiceToolInputSchema,
+  kiroChatSaveProgressToolInputSchema: () => kiroChatSaveProgressToolInputSchema,
   labelSchema: () => labelSchema,
   learnerLevelSchema: () => learnerLevelSchema,
+  learnerProfileViewSchema: () => learnerProfileViewSchema,
   learningScopeCategorySchema: () => learningScopeCategorySchema,
   learningScopeItemSchema: () => learningScopeItemSchema,
   learningSpecConfirmationSchema: () => learningSpecConfirmationSchema,
@@ -231,6 +267,23 @@ __export(dist_exports, {
   misconceptionIssueIdSchema: () => misconceptionIssueIdSchema,
   misconceptionIssueSchema: () => misconceptionIssueSchema,
   misconceptionProposalSchema: () => misconceptionProposalSchema,
+  nextMoveClaimJobCommandSchema: () => nextMoveClaimJobCommandSchema,
+  nextMoveContextSchema: () => nextMoveContextSchema,
+  nextMoveFailAttemptCommandSchema: () => nextMoveFailAttemptCommandSchema,
+  nextMoveGetContextQuerySchema: () => nextMoveGetContextQuerySchema,
+  nextMoveJobIdSchema: () => nextMoveJobIdSchema,
+  nextMoveJobSchema: () => nextMoveJobSchema,
+  nextMoveJobStatusSchema: () => nextMoveJobStatusSchema,
+  nextMoveListPendingQuerySchema: () => nextMoveListPendingQuerySchema,
+  nextMoveProposalSchema: () => nextMoveProposalSchema,
+  nextMoveRecoverExpiredCommandSchema: () => nextMoveRecoverExpiredCommandSchema,
+  nextMoveRuntimeRequestSchema: () => nextMoveRuntimeRequestSchema,
+  nextMoveSchema: () => nextMoveSchema,
+  nextMoveSemanticResultSchema: () => nextMoveSemanticResultSchema,
+  nextMoveSizeSchema: () => nextMoveSizeSchema,
+  nextMoveSubmitResultCommandSchema: () => nextMoveSubmitResultCommandSchema,
+  nextMoveViewSchema: () => nextMoveViewSchema,
+  nextMoveViewStatusSchema: () => nextMoveViewStatusSchema,
   nonEmptyTextSchema: () => nonEmptyTextSchema,
   operationErrorCategorySchema: () => operationErrorCategorySchema,
   operationErrorSchema: () => operationErrorSchema,
@@ -277,12 +330,17 @@ __export(dist_exports, {
   uiPrepareFollowUpTaskCommandSchema: () => uiPrepareFollowUpTaskCommandSchema,
   uiReadAnalysisJobsQuerySchema: () => uiReadAnalysisJobsQuerySchema,
   uiReadEvidenceTraceQuerySchema: () => uiReadEvidenceTraceQuerySchema,
+  uiReadLearnerProfileQuerySchema: () => uiReadLearnerProfileQuerySchema,
+  uiReadNextMoveQuerySchema: () => uiReadNextMoveQuerySchema,
+  uiRecordBuilderChatTurnCommandSchema: () => uiRecordBuilderChatTurnCommandSchema,
+  uiRecordChatMessageCommandSchema: () => uiRecordChatMessageCommandSchema,
   uiRecordDiscoveryFeedbackCommandSchema: () => uiRecordDiscoveryFeedbackCommandSchema,
   uiRecordHelperExchangeCommandSchema: () => uiRecordHelperExchangeCommandSchema,
   uiRequestSchema: () => uiRequestSchema,
   uiResolveDecisionCommandSchema: () => uiResolveDecisionCommandSchema,
   uiRestoreProjectSessionQuerySchema: () => uiRestoreProjectSessionQuerySchema,
   uiRetryAnalysisCommandSchema: () => uiRetryAnalysisCommandSchema,
+  uiRetryNextMoveCommandSchema: () => uiRetryNextMoveCommandSchema,
   uiReturnToDiscoveryCommandSchema: () => uiReturnToDiscoveryCommandSchema,
   uiStartDiscoveryCommandSchema: () => uiStartDiscoveryCommandSchema,
   uiUpdateLearningSpecCommandSchema: () => uiUpdateLearningSpecCommandSchema,
@@ -334,6 +392,7 @@ var diffIdSchema = prefixedUuidSchema("diff");
 var eventIdSchema = prefixedUuidSchema("event");
 var episodeIdSchema = prefixedUuidSchema("episode");
 var analysisJobIdSchema = prefixedUuidSchema("analysis_job");
+var nextMoveJobIdSchema = prefixedUuidSchema("next_move_job");
 var conceptIdSchema = prefixedUuidSchema("concept");
 var aliasProposalIdSchema = prefixedUuidSchema("alias_proposal");
 var evidenceProposalIdSchema = prefixedUuidSchema("evidence_proposal");
@@ -468,6 +527,7 @@ var contextualSourceReferenceSchema = import_zod2.z.discriminatedUnion("kind", [
 ]);
 
 // packages/contracts/dist/activity.js
+var BUILDER_CHAT_TURN_MAX_CHARS = 1e3;
 var activityPayloadSchema = import_zod3.z.discriminatedUnion("type", [
   import_zod3.z.strictObject({ type: import_zod3.z.literal("TASK_STARTED"), taskId: taskIdSchema }),
   import_zod3.z.strictObject({
@@ -492,6 +552,14 @@ var activityPayloadSchema = import_zod3.z.discriminatedUnion("type", [
     conversationId: conversationIdSchema,
     messageId: messageIdSchema,
     summary: shortTextSchema
+  }),
+  // The Builder's chat reply at the end of a Kiro turn (K10). Agent-authored context for the
+  // Analyst; it can never be a direct user Evidence source.
+  import_zod3.z.strictObject({
+    type: import_zod3.z.literal("BUILDER_CHAT_TURN"),
+    conversationId: conversationIdSchema,
+    messageId: messageIdSchema,
+    summary: nonEmptyTextSchema.max(BUILDER_CHAT_TURN_MAX_CHARS)
   }),
   import_zod3.z.strictObject({ type: import_zod3.z.literal("DECISION_REQUESTED"), decisionId: decisionIdSchema }),
   import_zod3.z.strictObject({
@@ -539,6 +607,13 @@ var activityEventSchema = import_zod3.z.strictObject({
       code: "custom",
       path: ["actor"],
       message: "HELPER_RESPONSE must be authored by the Helper Agent"
+    });
+  }
+  if (event.payload.type === "BUILDER_CHAT_TURN" && (event.actor.kind !== "AGENT" || event.actor.role !== "BUILDER")) {
+    context.addIssue({
+      code: "custom",
+      path: ["actor"],
+      message: "BUILDER_CHAT_TURN must be authored by the Builder Agent"
     });
   }
 });
@@ -598,6 +673,9 @@ var episodeSchema = import_zod3.z.strictObject({
     });
   }
 });
+
+// packages/contracts/dist/agent-contracts.js
+var import_zod12 = require("zod");
 
 // packages/contracts/dist/analysis.js
 var import_zod5 = require("zod");
@@ -819,6 +897,7 @@ var evidenceDecisionSchema = import_zod4.z.strictObject({
     "OVERSTATED_MAXIMUM_STATE",
     "STALE_EPISODE_REVISION",
     "DUPLICATE_PROPOSAL",
+    "DUPLICATE_USER_SOURCE",
     "INVALID_REFERENCE",
     "INVALID_STATE_TRANSITION",
     "MISCONCEPTION_ISSUE_NOT_FOUND"
@@ -1108,11 +1187,9 @@ var analysisRuntimeRequestSchema = import_zod5.z.discriminatedUnion("kind", [
   analysisSubmitResultCommandSchema
 ]);
 
-// packages/contracts/dist/agent-contracts.js
-var import_zod10 = require("zod");
-
 // packages/contracts/dist/build.js
 var import_zod6 = require("zod");
+var MAX_ACTIVE_DECISIONS = 30;
 var builderTaskStatusSchema = import_zod6.z.enum([
   "PENDING",
   "ACTIVE",
@@ -1146,6 +1223,14 @@ var builderTaskSchema = import_zod6.z.strictObject({
     personalizationTraceId: personalizationTraceIdSchema,
     userGoal: nonEmptyTextSchema
   }).optional(),
+  /** The Next Move suggestion (Agent-authored) the learner chose in chat to start this Task. */
+  nextMove: import_zod6.z.strictObject({
+    nextMoveJobId: nextMoveJobIdSchema,
+    number: import_zod6.z.int().min(1).max(3),
+    title: labelSchema,
+    summary: nonEmptyTextSchema,
+    source: import_zod6.z.strictObject({ kind: import_zod6.z.literal("AGENT"), role: import_zod6.z.literal("DISCOVERY") })
+  }).optional(),
   sequence: import_zod6.z.int().positive(),
   status: builderTaskStatusSchema,
   createdAt: utcTimestampSchema,
@@ -1174,7 +1259,7 @@ var liveProjectContextSchema = import_zod6.z.strictObject({
   stage: labelSchema,
   currentGoal: nonEmptyTextSchema,
   recentChanges: import_zod6.z.array(shortTextSchema).max(30),
-  activeDecisionIds: import_zod6.z.array(decisionIdSchema).max(10),
+  activeDecisionIds: import_zod6.z.array(decisionIdSchema).max(MAX_ACTIVE_DECISIONS),
   activeConceptNames: import_zod6.z.array(labelSchema).max(20),
   relatedFiles: import_zod6.z.array(codeReferenceSchema).max(30),
   nextActions: import_zod6.z.array(shortTextSchema).max(20),
@@ -1250,7 +1335,7 @@ var builderUpdateLiveContextToolInputSchema = import_zod6.z.strictObject({
   stage: labelSchema,
   currentGoal: nonEmptyTextSchema,
   recentChanges: import_zod6.z.array(shortTextSchema).max(30),
-  activeDecisionIds: import_zod6.z.array(decisionIdSchema).max(10),
+  activeDecisionIds: import_zod6.z.array(decisionIdSchema).max(MAX_ACTIVE_DECISIONS),
   activeConceptNames: import_zod6.z.array(labelSchema).max(20),
   relatedFiles: import_zod6.z.array(codeReferenceSchema).max(30),
   nextActions: import_zod6.z.array(shortTextSchema).max(20),
@@ -1337,10 +1422,22 @@ var decisionRequestSchema = import_zod6.z.strictObject({
   relatedConceptNames: import_zod6.z.array(labelSchema).max(12),
   sourceReferences: import_zod6.z.array(contextualSourceReferenceSchema).max(30),
   independentWorkCanContinue: import_zod6.z.boolean(),
+  /**
+   * Set when the learner changed an earlier choice in chat: Core reopens the same question as
+   * this Decision and resolves it with the new choice, keeping the earlier one as history.
+   */
+  replacesDecisionId: decisionIdSchema.optional(),
   requestedAt: utcTimestampSchema,
   source: import_zod6.z.strictObject({ kind: import_zod6.z.literal("AGENT"), role: import_zod6.z.literal("BUILDER") }),
   redactionStatus: redactionStatusSchema
 }).superRefine((request, context) => {
+  if (request.replacesDecisionId === request.id) {
+    context.addIssue({
+      code: "custom",
+      path: ["replacesDecisionId"],
+      message: "A Decision cannot replace itself"
+    });
+  }
   const optionIds = new Set(request.options.map((option) => option.id));
   if (optionIds.size !== request.options.length) {
     context.addIssue({
@@ -1357,6 +1454,20 @@ var decisionRequestSchema = import_zod6.z.strictObject({
     });
   }
 });
+var decisionLinkedMessageSchema = import_zod6.z.strictObject({
+  conversationId: conversationIdSchema,
+  messageId: messageIdSchema,
+  tab: import_zod6.z.enum(["BUILDER", "HELPER"]),
+  timing: import_zod6.z.enum(["BEFORE_REQUEST", "AFTER_REQUEST"])
+});
+var decisionChatSourceSchema = import_zod6.z.strictObject({
+  mappedBy: import_zod6.z.literal("BUILDER"),
+  userMessageIds: import_zod6.z.array(messageIdSchema).min(1).max(5),
+  /** Kiro chat (K10): every learner message Core linked, Builder and Helper tabs, at most 20. */
+  linkedMessages: import_zod6.z.array(decisionLinkedMessageSchema).max(20).optional(),
+  /** Kiro chat (K10): the Builder's own summary of a custom idea. Agent-authored, not Evidence. */
+  builderSummary: nonEmptyTextSchema.optional()
+});
 var decisionResolutionSchema = import_zod6.z.strictObject({
   schemaVersion: schemaVersionSchema,
   id: decisionResolutionIdSchema,
@@ -1370,6 +1481,7 @@ var decisionResolutionSchema = import_zod6.z.strictObject({
   customProposal: nonEmptyTextSchema.optional(),
   rationale: nonEmptyTextSchema.optional(),
   helperUsed: import_zod6.z.boolean(),
+  chatSource: decisionChatSourceSchema.optional(),
   resolvedAt: utcTimestampSchema,
   source: import_zod6.z.strictObject({ kind: import_zod6.z.literal("USER") }),
   redactionStatus: redactionStatusSchema
@@ -1420,6 +1532,29 @@ var builderApplyDecisionToolInputSchema = import_zod6.z.strictObject({
   sourceReferences: import_zod6.z.array(contextualSourceReferenceSchema).max(30),
   context: decisionContextDraftSchema.omit({ blockingReason: true })
 });
+var chatDecisionSelectionSchema = import_zod6.z.discriminatedUnion("kind", [
+  // Options are presented to the learner in request order, numbered from 1.
+  import_zod6.z.strictObject({ kind: import_zod6.z.literal("OPTION"), optionNumber: import_zod6.z.int().min(1).max(6) }),
+  import_zod6.z.strictObject({ kind: import_zod6.z.literal("RECOMMENDATION") }),
+  import_zod6.z.strictObject({ kind: import_zod6.z.literal("CUSTOM"), proposalQuote: nonEmptyTextSchema })
+]);
+var chatDecisionCitationSchema = import_zod6.z.strictObject({
+  quote: nonEmptyTextSchema.refine((quote) => quote.replace(/\s/g, "").length >= 2, "A cited quote needs at least two non-space characters"),
+  messageId: messageIdSchema.optional()
+});
+var chatDecisionCitationsSchema = import_zod6.z.array(chatDecisionCitationSchema).min(1).max(5).refine((citations) => new Set(citations.map((citation) => citation.messageId ?? `quote:${citation.quote}`)).size === citations.length, "Each citation must be distinct");
+var builderResolveDecisionFromChatToolInputSchema = import_zod6.z.strictObject({
+  __tool_use_purpose: nonEmptyTextSchema.optional(),
+  schemaVersion: schemaVersionSchema,
+  projectId: projectIdSchema,
+  taskId: taskIdSchema,
+  decisionId: decisionIdSchema,
+  correlationId: correlationIdSchema,
+  idempotencyKey: idempotencyKeySchema,
+  selection: chatDecisionSelectionSchema,
+  citedUserMessages: chatDecisionCitationsSchema,
+  rationaleQuote: nonEmptyTextSchema.optional()
+});
 var validationResultSchema = import_zod6.z.strictObject({
   name: labelSchema,
   status: import_zod6.z.enum(["PASSED", "FAILED", "NOT_RUN"]),
@@ -1443,8 +1578,13 @@ var taskCompletionReportSchema = import_zod6.z.strictObject({
   implementedFeatures: import_zod6.z.array(nonEmptyTextSchema).min(1).max(40),
   acceptanceResults: import_zod6.z.array(import_zod6.z.strictObject({
     criterionKey: import_zod6.z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/),
-    status: import_zod6.z.enum(["PASSED", "FAILED"]),
-    evidence: import_zod6.z.array(contextualSourceReferenceSchema).max(20)
+    // CHANGED_BY_DECISION: the learner's own Decision changed this criterion (FR-BLD-007).
+    status: import_zod6.z.enum(["PASSED", "FAILED", "CHANGED_BY_DECISION"]),
+    evidence: import_zod6.z.array(contextualSourceReferenceSchema).max(20),
+    decisionId: decisionIdSchema.optional()
+  }).refine((result) => result.status === "CHANGED_BY_DECISION" === (result.decisionId !== void 0), {
+    path: ["decisionId"],
+    message: "Only a criterion changed by a Decision names that Decision"
   })),
   validationResults: import_zod6.z.array(validationResultSchema).max(40),
   conceptUsage: import_zod6.z.array(conceptUsageReportSchema).max(30),
@@ -1844,6 +1984,12 @@ var discoveryFeedbackSchema = import_zod7.z.strictObject({
   }
 });
 
+// packages/contracts/dist/kiro-chat.js
+var import_zod10 = require("zod");
+
+// packages/contracts/dist/next-move.js
+var import_zod9 = require("zod");
+
 // packages/contracts/dist/learning-spec.js
 var import_zod8 = require("zod");
 var learningScopeItemSchema = import_zod8.z.strictObject({
@@ -1976,55 +2122,401 @@ var learningSpecRevisionSchema = import_zod8.z.strictObject({
   requireAllScopeCategories(spec, context);
 });
 
+// packages/contracts/dist/next-move.js
+var NEXT_MOVE_COUNT = 3;
+var NEXT_MOVE_MAX_ATTEMPTS = 2;
+var NEXT_MOVE_SOFT_TIMEOUT_MS = 12e4;
+var nextMoveSizeSchema = import_zod9.z.enum(["SMALL", "MEDIUM"]);
+var moveContent = {
+  title: import_zod9.z.string().trim().min(1).max(24),
+  summary: import_zod9.z.string().trim().min(1).max(64),
+  benefit: import_zod9.z.string().trim().min(1).max(48),
+  size: nextMoveSizeSchema
+};
+var nextMoveProposalSchema = import_zod9.z.strictObject({
+  ...moveContent,
+  /** Concepts this suggestion would naturally use; kept as provenance, never shown or scored. */
+  concepts: import_zod9.z.array(labelSchema).max(5)
+});
+var nextMoveSemanticResultSchema = import_zod9.z.strictObject({
+  moves: import_zod9.z.array(nextMoveProposalSchema).length(NEXT_MOVE_COUNT)
+});
+var nextMoveSchema = nextMoveProposalSchema.extend({
+  number: import_zod9.z.int().min(1).max(NEXT_MOVE_COUNT)
+});
+var nextMoveJobStatusSchema = import_zod9.z.enum(["PENDING", "RUNNING", "SUCCEEDED", "FAILED"]);
+var nextMoveJobSchema = import_zod9.z.strictObject({
+  schemaVersion: schemaVersionSchema,
+  id: nextMoveJobIdSchema,
+  projectId: projectIdSchema,
+  sourceTaskId: taskIdSchema,
+  correlationId: correlationIdSchema,
+  revision: entityRevisionSchema,
+  status: nextMoveJobStatusSchema,
+  attempt: import_zod9.z.int().min(0).max(NEXT_MOVE_MAX_ATTEMPTS),
+  maxAttempts: import_zod9.z.literal(NEXT_MOVE_MAX_ATTEMPTS),
+  timeoutMs: import_zod9.z.literal(NEXT_MOVE_SOFT_TIMEOUT_MS),
+  runtimeHandle: shortTextSchema.optional(),
+  deadlineAt: utcTimestampSchema.optional(),
+  lastFailure: analysisFailureSchema.optional(),
+  moves: import_zod9.z.array(nextMoveSchema).length(NEXT_MOVE_COUNT).optional(),
+  /** The Agent that wrote `moves`; present exactly when they are. */
+  author: import_zod9.z.strictObject({
+    kind: import_zod9.z.literal("AGENT"),
+    role: import_zod9.z.literal("DISCOVERY"),
+    promptVersion: import_zod9.z.string().regex(/^\d+\.\d+\.\d+$/)
+  }).optional(),
+  createdAt: utcTimestampSchema,
+  updatedAt: utcTimestampSchema,
+  startedAt: utcTimestampSchema.optional(),
+  completedAt: utcTimestampSchema.optional(),
+  source: import_zod9.z.strictObject({ kind: import_zod9.z.literal("CORE") }),
+  redactionStatus: redactionStatusSchema
+}).superRefine((job, context) => {
+  const issue = (message) => context.addIssue({ code: "custom", message });
+  if (job.status === "RUNNING") {
+    if (job.attempt < 1 || job.startedAt === void 0 || job.deadlineAt === void 0)
+      issue("Running Next Move Job requires an attempt, start time and deadline");
+    if (job.completedAt !== void 0)
+      issue("Running Next Move Job cannot be completed");
+  } else if (job.deadlineAt !== void 0 || job.runtimeHandle !== void 0) {
+    issue("Only a running Next Move Job may retain runtime attempt fields");
+  }
+  const terminal = job.status === "SUCCEEDED" || job.status === "FAILED";
+  if (terminal && (job.attempt < 1 || job.completedAt === void 0))
+    issue("Terminal Next Move Job requires an attempted and completed result");
+  if (job.status === "PENDING" && job.completedAt !== void 0)
+    issue("Pending Next Move Job cannot be completed");
+  if (job.status === "FAILED" && job.lastFailure === void 0)
+    issue("Failed Next Move Job requires failure details");
+  const hasMoves = job.moves !== void 0;
+  if (hasMoves !== (job.status === "SUCCEEDED"))
+    issue("Only a succeeded Next Move Job has suggestions, and it must have them");
+  if (hasMoves !== (job.author !== void 0))
+    issue("Next Move suggestions require their Agent author");
+  if (job.moves?.some((move, index) => move.number !== index + 1))
+    issue("Next Move suggestions are numbered 1 to 3 in order");
+});
+var nextMoveContextSchema = import_zod9.z.strictObject({
+  schemaVersion: schemaVersionSchema,
+  correlationId: correlationIdSchema,
+  nextMoveJobId: nextMoveJobIdSchema,
+  projectTitle: labelSchema,
+  learningSpec: learningSpecRevisionSchema,
+  /** Finished and earlier Tasks of this project, oldest first, ending with the source Task. */
+  tasks: import_zod9.z.array(import_zod9.z.strictObject({
+    sequence: import_zod9.z.int().positive(),
+    title: labelSchema,
+    goal: import_zod9.z.string().trim().min(1).max(4e3),
+    implemented: import_zod9.z.array(import_zod9.z.string().trim().min(1).max(4e3)).max(40),
+    remaining: import_zod9.z.array(import_zod9.z.string().trim().min(1).max(4e3)).max(30),
+    limitations: import_zod9.z.array(import_zod9.z.string().trim().min(1).max(4e3)).max(30),
+    /** The Next Move suggestion the learner started this Task from, if any. */
+    fromNextMove: import_zod9.z.strictObject({ title: import_zod9.z.string(), summary: import_zod9.z.string() }).optional()
+  })).min(1).max(20),
+  /** Core's learner-level summary from Concept State; a secondary signal only. */
+  learnerProfile: import_zod9.z.string().max(2e4).nullable()
+});
+var nextMoveViewStatusSchema = import_zod9.z.enum(["NONE", "GENERATING", "READY", "FAILED"]);
+var nextMoveViewSchema = import_zod9.z.strictObject({
+  status: nextMoveViewStatusSchema,
+  nextMoveJobId: nextMoveJobIdSchema.optional(),
+  jobRevision: entityRevisionSchema.optional(),
+  sourceTaskId: taskIdSchema.optional(),
+  moves: import_zod9.z.array(import_zod9.z.strictObject({ number: nextMoveSchema.shape.number, ...moveContent })).max(NEXT_MOVE_COUNT),
+  failureCode: analysisFailureSchema.shape.code.optional(),
+  updatedAt: utcTimestampSchema.optional()
+});
+var nextMoveRuntimeMetadata = {
+  schemaVersion: schemaVersionSchema,
+  correlationId: correlationIdSchema,
+  actor: import_zod9.z.strictObject({ kind: import_zod9.z.literal("KIRO_ADAPTER") })
+};
+var nextMoveJobTarget = {
+  projectId: projectIdSchema,
+  nextMoveJobId: nextMoveJobIdSchema,
+  expectedJobRevision: entityRevisionSchema
+};
+var nextMoveListPendingQuerySchema = import_zod9.z.strictObject({
+  ...nextMoveRuntimeMetadata,
+  kind: import_zod9.z.literal("NEXT_MOVE_LIST_PENDING"),
+  limit: import_zod9.z.int().min(1).max(100)
+});
+var nextMoveRecoverExpiredCommandSchema = import_zod9.z.strictObject({
+  ...nextMoveRuntimeMetadata,
+  kind: import_zod9.z.literal("NEXT_MOVE_RECOVER_EXPIRED"),
+  limit: import_zod9.z.int().min(1).max(100)
+});
+var nextMoveClaimJobCommandSchema = import_zod9.z.strictObject({
+  ...nextMoveRuntimeMetadata,
+  kind: import_zod9.z.literal("NEXT_MOVE_CLAIM_JOB"),
+  ...nextMoveJobTarget,
+  runtimeHandle: shortTextSchema
+});
+var nextMoveGetContextQuerySchema = import_zod9.z.strictObject({
+  ...nextMoveRuntimeMetadata,
+  kind: import_zod9.z.literal("NEXT_MOVE_GET_CONTEXT"),
+  ...nextMoveJobTarget
+});
+var nextMoveFailAttemptCommandSchema = import_zod9.z.strictObject({
+  ...nextMoveRuntimeMetadata,
+  kind: import_zod9.z.literal("NEXT_MOVE_FAIL_ATTEMPT"),
+  ...nextMoveJobTarget,
+  attempt: import_zod9.z.int().min(1).max(NEXT_MOVE_MAX_ATTEMPTS),
+  failure: analysisFailureSchema
+});
+var nextMoveSubmitResultCommandSchema = import_zod9.z.strictObject({
+  ...nextMoveRuntimeMetadata,
+  kind: import_zod9.z.literal("NEXT_MOVE_SUBMIT_RESULT"),
+  ...nextMoveJobTarget,
+  attempt: import_zod9.z.int().min(1).max(NEXT_MOVE_MAX_ATTEMPTS),
+  promptVersion: import_zod9.z.string().regex(/^\d+\.\d+\.\d+$/),
+  result: nextMoveSemanticResultSchema
+});
+var nextMoveRuntimeRequestSchema = import_zod9.z.discriminatedUnion("kind", [
+  nextMoveListPendingQuerySchema,
+  nextMoveRecoverExpiredCommandSchema,
+  nextMoveClaimJobCommandSchema,
+  nextMoveGetContextQuerySchema,
+  nextMoveFailAttemptCommandSchema,
+  nextMoveSubmitResultCommandSchema
+]);
+
+// packages/contracts/dist/kiro-chat.js
+var toolPurpose = { __tool_use_purpose: nonEmptyTextSchema.optional() };
+var filesSchema = (max) => import_zod10.z.array(relativePosixPathSchema).max(max);
+var kiroChatProgressKindSchema = import_zod10.z.enum([
+  "PLAN",
+  "DIRECTION_CHANGE",
+  "ERROR_REPLAN",
+  "TEST_START"
+]);
+var boundedNumberSchema = (max) => import_zod10.z.preprocess((value) => typeof value === "string" && /^\s*[1-9]\s*$/.test(value) ? Number(value) : value, import_zod10.z.int().min(1).max(max));
+var kiroChatProgressNoteSchema = import_zod10.z.strictObject({
+  kind: kiroChatProgressKindSchema,
+  summary: nonEmptyTextSchema,
+  stage: labelSchema.optional(),
+  changes: import_zod10.z.array(shortTextSchema).max(30).optional(),
+  nextSteps: import_zod10.z.array(shortTextSchema).max(20).optional(),
+  files: filesSchema(30).optional(),
+  concepts: import_zod10.z.array(labelSchema).max(20).optional(),
+  /** The Next Move number the learner chose after the Task was finished (SPEC FR-NXT-009). */
+  nextMove: boundedNumberSchema(NEXT_MOVE_COUNT).optional()
+});
+var kiroChatChoiceOptionSchema = import_zod10.z.strictObject({
+  label: labelSchema,
+  description: nonEmptyTextSchema,
+  tradeoffs: import_zod10.z.array(shortTextSchema).max(12).optional()
+});
+var kiroChatAskChoiceSchema = import_zod10.z.strictObject({
+  category: decisionCategorySchema,
+  question: nonEmptyTextSchema,
+  whyNow: nonEmptyTextSchema,
+  options: import_zod10.z.array(kiroChatChoiceOptionSchema).min(2).max(4),
+  recommended: import_zod10.z.int().min(1).max(4),
+  recommendationReason: nonEmptyTextSchema,
+  blocksWork: import_zod10.z.boolean(),
+  blockingReason: nonEmptyTextSchema.optional(),
+  concepts: import_zod10.z.array(labelSchema).max(12).optional(),
+  files: filesSchema(30).optional()
+}).refine((choice) => choice.recommended <= choice.options.length, {
+  path: ["recommended"],
+  message: "The recommended option number must be one of the options"
+});
+var optionNumberSchema = boundedNumberSchema(6);
+var kiroChatSaveChoiceSchema = import_zod10.z.strictObject({
+  decisionId: decisionIdSchema.optional(),
+  choice: import_zod10.z.union([optionNumberSchema, import_zod10.z.literal("recommended"), import_zod10.z.literal("custom")]),
+  customSummary: nonEmptyTextSchema.optional()
+}).refine((answer) => answer.choice !== "custom" || answer.customSummary !== void 0, {
+  path: ["customSummary"],
+  message: "A custom choice needs a short summary of the learner's idea"
+});
+var kiroChatFinishTaskSchema = import_zod10.z.strictObject({
+  implemented: import_zod10.z.array(nonEmptyTextSchema).min(1).max(40),
+  acceptance: import_zod10.z.array(import_zod10.z.strictObject({
+    key: import_zod10.z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/),
+    passed: import_zod10.z.boolean(),
+    /** The learner's Decision that changed this criterion; it then does not have to pass. */
+    changedByDecisionId: decisionIdSchema.optional()
+  })).max(40),
+  checks: import_zod10.z.array(import_zod10.z.strictObject({
+    name: labelSchema,
+    passed: import_zod10.z.boolean(),
+    summary: nonEmptyTextSchema
+  })).max(40),
+  decisionsApplied: import_zod10.z.array(import_zod10.z.strictObject({ decisionId: decisionIdSchema, how: nonEmptyTextSchema })).max(20).optional(),
+  concepts: import_zod10.z.array(import_zod10.z.strictObject({
+    name: labelSchema,
+    why: nonEmptyTextSchema,
+    files: filesSchema(20).optional()
+  })).max(30).optional(),
+  deviations: import_zod10.z.array(nonEmptyTextSchema).max(20).optional(),
+  remaining: import_zod10.z.array(nonEmptyTextSchema).max(30).optional(),
+  limitations: import_zod10.z.array(nonEmptyTextSchema).max(30).optional(),
+  files: filesSchema(50).optional()
+});
+var kiroChatCheckProgressToolInputSchema = import_zod10.z.strictObject({ ...toolPurpose });
+var kiroChatSaveProgressToolInputSchema = kiroChatProgressNoteSchema.extend(toolPurpose);
+var kiroChatAskChoiceToolInputSchema = import_zod10.z.strictObject({ ...kiroChatAskChoiceSchema.shape, ...toolPurpose }).refine((choice) => choice.recommended <= choice.options.length, {
+  path: ["recommended"],
+  message: "The recommended option number must be one of the options"
+});
+var kiroChatSaveChoiceToolInputSchema = import_zod10.z.strictObject({ ...kiroChatSaveChoiceSchema.shape, ...toolPurpose }).refine((answer) => answer.choice !== "custom" || answer.customSummary !== void 0, {
+  path: ["customSummary"],
+  message: "A custom choice needs a short summary of the learner's idea"
+});
+var kiroChatFinishTaskToolInputSchema = kiroChatFinishTaskSchema.extend(toolPurpose);
+var builderChatMetadata = {
+  schemaVersion: schemaVersionSchema,
+  correlationId: correlationIdSchema,
+  actor: import_zod10.z.strictObject({ kind: import_zod10.z.literal("AGENT"), role: import_zod10.z.literal("BUILDER") }),
+  projectId: projectIdSchema,
+  taskId: taskIdSchema
+};
+var builderChatCheckProgressQuerySchema = import_zod10.z.strictObject({
+  ...builderChatMetadata,
+  kind: import_zod10.z.literal("BUILDER_CHAT_CHECK_PROGRESS")
+});
+var builderChatSaveProgressCommandSchema = import_zod10.z.strictObject({
+  ...builderChatMetadata,
+  kind: import_zod10.z.literal("BUILDER_CHAT_SAVE_PROGRESS"),
+  idempotencyKey: idempotencyKeySchema,
+  note: kiroChatProgressNoteSchema
+});
+var builderChatAskChoiceCommandSchema = import_zod10.z.strictObject({
+  ...builderChatMetadata,
+  kind: import_zod10.z.literal("BUILDER_CHAT_ASK_CHOICE"),
+  idempotencyKey: idempotencyKeySchema,
+  choice: kiroChatAskChoiceSchema
+});
+var builderChatSaveChoiceCommandSchema = import_zod10.z.strictObject({
+  ...builderChatMetadata,
+  kind: import_zod10.z.literal("BUILDER_CHAT_SAVE_CHOICE"),
+  idempotencyKey: idempotencyKeySchema,
+  answer: kiroChatSaveChoiceSchema
+});
+var builderChatFinishTaskCommandSchema = import_zod10.z.strictObject({
+  ...builderChatMetadata,
+  kind: import_zod10.z.literal("BUILDER_CHAT_FINISH_TASK"),
+  idempotencyKey: idempotencyKeySchema,
+  report: kiroChatFinishTaskSchema
+});
+var numberedOptionSchema = import_zod10.z.strictObject({
+  number: import_zod10.z.int().min(1).max(6),
+  label: labelSchema
+});
+var builderChatProgressSchema = import_zod10.z.strictObject({
+  schemaVersion: schemaVersionSchema,
+  correlationId: correlationIdSchema,
+  task: import_zod10.z.strictObject({ title: labelSchema, status: builderTaskStatusSchema }),
+  acceptanceCriteria: import_zod10.z.array(import_zod10.z.strictObject({ key: import_zod10.z.string(), description: nonEmptyTextSchema })).max(40),
+  openChoices: import_zod10.z.array(import_zod10.z.strictObject({
+    decisionId: decisionIdSchema,
+    question: nonEmptyTextSchema,
+    state: import_zod10.z.enum(["WAITING_FOR_LEARNER", "CHOSEN"]),
+    options: import_zod10.z.array(numberedOptionSchema).min(2).max(6),
+    recommendedNumber: import_zod10.z.int().min(1).max(6),
+    chosenNumber: import_zod10.z.int().min(1).max(6).optional(),
+    chosenCustom: import_zod10.z.boolean().optional()
+  })).max(10),
+  omittedOpenChoiceCount: import_zod10.z.int().nonnegative(),
+  lastNote: nonEmptyTextSchema.optional(),
+  /** Present once the Task is finished: suggestions to grow the project, or their state. */
+  nextMove: nextMoveViewSchema.optional()
+});
+var followUpTaskSchema = import_zod10.z.strictObject({
+  title: labelSchema,
+  acceptanceCriteria: builderChatProgressSchema.shape.acceptanceCriteria
+});
+var builderChatSaveProgressReceiptSchema = import_zod10.z.strictObject({
+  schemaVersion: schemaVersionSchema,
+  correlationId: correlationIdSchema,
+  outcome: import_zod10.z.enum(["SAVED", "UNCHANGED"]),
+  contextVersion: entityRevisionSchema,
+  followUpTask: followUpTaskSchema.optional()
+});
+var builderChatAskChoiceReceiptSchema = import_zod10.z.strictObject({
+  schemaVersion: schemaVersionSchema,
+  correlationId: correlationIdSchema,
+  outcome: import_zod10.z.enum(["ASKED", "ALREADY_OPEN"]),
+  decisionId: decisionIdSchema,
+  options: import_zod10.z.array(numberedOptionSchema).min(2).max(6),
+  recommendedNumber: import_zod10.z.int().min(1).max(6),
+  followUpTask: followUpTaskSchema.optional()
+});
+var builderChatSaveChoiceReceiptSchema = import_zod10.z.strictObject({
+  schemaVersion: schemaVersionSchema,
+  correlationId: correlationIdSchema,
+  outcome: import_zod10.z.enum(["SAVED", "CHANGED", "UNCHANGED"]),
+  decisionId: decisionIdSchema,
+  chosen: import_zod10.z.strictObject({
+    number: import_zod10.z.int().min(1).max(6).optional(),
+    label: nonEmptyTextSchema,
+    custom: import_zod10.z.boolean()
+  }),
+  linkedMessageCount: import_zod10.z.int().min(0).max(20)
+});
+var builderChatFinishTaskReceiptSchema = import_zod10.z.strictObject({
+  schemaVersion: schemaVersionSchema,
+  correlationId: correlationIdSchema,
+  outcome: import_zod10.z.enum(["COMPLETED", "ALREADY_COMPLETED"]),
+  taskRevision: entityRevisionSchema,
+  /** Concepts the Agent named that the confirmed Learning Spec does not list; not recorded. */
+  ignoredConcepts: import_zod10.z.array(labelSchema).max(30),
+  /** Next Move suggestions are generated in the background after this Task (SPEC FR-NXT-008). */
+  nextMove: nextMoveViewSchema.optional()
+});
+
 // packages/contracts/dist/personalization.js
-var import_zod9 = require("zod");
-var personalizationPurposeSchema = import_zod9.z.enum([
+var import_zod11 = require("zod");
+var personalizationPurposeSchema = import_zod11.z.enum([
   "DISCOVERY_TIE_BREAK",
   "HELPER_EXPLANATION_START",
   "HELPER_PAST_EXPERIENCE_CONNECTION",
   "HELPER_TASK_USER_EVIDENCE_CONNECTION"
 ]);
-var personalizationBasisSchema = import_zod9.z.strictObject({
+var personalizationBasisSchema = import_zod11.z.strictObject({
   conceptId: conceptIdSchema,
   conceptName: labelSchema,
   ledgerRevision: entityRevisionSchema,
   state: conceptStateSchema,
-  evidenceIds: import_zod9.z.array(evidenceIdSchema).min(1).max(5),
-  episodeIds: import_zod9.z.array(episodeIdSchema).min(1).max(5),
-  sourceProjectIds: import_zod9.z.array(projectIdSchema).min(1).max(5),
-  sourceProjectTitles: import_zod9.z.array(labelSchema).min(1).max(5),
-  openIssueIds: import_zod9.z.array(misconceptionIssueIdSchema).max(10),
+  evidenceIds: import_zod11.z.array(evidenceIdSchema).min(1).max(5),
+  episodeIds: import_zod11.z.array(episodeIdSchema).min(1).max(5),
+  sourceProjectIds: import_zod11.z.array(projectIdSchema).min(1).max(5),
+  sourceProjectTitles: import_zod11.z.array(labelSchema).min(1).max(5),
+  openIssueIds: import_zod11.z.array(misconceptionIssueIdSchema).max(10),
   purpose: personalizationPurposeSchema,
   redactedEvidenceExcerpt: shortTextSchema.optional()
 });
-var personalizationFallbackReasonSchema = import_zod9.z.enum([
+var personalizationFallbackReasonSchema = import_zod11.z.enum([
   "NO_LEDGER",
   "NO_RELEVANT_CONCEPT",
   "NO_PRIOR_PROJECT_EVIDENCE"
 ]);
-var personalizationTargetSchema = import_zod9.z.discriminatedUnion("kind", [
-  import_zod9.z.strictObject({
-    kind: import_zod9.z.literal("DISCOVERY_SESSION"),
+var personalizationTargetSchema = import_zod11.z.discriminatedUnion("kind", [
+  import_zod11.z.strictObject({
+    kind: import_zod11.z.literal("DISCOVERY_SESSION"),
     discoverySessionId: discoverySessionIdSchema
   }),
-  import_zod9.z.strictObject({
-    kind: import_zod9.z.literal("HELPER_TURN"),
+  import_zod11.z.strictObject({
+    kind: import_zod11.z.literal("HELPER_TURN"),
     taskId: taskIdSchema,
     decisionId: decisionIdSchema.optional()
   })
 ]);
-var personalizationTraceSchema = import_zod9.z.strictObject({
+var personalizationTraceSchema = import_zod11.z.strictObject({
   schemaVersion: schemaVersionSchema,
   id: personalizationTraceIdSchema,
   projectId: projectIdSchema,
   correlationId: correlationIdSchema,
   target: personalizationTargetSchema,
-  mode: import_zod9.z.enum(["EVIDENCE_AWARE", "NO_RELEVANT_EVIDENCE"]),
-  basis: import_zod9.z.array(personalizationBasisSchema).max(5),
+  mode: import_zod11.z.enum(["EVIDENCE_AWARE", "NO_RELEVANT_EVIDENCE"]),
+  basis: import_zod11.z.array(personalizationBasisSchema).max(5),
   fallbackReason: personalizationFallbackReasonSchema.optional(),
   createdAt: utcTimestampSchema,
-  source: import_zod9.z.strictObject({ kind: import_zod9.z.literal("CORE") }),
-  redactionStatus: import_zod9.z.literal("VERIFIED_REDACTED")
+  source: import_zod11.z.strictObject({ kind: import_zod11.z.literal("CORE") }),
+  redactionStatus: import_zod11.z.literal("VERIFIED_REDACTED")
 }).superRefine((trace, context) => {
   if (trace.mode === "EVIDENCE_AWARE" && (trace.basis.length === 0 || trace.fallbackReason !== void 0)) {
     context.addIssue({
@@ -2039,9 +2531,9 @@ var personalizationTraceSchema = import_zod9.z.strictObject({
     });
   }
 });
-var evidenceTraceEvidenceItemSchema = import_zod9.z.strictObject({
+var evidenceTraceEvidenceItemSchema = import_zod11.z.strictObject({
   evidenceId: evidenceIdSchema,
-  kind: import_zod9.z.enum(["USER_UNDERSTANDING", "MISCONCEPTION_SIGNAL", "CONCEPT_OBSERVATION"]),
+  kind: import_zod11.z.enum(["USER_UNDERSTANDING", "MISCONCEPTION_SIGNAL", "CONCEPT_OBSERVATION"]),
   projectId: projectIdSchema,
   projectTitle: labelSchema,
   taskId: taskIdSchema.optional(),
@@ -2057,7 +2549,7 @@ var evidenceTraceEvidenceItemSchema = import_zod9.z.strictObject({
   redactedEvidenceExcerpt: nonEmptyTextSchema.optional(),
   rationale: nonEmptyTextSchema.optional()
 });
-var rejectedEvidenceItemSchema = import_zod9.z.strictObject({
+var rejectedEvidenceItemSchema = import_zod11.z.strictObject({
   proposalId: evidenceProposalIdSchema,
   evidenceDecisionId: evidenceDecisionIdSchema,
   projectId: projectIdSchema,
@@ -2065,7 +2557,7 @@ var rejectedEvidenceItemSchema = import_zod9.z.strictObject({
   episodeId: episodeIdSchema,
   episodeType: episodeTypeSchema,
   proposedConceptName: labelSchema,
-  signal: import_zod9.z.enum([
+  signal: import_zod11.z.enum([
     "QUESTION",
     "REPHRASE",
     "PREDICTION",
@@ -2074,10 +2566,10 @@ var rejectedEvidenceItemSchema = import_zod9.z.strictObject({
     "TRANSFER",
     "CONTRADICTION"
   ]),
-  strength: import_zod9.z.enum(["NONE", "WEAK", "MEDIUM", "STRONG"]),
-  promptDependence: import_zod9.z.enum(["INDEPENDENT", "LIGHT_HINT", "DIRECTLY_LED"]),
+  strength: import_zod11.z.enum(["NONE", "WEAK", "MEDIUM", "STRONG"]),
+  promptDependence: import_zod11.z.enum(["INDEPENDENT", "LIGHT_HINT", "DIRECTLY_LED"]),
   redactedEvidenceExcerpt: nonEmptyTextSchema,
-  reasonCode: import_zod9.z.enum([
+  reasonCode: import_zod11.z.enum([
     "VALID_USER_EVIDENCE",
     "INVALID_SCHEMA",
     "AGENT_AUTHORED_SOURCE",
@@ -2092,35 +2584,35 @@ var rejectedEvidenceItemSchema = import_zod9.z.strictObject({
   explanation: nonEmptyTextSchema,
   decidedAt: utcTimestampSchema
 });
-var conceptEvidenceTraceViewSchema = import_zod9.z.strictObject({
+var conceptEvidenceTraceViewSchema = import_zod11.z.strictObject({
   conceptId: conceptIdSchema,
   conceptName: labelSchema,
   description: nonEmptyTextSchema,
   state: conceptStateSchema.nullable(),
   stateRevision: entityRevisionSchema.nullable(),
-  reducerVersion: import_zod9.z.string().trim().min(1).max(64).nullable(),
+  reducerVersion: import_zod11.z.string().trim().min(1).max(64).nullable(),
   updatedAt: utcTimestampSchema.nullable(),
-  stateEvidenceIds: import_zod9.z.array(evidenceIdSchema).max(500),
-  evidence: import_zod9.z.array(evidenceTraceEvidenceItemSchema).max(100),
-  rejectedEvidence: import_zod9.z.array(rejectedEvidenceItemSchema).max(100),
-  openIssues: import_zod9.z.array(misconceptionIssueSchema).max(100)
+  stateEvidenceIds: import_zod11.z.array(evidenceIdSchema).max(500),
+  evidence: import_zod11.z.array(evidenceTraceEvidenceItemSchema).max(100),
+  rejectedEvidence: import_zod11.z.array(rejectedEvidenceItemSchema).max(100),
+  openIssues: import_zod11.z.array(misconceptionIssueSchema).max(100)
 });
-var evidenceAnalysisStatusItemSchema = import_zod9.z.strictObject({
+var evidenceAnalysisStatusItemSchema = import_zod11.z.strictObject({
   analysisJobId: analysisJobIdSchema,
   episodeId: episodeIdSchema,
-  status: import_zod9.z.enum(["PENDING", "RUNNING", "SUCCEEDED", "FAILED"]),
+  status: import_zod11.z.enum(["PENDING", "RUNNING", "SUCCEEDED", "FAILED"]),
   revision: entityRevisionSchema,
   resultSummary: analysisResultSummarySchema.optional(),
   lastFailure: analysisFailureSchema.optional(),
   updatedAt: utcTimestampSchema
 });
-var projectEvidenceTraceSchema = import_zod9.z.strictObject({
+var projectEvidenceTraceSchema = import_zod11.z.strictObject({
   schemaVersion: schemaVersionSchema,
   correlationId: correlationIdSchema,
   projectId: projectIdSchema,
-  concepts: import_zod9.z.array(conceptEvidenceTraceViewSchema).max(100),
-  analysis: import_zod9.z.array(evidenceAnalysisStatusItemSchema).max(100),
-  personalization: import_zod9.z.array(personalizationTraceSchema).max(100),
+  concepts: import_zod11.z.array(conceptEvidenceTraceViewSchema).max(100),
+  analysis: import_zod11.z.array(evidenceAnalysisStatusItemSchema).max(100),
+  personalization: import_zod11.z.array(personalizationTraceSchema).max(100),
   emptyReason: shortTextSchema.optional(),
   redactionStatus: redactionStatusSchema
 });
@@ -2129,66 +2621,72 @@ var projectEvidenceTraceSchema = import_zod9.z.strictObject({
 var discoveryQueryMetadata = {
   schemaVersion: schemaVersionSchema,
   correlationId: correlationIdSchema,
-  actor: import_zod10.z.strictObject({ kind: import_zod10.z.literal("AGENT"), role: import_zod10.z.literal("DISCOVERY") })
+  actor: import_zod12.z.strictObject({ kind: import_zod12.z.literal("AGENT"), role: import_zod12.z.literal("DISCOVERY") })
 };
 var builderQueryMetadata = {
   schemaVersion: schemaVersionSchema,
   correlationId: correlationIdSchema,
-  actor: import_zod10.z.strictObject({ kind: import_zod10.z.literal("AGENT"), role: import_zod10.z.literal("BUILDER") })
+  actor: import_zod12.z.strictObject({ kind: import_zod12.z.literal("AGENT"), role: import_zod12.z.literal("BUILDER") })
 };
 var helperQueryMetadata = {
   schemaVersion: schemaVersionSchema,
   correlationId: correlationIdSchema,
-  actor: import_zod10.z.strictObject({ kind: import_zod10.z.literal("AGENT"), role: import_zod10.z.literal("HELPER") })
+  actor: import_zod12.z.strictObject({ kind: import_zod12.z.literal("AGENT"), role: import_zod12.z.literal("HELPER") })
 };
 var analystQueryMetadata = {
   schemaVersion: schemaVersionSchema,
   correlationId: correlationIdSchema,
-  actor: import_zod10.z.strictObject({ kind: import_zod10.z.literal("AGENT"), role: import_zod10.z.literal("EVIDENCE_ANALYST") })
+  actor: import_zod12.z.strictObject({ kind: import_zod12.z.literal("AGENT"), role: import_zod12.z.literal("EVIDENCE_ANALYST") })
 };
-var discoveryGetContextQuerySchema = import_zod10.z.strictObject({
+var discoveryGetContextQuerySchema = import_zod12.z.strictObject({
   ...discoveryQueryMetadata,
-  kind: import_zod10.z.literal("DISCOVERY_GET_CONTEXT"),
+  kind: import_zod12.z.literal("DISCOVERY_GET_CONTEXT"),
   projectId: projectIdSchema,
   discoverySessionId: discoverySessionIdSchema.optional()
 });
-var builderGetTaskQuerySchema = import_zod10.z.strictObject({
+var builderGetTaskQuerySchema = import_zod12.z.strictObject({
   ...builderQueryMetadata,
-  kind: import_zod10.z.literal("BUILDER_GET_TASK"),
+  kind: import_zod12.z.literal("BUILDER_GET_TASK"),
   projectId: projectIdSchema,
   taskId: taskIdSchema
 });
-var builderGetDecisionResultQuerySchema = import_zod10.z.strictObject({
+var builderGetDecisionResultQuerySchema = import_zod12.z.strictObject({
   ...builderQueryMetadata,
-  kind: import_zod10.z.literal("BUILDER_GET_DECISION_RESULT"),
+  kind: import_zod12.z.literal("BUILDER_GET_DECISION_RESULT"),
   projectId: projectIdSchema,
   taskId: taskIdSchema,
   decisionId: decisionIdSchema
 });
-var helperGetContextQuerySchema = import_zod10.z.strictObject({
+var builderGetBuildStatusQuerySchema = import_zod12.z.strictObject({
+  ...builderQueryMetadata,
+  kind: import_zod12.z.literal("BUILDER_GET_BUILD_STATUS"),
+  projectId: projectIdSchema,
+  taskId: taskIdSchema
+});
+var helperGetContextQuerySchema = import_zod12.z.strictObject({
   ...helperQueryMetadata,
-  kind: import_zod10.z.literal("HELPER_GET_CONTEXT"),
+  kind: import_zod12.z.literal("HELPER_GET_CONTEXT"),
   projectId: projectIdSchema,
   taskId: taskIdSchema.optional(),
   decisionId: decisionIdSchema.optional(),
   question: nonEmptyTextSchema,
-  relatedConceptNames: import_zod10.z.array(labelSchema).max(5),
+  relatedConceptNames: import_zod12.z.array(labelSchema).max(5),
   observedContextVersion: entityRevisionSchema.optional()
 });
-var analystGetEpisodeContextQuerySchema = import_zod10.z.strictObject({
+var analystGetEpisodeContextQuerySchema = import_zod12.z.strictObject({
   ...analystQueryMetadata,
-  kind: import_zod10.z.literal("ANALYST_GET_EPISODE_CONTEXT"),
+  kind: import_zod12.z.literal("ANALYST_GET_EPISODE_CONTEXT"),
   projectId: projectIdSchema,
   episodeId: episodeIdSchema,
   expectedEpisodeRevision: entityRevisionSchema
 });
-var discoverySubmitCandidateRoundCommandSchema = import_zod10.z.strictObject({
+var discoverySubmitCandidateRoundCommandSchema = import_zod12.z.strictObject({
   ...discoveryQueryMetadata,
-  kind: import_zod10.z.literal("DISCOVERY_SUBMIT_CANDIDATE_ROUND"),
+  kind: import_zod12.z.literal("DISCOVERY_SUBMIT_CANDIDATE_ROUND"),
   idempotencyKey: idempotencyKeySchema,
   expectedSessionRevision: expectedRevisionSchema,
   round: candidateRoundSchema,
-  candidates: import_zod10.z.array(projectCandidateRevisionSchema).max(30)
+  candidates: import_zod12.z.array(projectCandidateRevisionSchema).max(30)
 }).superRefine((command, context) => {
   if (command.round.correlationId !== command.correlationId) {
     context.addIssue({
@@ -2225,9 +2723,9 @@ var discoverySubmitCandidateRoundCommandSchema = import_zod10.z.strictObject({
     }
   }
 });
-var discoverySubmitCandidatePreviewsCommandSchema = import_zod10.z.strictObject({
+var discoverySubmitCandidatePreviewsCommandSchema = import_zod12.z.strictObject({
   ...discoveryQueryMetadata,
-  kind: import_zod10.z.literal("DISCOVERY_SUBMIT_CANDIDATE_PREVIEWS"),
+  kind: import_zod12.z.literal("DISCOVERY_SUBMIT_CANDIDATE_PREVIEWS"),
   idempotencyKey: idempotencyKeySchema,
   expectedSessionRevision: expectedRevisionSchema,
   previewRound: candidatePreviewRoundSchema
@@ -2235,14 +2733,14 @@ var discoverySubmitCandidatePreviewsCommandSchema = import_zod10.z.strictObject(
   path: ["previewRound", "correlationId"],
   message: "Candidate Preview Round correlation ID must match its command"
 });
-var discoverySubmitCandidateEnrichmentsCommandSchema = import_zod10.z.strictObject({
+var discoverySubmitCandidateEnrichmentsCommandSchema = import_zod12.z.strictObject({
   ...discoveryQueryMetadata,
-  kind: import_zod10.z.literal("DISCOVERY_SUBMIT_CANDIDATE_ENRICHMENTS"),
+  kind: import_zod12.z.literal("DISCOVERY_SUBMIT_CANDIDATE_ENRICHMENTS"),
   idempotencyKey: idempotencyKeySchema,
   expectedSessionRevision: expectedRevisionSchema,
   previewRoundId: candidatePreviewRoundSchema.shape.id,
   batch: candidateEnrichmentBatchSchema,
-  enrichments: import_zod10.z.array(candidateEnrichmentSchema).min(1).max(10)
+  enrichments: import_zod12.z.array(candidateEnrichmentSchema).min(1).max(10)
 }).superRefine((command, context) => {
   if (command.batch !== "SELECTED" && command.enrichments.length !== 5) {
     context.addIssue({
@@ -2252,9 +2750,9 @@ var discoverySubmitCandidateEnrichmentsCommandSchema = import_zod10.z.strictObje
     });
   }
 });
-var discoverySubmitLearningSpecCommandSchema = import_zod10.z.strictObject({
+var discoverySubmitLearningSpecCommandSchema = import_zod12.z.strictObject({
   ...discoveryQueryMetadata,
-  kind: import_zod10.z.literal("DISCOVERY_SUBMIT_LEARNING_SPEC"),
+  kind: import_zod12.z.literal("DISCOVERY_SUBMIT_LEARNING_SPEC"),
   idempotencyKey: idempotencyKeySchema,
   expectedSessionRevision: expectedRevisionSchema,
   expectedSpecRevision: expectedRevisionSchema,
@@ -2282,26 +2780,26 @@ var discoverySubmitLearningSpecCommandSchema = import_zod10.z.strictObject({
     });
   }
 });
-var builderStartTaskCommandSchema = import_zod10.z.strictObject({
+var builderStartTaskCommandSchema = import_zod12.z.strictObject({
   ...builderQueryMetadata,
-  kind: import_zod10.z.literal("BUILDER_START_TASK"),
+  kind: import_zod12.z.literal("BUILDER_START_TASK"),
   idempotencyKey: idempotencyKeySchema,
   projectId: projectIdSchema,
   taskId: taskIdSchema,
   expectedTaskRevision: expectedRevisionSchema
 });
-var builderUpdateLiveContextCommandSchema = import_zod10.z.strictObject({
+var builderUpdateLiveContextCommandSchema = import_zod12.z.strictObject({
   ...builderQueryMetadata,
-  kind: import_zod10.z.literal("BUILDER_UPDATE_LIVE_CONTEXT"),
+  kind: import_zod12.z.literal("BUILDER_UPDATE_LIVE_CONTEXT"),
   idempotencyKey: idempotencyKeySchema,
   context: liveProjectContextSchema
 }).refine((command) => command.context.correlationId === command.correlationId, {
   path: ["context", "correlationId"],
   message: "Live Context correlation ID must match its command"
 });
-var builderRequestDecisionCommandSchema = import_zod10.z.strictObject({
+var builderRequestDecisionCommandSchema = import_zod12.z.strictObject({
   ...builderQueryMetadata,
-  kind: import_zod10.z.literal("BUILDER_REQUEST_DECISION"),
+  kind: import_zod12.z.literal("BUILDER_REQUEST_DECISION"),
   idempotencyKey: idempotencyKeySchema,
   projectId: projectIdSchema,
   taskId: taskIdSchema,
@@ -2313,9 +2811,9 @@ var builderRequestDecisionCommandSchema = import_zod10.z.strictObject({
   path: ["context", "blockingReason"],
   message: "A blocking Decision requires a blocking reason"
 });
-var builderApplyDecisionCommandSchema = import_zod10.z.strictObject({
+var builderApplyDecisionCommandSchema = import_zod12.z.strictObject({
   ...builderQueryMetadata,
-  kind: import_zod10.z.literal("BUILDER_APPLY_DECISION"),
+  kind: import_zod12.z.literal("BUILDER_APPLY_DECISION"),
   idempotencyKey: idempotencyKeySchema,
   projectId: projectIdSchema,
   taskId: taskIdSchema,
@@ -2323,64 +2821,84 @@ var builderApplyDecisionCommandSchema = import_zod10.z.strictObject({
   expectedTaskRevision: expectedRevisionSchema,
   expectedContextVersion: entityRevisionSchema,
   appliedResult: nonEmptyTextSchema,
-  sourceReferences: import_zod10.z.array(contextualSourceReferenceSchema).max(30),
+  sourceReferences: import_zod12.z.array(contextualSourceReferenceSchema).max(30),
   context: decisionContextDraftSchema.omit({ blockingReason: true })
 });
-var builderCompleteTaskCommandSchema = import_zod10.z.strictObject({
+var builderResolveDecisionFromChatCommandSchema = import_zod12.z.strictObject({
   ...builderQueryMetadata,
-  kind: import_zod10.z.literal("BUILDER_COMPLETE_TASK"),
+  kind: import_zod12.z.literal("BUILDER_RESOLVE_DECISION_FROM_CHAT"),
+  idempotencyKey: idempotencyKeySchema,
+  ...builderResolveDecisionFromChatToolInputSchema.pick({
+    projectId: true,
+    taskId: true,
+    decisionId: true,
+    selection: true,
+    citedUserMessages: true,
+    rationaleQuote: true
+  }).shape
+});
+var builderCompleteTaskCommandSchema = import_zod12.z.strictObject({
+  ...builderQueryMetadata,
+  kind: import_zod12.z.literal("BUILDER_COMPLETE_TASK"),
   idempotencyKey: idempotencyKeySchema,
   report: taskCompletionReportSchema
 }).refine((command) => command.report.correlationId === command.correlationId, {
   path: ["report", "correlationId"],
   message: "Completion Report correlation ID must match its command"
 });
-var helperRequestContextRefreshCommandSchema = import_zod10.z.strictObject({
+var helperRequestContextRefreshCommandSchema = import_zod12.z.strictObject({
   ...helperQueryMetadata,
-  kind: import_zod10.z.literal("HELPER_REQUEST_CONTEXT_REFRESH"),
+  kind: import_zod12.z.literal("HELPER_REQUEST_CONTEXT_REFRESH"),
   idempotencyKey: idempotencyKeySchema,
   projectId: projectIdSchema,
   taskId: taskIdSchema,
   observedContextVersion: entityRevisionSchema.optional(),
   reason: nonEmptyTextSchema
 });
-var analystSubmitEvidenceProposalsCommandSchema = import_zod10.z.strictObject({
+var analystSubmitEvidenceProposalsCommandSchema = import_zod12.z.strictObject({
   ...analystQueryMetadata,
-  kind: import_zod10.z.literal("ANALYST_SUBMIT_EVIDENCE_PROPOSALS"),
+  kind: import_zod12.z.literal("ANALYST_SUBMIT_EVIDENCE_PROPOSALS"),
   idempotencyKey: idempotencyKeySchema,
   analysisJobId: analysisJobIdSchema,
   expectedJobRevision: entityRevisionSchema,
-  attempt: import_zod10.z.int().min(1).max(2),
+  attempt: import_zod12.z.int().min(1).max(2),
   batch: evidenceProposalBatchSchema
 }).refine((command) => command.batch.correlationId === command.correlationId, {
   path: ["batch", "correlationId"],
   message: "Evidence batch correlation ID must match its command"
 });
-var discoveryAgentRequestSchema = import_zod10.z.discriminatedUnion("kind", [
+var discoveryAgentRequestSchema = import_zod12.z.discriminatedUnion("kind", [
   discoveryGetContextQuerySchema,
   discoverySubmitCandidatePreviewsCommandSchema,
   discoverySubmitCandidateEnrichmentsCommandSchema,
   discoverySubmitCandidateRoundCommandSchema,
   discoverySubmitLearningSpecCommandSchema
 ]);
-var builderAgentRequestSchema = import_zod10.z.discriminatedUnion("kind", [
+var builderAgentRequestSchema = import_zod12.z.discriminatedUnion("kind", [
   builderGetTaskQuerySchema,
   builderGetDecisionResultQuerySchema,
+  builderGetBuildStatusQuerySchema,
   builderStartTaskCommandSchema,
   builderUpdateLiveContextCommandSchema,
   builderRequestDecisionCommandSchema,
   builderApplyDecisionCommandSchema,
-  builderCompleteTaskCommandSchema
+  builderResolveDecisionFromChatCommandSchema,
+  builderCompleteTaskCommandSchema,
+  builderChatCheckProgressQuerySchema,
+  builderChatSaveProgressCommandSchema,
+  builderChatAskChoiceCommandSchema,
+  builderChatSaveChoiceCommandSchema,
+  builderChatFinishTaskCommandSchema
 ]);
-var helperAgentRequestSchema = import_zod10.z.discriminatedUnion("kind", [
+var helperAgentRequestSchema = import_zod12.z.discriminatedUnion("kind", [
   helperGetContextQuerySchema,
   helperRequestContextRefreshCommandSchema
 ]);
-var evidenceAnalystRequestSchema = import_zod10.z.discriminatedUnion("kind", [
+var evidenceAnalystRequestSchema = import_zod12.z.discriminatedUnion("kind", [
   analystGetEpisodeContextQuerySchema,
   analystSubmitEvidenceProposalsCommandSchema
 ]);
-var agentRequestSchema = import_zod10.z.discriminatedUnion("kind", [
+var agentRequestSchema = import_zod12.z.discriminatedUnion("kind", [
   discoveryGetContextQuerySchema,
   discoverySubmitCandidatePreviewsCommandSchema,
   discoverySubmitCandidateEnrichmentsCommandSchema,
@@ -2388,31 +2906,38 @@ var agentRequestSchema = import_zod10.z.discriminatedUnion("kind", [
   discoverySubmitLearningSpecCommandSchema,
   builderGetTaskQuerySchema,
   builderGetDecisionResultQuerySchema,
+  builderGetBuildStatusQuerySchema,
   builderStartTaskCommandSchema,
   builderUpdateLiveContextCommandSchema,
   builderRequestDecisionCommandSchema,
   builderApplyDecisionCommandSchema,
+  builderResolveDecisionFromChatCommandSchema,
   builderCompleteTaskCommandSchema,
+  builderChatCheckProgressQuerySchema,
+  builderChatSaveProgressCommandSchema,
+  builderChatAskChoiceCommandSchema,
+  builderChatSaveChoiceCommandSchema,
+  builderChatFinishTaskCommandSchema,
   helperGetContextQuerySchema,
   helperRequestContextRefreshCommandSchema,
   analystGetEpisodeContextQuerySchema,
   analystSubmitEvidenceProposalsCommandSchema
 ]);
-var discoveryContextSchema = import_zod10.z.strictObject({
+var discoveryContextSchema = import_zod12.z.strictObject({
   schemaVersion: schemaVersionSchema,
   correlationId: correlationIdSchema,
   project: projectSchema,
   session: discoverySessionSchema,
-  rounds: import_zod10.z.array(candidateRoundSchema).max(100),
-  candidates: import_zod10.z.array(projectCandidateRevisionSchema).max(1e3),
-  feedback: import_zod10.z.array(discoveryFeedbackSchema).max(1e3),
+  rounds: import_zod12.z.array(candidateRoundSchema).max(100),
+  candidates: import_zod12.z.array(projectCandidateRevisionSchema).max(1e3),
+  feedback: import_zod12.z.array(discoveryFeedbackSchema).max(1e3),
   learningSpec: learningSpecRevisionSchema.nullable(),
   previewRound: candidatePreviewRoundSchema.nullable().default(null),
-  candidateEnrichments: import_zod10.z.array(candidateEnrichmentSchema).max(10).default([]),
-  relevantLedgerEntries: import_zod10.z.array(conceptLedgerEntrySchema).max(20),
+  candidateEnrichments: import_zod12.z.array(candidateEnrichmentSchema).max(10).default([]),
+  relevantLedgerEntries: import_zod12.z.array(conceptLedgerEntrySchema).max(20),
   personalization: personalizationTraceSchema
 });
-var builderTaskContextSchema = import_zod10.z.strictObject({
+var builderTaskContextSchema = import_zod12.z.strictObject({
   schemaVersion: schemaVersionSchema,
   correlationId: correlationIdSchema,
   project: projectSchema,
@@ -2420,91 +2945,114 @@ var builderTaskContextSchema = import_zod10.z.strictObject({
   task: builderTaskSchema,
   previousCompletionReport: taskCompletionReportSchema.optional(),
   liveContext: liveProjectContextSchema.nullable(),
-  decisionRequests: import_zod10.z.array(decisionRequestSchema).max(50),
-  decisionResolutions: import_zod10.z.array(decisionResolutionSchema).max(50),
-  decisionApplications: import_zod10.z.array(decisionApplicationSchema).max(50),
-  pendingContextRefreshRequests: import_zod10.z.array(contextRefreshRequestSchema).max(20)
+  decisionRequests: import_zod12.z.array(decisionRequestSchema).max(50),
+  decisionResolutions: import_zod12.z.array(decisionResolutionSchema).max(50),
+  decisionApplications: import_zod12.z.array(decisionApplicationSchema).max(50),
+  pendingContextRefreshRequests: import_zod12.z.array(contextRefreshRequestSchema).max(20)
 });
-var helperEpisodeSummarySchema = import_zod10.z.strictObject({
+var helperEpisodeSummarySchema = import_zod12.z.strictObject({
   episodeId: episodeIdSchema,
-  type: import_zod10.z.enum(["BUILD_TASK", "DECISION", "HELPER_CONVERSATION", "FINAL_UPGRADE"]),
+  type: import_zod12.z.enum(["BUILD_TASK", "DECISION", "HELPER_CONVERSATION", "FINAL_UPGRADE"]),
   endedAt: utcTimestampSchema,
-  conceptNames: import_zod10.z.array(labelSchema).max(20),
-  redactedUserExcerpts: import_zod10.z.array(nonEmptyTextSchema).max(5),
-  helperResponseSummaries: import_zod10.z.array(nonEmptyTextSchema).max(5),
-  contextReferences: import_zod10.z.array(contextualSourceReferenceSchema).max(10)
+  conceptNames: import_zod12.z.array(labelSchema).max(20),
+  redactedUserExcerpts: import_zod12.z.array(nonEmptyTextSchema).max(5),
+  helperResponseSummaries: import_zod12.z.array(nonEmptyTextSchema).max(5),
+  contextReferences: import_zod12.z.array(contextualSourceReferenceSchema).max(10)
 });
-var helperSourceExcerptSchema = import_zod10.z.strictObject({
+var helperSourceExcerptSchema = import_zod12.z.strictObject({
   reference: codeReferenceSchema,
-  redactedExcerpt: import_zod10.z.string().trim().min(1).max(8192),
-  truncated: import_zod10.z.boolean(),
-  redactionStatus: import_zod10.z.literal("VERIFIED_REDACTED")
+  redactedExcerpt: import_zod12.z.string().trim().min(1).max(8192),
+  truncated: import_zod12.z.boolean(),
+  redactionStatus: import_zod12.z.literal("VERIFIED_REDACTED")
 });
-var helperReferenceDetailSchema = import_zod10.z.strictObject({
+var helperReferenceDetailSchema = import_zod12.z.strictObject({
   reference: contextualSourceReferenceSchema,
-  availability: import_zod10.z.enum(["EXCERPT_INCLUDED", "REFERENCE_ONLY", "UNAVAILABLE"]),
-  reason: import_zod10.z.string().trim().min(1).max(240).optional()
+  availability: import_zod12.z.enum(["EXCERPT_INCLUDED", "REFERENCE_ONLY", "UNAVAILABLE"]),
+  reason: import_zod12.z.string().trim().min(1).max(240).optional()
 });
-var helperContextSchema = import_zod10.z.strictObject({
+var helperContextSchema = import_zod12.z.strictObject({
   schemaVersion: schemaVersionSchema,
   correlationId: correlationIdSchema,
   project: projectSchema,
   learningSpec: learningSpecRevisionSchema,
   task: builderTaskSchema,
   liveContext: liveProjectContextSchema.nullable(),
-  activeDecisions: import_zod10.z.array(decisionRequestSchema).max(10),
+  activeDecisions: import_zod12.z.array(decisionRequestSchema).max(10),
   focusedDecision: decisionRequestSchema.nullable(),
-  relevantLedgerEntries: import_zod10.z.array(conceptLedgerEntrySchema).max(5),
+  relevantLedgerEntries: import_zod12.z.array(conceptLedgerEntrySchema).max(5),
   personalization: personalizationTraceSchema,
-  recentEpisodes: import_zod10.z.array(helperEpisodeSummarySchema).max(5),
-  contextReferences: import_zod10.z.array(contextualSourceReferenceSchema).max(30),
-  referenceDetails: import_zod10.z.array(helperReferenceDetailSchema).max(30),
-  sourceExcerpts: import_zod10.z.array(helperSourceExcerptSchema).max(3),
-  pendingContextRefreshRequests: import_zod10.z.array(contextRefreshRequestSchema).max(20),
-  freshness: import_zod10.z.strictObject({
+  recentEpisodes: import_zod12.z.array(helperEpisodeSummarySchema).max(5),
+  contextReferences: import_zod12.z.array(contextualSourceReferenceSchema).max(30),
+  referenceDetails: import_zod12.z.array(helperReferenceDetailSchema).max(30),
+  sourceExcerpts: import_zod12.z.array(helperSourceExcerptSchema).max(3),
+  pendingContextRefreshRequests: import_zod12.z.array(contextRefreshRequestSchema).max(20),
+  /** The Project's current Next Move suggestions, read-only, for comparison questions. */
+  nextMove: nextMoveViewSchema.optional(),
+  freshness: import_zod12.z.strictObject({
     currentContextVersion: entityRevisionSchema.nullable(),
     observedContextVersion: entityRevisionSchema.nullable(),
-    status: import_zod10.z.enum(["CURRENT", "STALE", "MISSING"]),
-    stale: import_zod10.z.boolean(),
-    refreshRequired: import_zod10.z.boolean()
+    status: import_zod12.z.enum(["CURRENT", "STALE", "MISSING"]),
+    stale: import_zod12.z.boolean(),
+    refreshRequired: import_zod12.z.boolean()
   })
 });
-var episodeContextSchema = import_zod10.z.strictObject({
+var episodeContextSchema = import_zod12.z.strictObject({
   schemaVersion: schemaVersionSchema,
   correlationId: correlationIdSchema,
   episode: episodeSchema,
-  events: import_zod10.z.array(activityEventSchema).min(1).max(500),
-  relevantLedgerEntries: import_zod10.z.array(conceptLedgerEntrySchema).max(20),
+  events: import_zod12.z.array(activityEventSchema).min(1).max(500),
+  relevantLedgerEntries: import_zod12.z.array(conceptLedgerEntrySchema).max(20),
   analysisJob: analysisJobSchema.nullable(),
-  decisionContext: import_zod10.z.strictObject({
+  decisionContext: import_zod12.z.strictObject({
     request: decisionRequestSchema,
     resolution: decisionResolutionSchema.nullable()
   }).nullable()
 });
-var decisionResultSchema = import_zod10.z.strictObject({
+var buildStatusSchema = import_zod12.z.strictObject({
+  schemaVersion: schemaVersionSchema,
+  correlationId: correlationIdSchema,
+  task: import_zod12.z.strictObject({
+    id: taskIdSchema,
+    title: labelSchema,
+    status: builderTaskSchema.shape.status,
+    revision: entityRevisionSchema
+  }),
+  contextVersion: import_zod12.z.int().nonnegative(),
+  openDecisions: import_zod12.z.array(import_zod12.z.strictObject({
+    decisionId: decisionIdSchema,
+    question: nonEmptyTextSchema,
+    state: import_zod12.z.enum(["AWAITING_LEARNER", "RESOLVED_NOT_APPLIED"]),
+    options: import_zod12.z.array(import_zod12.z.strictObject({ number: import_zod12.z.int().min(1).max(6), label: labelSchema })).min(2).max(6),
+    recommendedOptionNumber: import_zod12.z.int().min(1).max(6),
+    resolvedOptionNumber: import_zod12.z.int().min(1).max(6).optional(),
+    requestedAt: utcTimestampSchema
+  })).max(10),
+  omittedOpenDecisionCount: import_zod12.z.int().nonnegative()
+});
+var decisionResultSchema = import_zod12.z.strictObject({
   schemaVersion: schemaVersionSchema,
   correlationId: correlationIdSchema,
   request: decisionRequestSchema,
   resolution: decisionResolutionSchema.nullable(),
   application: decisionApplicationSchema.nullable()
 });
-var decisionCommandReceiptSchema = import_zod10.z.strictObject({
+var decisionCommandReceiptSchema = import_zod12.z.strictObject({
   schemaVersion: schemaVersionSchema,
   correlationId: correlationIdSchema,
-  accepted: import_zod10.z.literal(true),
+  accepted: import_zod12.z.literal(true),
   resourceRevision: entityRevisionSchema,
   decisionId: decisionIdSchema
 });
-var commandReceiptSchema = import_zod10.z.strictObject({
+var commandReceiptSchema = import_zod12.z.strictObject({
   schemaVersion: schemaVersionSchema,
   correlationId: correlationIdSchema,
-  accepted: import_zod10.z.literal(true),
+  accepted: import_zod12.z.literal(true),
   resourceRevision: entityRevisionSchema
 });
 
 // packages/contracts/dist/audit.js
-var import_zod11 = require("zod");
-var auditActionSchema = import_zod11.z.enum([
+var import_zod13 = require("zod");
+var auditActionSchema = import_zod13.z.enum([
   "CREATED",
   "UPDATED",
   "SUBMITTED",
@@ -2514,15 +3062,15 @@ var auditActionSchema = import_zod11.z.enum([
   "APPLIED",
   "REDACTED"
 ]);
-var auditOutcomeSchema = import_zod11.z.enum(["SUCCEEDED", "REJECTED", "FAILED"]);
-var auditRecordSchema = import_zod11.z.strictObject({
+var auditOutcomeSchema = import_zod13.z.enum(["SUCCEEDED", "REJECTED", "FAILED"]);
+var auditRecordSchema = import_zod13.z.strictObject({
   schemaVersion: schemaVersionSchema,
   id: auditRecordIdSchema,
   correlationId: correlationIdSchema,
   actor: actorSchema,
   action: auditActionSchema,
-  resource: import_zod11.z.strictObject({
-    type: import_zod11.z.enum([
+  resource: import_zod13.z.strictObject({
+    type: import_zod13.z.enum([
       "PROJECT",
       "DISCOVERY_SESSION",
       "CANDIDATE_PREVIEW_ROUND",
@@ -2535,25 +3083,26 @@ var auditRecordSchema = import_zod11.z.strictObject({
       "EVENT",
       "EPISODE",
       "ANALYSIS_JOB",
+      "NEXT_MOVE_JOB",
       "EVIDENCE_PROPOSAL",
       "EVIDENCE",
       "CONCEPT_LEDGER",
       "EVALUATION_RUN"
     ]),
     id: stableEntityIdSchema,
-    revision: import_zod11.z.int().positive().optional()
+    revision: import_zod13.z.int().positive().optional()
   }),
   outcome: auditOutcomeSchema,
-  reasonCode: import_zod11.z.string().regex(/^[A-Z][A-Z0-9_]{0,79}$/).optional(),
+  reasonCode: import_zod13.z.string().regex(/^[A-Z][A-Z0-9_]{0,79}$/).optional(),
   summary: nonEmptyTextSchema,
-  changedFields: import_zod11.z.array(import_zod11.z.string().regex(/^[a-z][A-Za-z0-9.]{0,119}$/)).max(100),
+  changedFields: import_zod13.z.array(import_zod13.z.string().regex(/^[a-z][A-Za-z0-9.]{0,119}$/)).max(100),
   occurredAt: utcTimestampSchema,
   redactionStatus: redactionStatusSchema
 });
 
 // packages/contracts/dist/evaluation.js
-var import_zod12 = require("zod");
-var contractDomainSchema = import_zod12.z.enum([
+var import_zod14 = require("zod");
+var contractDomainSchema = import_zod14.z.enum([
   "DISCOVERY",
   "LEARNING_SPEC",
   "BUILD",
@@ -2565,7 +3114,7 @@ var contractDomainSchema = import_zod12.z.enum([
   "AUDIT",
   "EVALUATION"
 ]);
-var evaluationDimensionSchema = import_zod12.z.enum([
+var evaluationDimensionSchema = import_zod14.z.enum([
   "DISCOVERY_DIVERSITY",
   "CONCEPT_NECESSITY",
   "SPEC_SCOPE",
@@ -2575,22 +3124,22 @@ var evaluationDimensionSchema = import_zod12.z.enum([
   "REDACTION",
   "CONTRACT_INTEGRITY"
 ]);
-var evaluationReviewModeSchema = import_zod12.z.enum(["AUTOMATED", "HUMAN"]);
-var evaluationCriterionStatusSchema = import_zod12.z.enum(["PASSED", "FAILED", "NEEDS_REVIEW", "ERROR"]);
-var criterionKeySchema = import_zod12.z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/);
-var evaluationCriterionSchema = import_zod12.z.strictObject({
+var evaluationReviewModeSchema = import_zod14.z.enum(["AUTOMATED", "HUMAN"]);
+var evaluationCriterionStatusSchema = import_zod14.z.enum(["PASSED", "FAILED", "NEEDS_REVIEW", "ERROR"]);
+var criterionKeySchema = import_zod14.z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/);
+var evaluationCriterionSchema = import_zod14.z.strictObject({
   key: criterionKeySchema,
   dimension: evaluationDimensionSchema,
   reviewMode: evaluationReviewModeSchema,
   description: nonEmptyTextSchema,
   successDefinition: nonEmptyTextSchema
 });
-var evaluationFixtureSchema = import_zod12.z.strictObject({
+var evaluationFixtureSchema = import_zod14.z.strictObject({
   schemaVersion: schemaVersionSchema,
   id: fixtureIdSchema,
   name: labelSchema,
   description: nonEmptyTextSchema,
-  kind: import_zod12.z.enum([
+  kind: import_zod14.z.enum([
     "GOLDEN_PATH",
     "UNSEEN_DISCOVERY",
     "FALSE_MASTERY",
@@ -2604,12 +3153,12 @@ var evaluationFixtureSchema = import_zod12.z.strictObject({
   inputPath: relativePosixPathSchema,
   calibrationSubjectPath: relativePosixPathSchema.optional(),
   calibrationReviewPath: relativePosixPathSchema.optional(),
-  expectedContractDomains: import_zod12.z.array(contractDomainSchema).min(1).max(20),
-  criteria: import_zod12.z.array(evaluationCriterionSchema).min(1).max(50),
-  scenarioTags: import_zod12.z.array(labelSchema).max(20),
+  expectedContractDomains: import_zod14.z.array(contractDomainSchema).min(1).max(20),
+  criteria: import_zod14.z.array(evaluationCriterionSchema).min(1).max(50),
+  scenarioTags: import_zod14.z.array(labelSchema).max(20),
   fixtureVersion: semanticVersionSchema,
-  containsPersonalData: import_zod12.z.literal(false),
-  redactionStatus: import_zod12.z.literal("VERIFIED_REDACTED")
+  containsPersonalData: import_zod14.z.literal(false),
+  redactionStatus: import_zod14.z.literal("VERIFIED_REDACTED")
 }).superRefine((fixture, context) => {
   const keys = new Set(fixture.criteria.map((criterion) => criterion.key));
   if (keys.size !== fixture.criteria.length) {
@@ -2635,20 +3184,20 @@ var evaluationFixtureSchema = import_zod12.z.strictObject({
     });
   }
 });
-var evaluationMetricSchema = import_zod12.z.strictObject({
+var evaluationMetricSchema = import_zod14.z.strictObject({
   name: labelSchema,
-  value: import_zod12.z.number().finite(),
-  unit: import_zod12.z.enum(["COUNT", "RATIO", "MILLISECONDS", "TOKENS"]),
+  value: import_zod14.z.number().finite(),
+  unit: import_zod14.z.enum(["COUNT", "RATIO", "MILLISECONDS", "TOKENS"]),
   interpretation: nonEmptyTextSchema
 });
-var evaluationCriterionResultSchema = import_zod12.z.strictObject({
+var evaluationCriterionResultSchema = import_zod14.z.strictObject({
   criterionKey: criterionKeySchema,
   dimension: evaluationDimensionSchema,
   reviewMode: evaluationReviewModeSchema,
   status: evaluationCriterionStatusSchema,
   explanation: nonEmptyTextSchema,
-  evidenceReferences: import_zod12.z.array(nonEmptyTextSchema).max(30),
-  metrics: import_zod12.z.array(evaluationMetricSchema).max(30)
+  evidenceReferences: import_zod14.z.array(nonEmptyTextSchema).max(30),
+  metrics: import_zod14.z.array(evaluationMetricSchema).max(30)
 });
 function expectedCaseStatus(results) {
   if (results.some((result) => result.status === "ERROR"))
@@ -2659,13 +3208,13 @@ function expectedCaseStatus(results) {
     return "NEEDS_REVIEW";
   return "PASSED";
 }
-var evaluationCaseResultSchema = import_zod12.z.strictObject({
+var evaluationCaseResultSchema = import_zod14.z.strictObject({
   fixtureId: fixtureIdSchema,
   fixtureVersion: semanticVersionSchema,
   status: evaluationCriterionStatusSchema,
-  criterionResults: import_zod12.z.array(evaluationCriterionResultSchema).min(1).max(50),
-  metrics: import_zod12.z.array(evaluationMetricSchema).max(100),
-  notes: import_zod12.z.array(nonEmptyTextSchema).max(50)
+  criterionResults: import_zod14.z.array(evaluationCriterionResultSchema).min(1).max(50),
+  metrics: import_zod14.z.array(evaluationMetricSchema).max(100),
+  notes: import_zod14.z.array(nonEmptyTextSchema).max(50)
 }).superRefine((result, context) => {
   const keys = new Set(result.criterionResults.map((criterion) => criterion.criterionKey));
   if (keys.size !== result.criterionResults.length) {
@@ -2683,19 +3232,19 @@ var evaluationCaseResultSchema = import_zod12.z.strictObject({
     });
   }
 });
-var evaluationRunSchema = import_zod12.z.strictObject({
+var evaluationRunSchema = import_zod14.z.strictObject({
   schemaVersion: schemaVersionSchema,
   id: evaluationRunIdSchema,
   correlationId: correlationIdSchema,
   revision: entityRevisionSchema,
   evaluatorVersion: semanticVersionSchema,
   systemUnderTestVersion: semanticVersionSchema,
-  fixtureIds: import_zod12.z.array(fixtureIdSchema).min(1).max(500),
-  status: import_zod12.z.enum(["PENDING", "RUNNING", "NEEDS_REVIEW", "COMPLETED", "FAILED"]),
+  fixtureIds: import_zod14.z.array(fixtureIdSchema).min(1).max(500),
+  status: import_zod14.z.enum(["PENDING", "RUNNING", "NEEDS_REVIEW", "COMPLETED", "FAILED"]),
   startedAt: utcTimestampSchema,
   completedAt: utcTimestampSchema.optional(),
-  results: import_zod12.z.array(evaluationCaseResultSchema).max(500),
-  redactionStatus: import_zod12.z.literal("VERIFIED_REDACTED")
+  results: import_zod14.z.array(evaluationCaseResultSchema).max(500),
+  redactionStatus: import_zod14.z.literal("VERIFIED_REDACTED")
 }).superRefine((run, context) => {
   const fixtureIds = new Set(run.fixtureIds);
   if (fixtureIds.size !== run.fixtureIds.length) {
@@ -2766,17 +3315,17 @@ var evaluationRunSchema = import_zod12.z.strictObject({
     });
   }
 });
-var baselineResultSchema = import_zod12.z.strictObject({
+var baselineResultSchema = import_zod14.z.strictObject({
   schemaVersion: schemaVersionSchema,
   id: baselineResultIdSchema,
   evaluationRunId: evaluationRunIdSchema,
   correlationId: correlationIdSchema,
-  kind: import_zod12.z.enum(["CALIBRATION", "GENERIC_KIRO", "SIMPLE_MEMORY", "ABLATION"]),
+  kind: import_zod14.z.enum(["CALIBRATION", "GENERIC_KIRO", "SIMPLE_MEMORY", "ABLATION"]),
   baselineName: labelSchema,
   baselineVersion: semanticVersionSchema,
-  results: import_zod12.z.array(evaluationCaseResultSchema).min(1).max(500),
+  results: import_zod14.z.array(evaluationCaseResultSchema).min(1).max(500),
   recordedAt: utcTimestampSchema,
-  redactionStatus: import_zod12.z.literal("VERIFIED_REDACTED")
+  redactionStatus: import_zod14.z.literal("VERIFIED_REDACTED")
 }).superRefine((baseline, context) => {
   const fixtureIds = new Set(baseline.results.map((result) => result.fixtureId));
   if (fixtureIds.size !== baseline.results.length) {
@@ -2789,34 +3338,37 @@ var baselineResultSchema = import_zod12.z.strictObject({
 });
 
 // packages/contracts/dist/generated-result.js
-var import_zod13 = require("zod");
+var import_zod15 = require("zod");
 var GENERATED_RESULT_MANIFEST_PATH = ".vibe-helper/result.json";
-var generatedResultUrlPathSchema = import_zod13.z.string().trim().min(1).max(240).refine((value) => value.startsWith("/") && !value.startsWith("//") && !value.includes("\\") && !value.includes("?") && !value.includes("#") && !value.split("/").includes(".."), "Generated web result path must be a local absolute URL path");
-var generatedResultManifestSchema = import_zod13.z.strictObject({
+var generatedResultUrlPathSchema = import_zod15.z.string().trim().min(1).max(240).refine((value) => value.startsWith("/") && !value.startsWith("//") && !value.includes("\\") && !value.includes("?") && !value.includes("#") && !value.split("/").includes(".."), "Generated web result path must be a local absolute URL path");
+var generatedResultManifestSchema = import_zod15.z.strictObject({
   schemaVersion: schemaVersionSchema,
-  kind: import_zod13.z.literal("WEB"),
+  kind: import_zod15.z.literal("WEB"),
   entry: relativePosixPathSchema.refine((value) => /\.(?:cjs|mjs|js)$/.test(value), "Generated web result entry must be compiled JavaScript"),
   healthPath: generatedResultUrlPathSchema,
   openPath: generatedResultUrlPathSchema.default("/")
 });
 
+// packages/contracts/dist/local-runtime.js
+var import_zod18 = require("zod");
+
 // packages/contracts/dist/ui-contracts.js
-var import_zod14 = require("zod");
+var import_zod16 = require("zod");
 var uiRequestMetadata = {
   schemaVersion: schemaVersionSchema,
   correlationId: correlationIdSchema,
-  actor: import_zod14.z.strictObject({ kind: import_zod14.z.literal("UI") })
+  actor: import_zod16.z.strictObject({ kind: import_zod16.z.literal("UI") })
 };
-var uiStartDiscoveryCommandSchema = import_zod14.z.strictObject({
+var uiStartDiscoveryCommandSchema = import_zod16.z.strictObject({
   ...uiRequestMetadata,
-  kind: import_zod14.z.literal("UI_START_DISCOVERY"),
+  kind: import_zod16.z.literal("UI_START_DISCOVERY"),
   idempotencyKey: idempotencyKeySchema,
   projectId: projectIdSchema,
   input: discoveryInputSchema
 });
-var uiRecordDiscoveryFeedbackCommandSchema = import_zod14.z.strictObject({
+var uiRecordDiscoveryFeedbackCommandSchema = import_zod16.z.strictObject({
   ...uiRequestMetadata,
-  kind: import_zod14.z.literal("UI_RECORD_DISCOVERY_FEEDBACK"),
+  kind: import_zod16.z.literal("UI_RECORD_DISCOVERY_FEEDBACK"),
   idempotencyKey: idempotencyKeySchema,
   expectedSessionRevision: entityRevisionSchema,
   feedback: discoveryFeedbackSchema
@@ -2824,25 +3376,25 @@ var uiRecordDiscoveryFeedbackCommandSchema = import_zod14.z.strictObject({
   path: ["feedback", "correlationId"],
   message: "Discovery Feedback correlation ID must match its command"
 });
-var uiConfirmLearningSpecCommandSchema = import_zod14.z.strictObject({
+var uiConfirmLearningSpecCommandSchema = import_zod16.z.strictObject({
   ...uiRequestMetadata,
-  kind: import_zod14.z.literal("UI_CONFIRM_LEARNING_SPEC"),
+  kind: import_zod16.z.literal("UI_CONFIRM_LEARNING_SPEC"),
   idempotencyKey: idempotencyKeySchema,
   projectId: projectIdSchema,
   learningSpecId: learningSpecIdSchema,
   expectedSpecRevision: entityRevisionSchema
 });
-var uiPrepareBuilderTaskCommandSchema = import_zod14.z.strictObject({
+var uiPrepareBuilderTaskCommandSchema = import_zod16.z.strictObject({
   ...uiRequestMetadata,
-  kind: import_zod14.z.literal("UI_PREPARE_BUILDER_TASK"),
+  kind: import_zod16.z.literal("UI_PREPARE_BUILDER_TASK"),
   idempotencyKey: idempotencyKeySchema,
   projectId: projectIdSchema,
   learningSpecId: learningSpecIdSchema,
   expectedSpecRevision: entityRevisionSchema
 });
-var uiPrepareFinalUpgradeTaskCommandSchema = import_zod14.z.strictObject({
+var uiPrepareFinalUpgradeTaskCommandSchema = import_zod16.z.strictObject({
   ...uiRequestMetadata,
-  kind: import_zod14.z.literal("UI_PREPARE_FINAL_UPGRADE_TASK"),
+  kind: import_zod16.z.literal("UI_PREPARE_FINAL_UPGRADE_TASK"),
   idempotencyKey: idempotencyKeySchema,
   projectId: projectIdSchema,
   sourceTaskId: taskIdSchema,
@@ -2850,18 +3402,18 @@ var uiPrepareFinalUpgradeTaskCommandSchema = import_zod14.z.strictObject({
   personalizationTraceId: personalizationTraceIdSchema,
   userGoal: nonEmptyTextSchema
 });
-var uiPrepareFollowUpTaskCommandSchema = import_zod14.z.strictObject({
+var uiPrepareFollowUpTaskCommandSchema = import_zod16.z.strictObject({
   ...uiRequestMetadata,
-  kind: import_zod14.z.literal("UI_PREPARE_FOLLOW_UP_TASK"),
+  kind: import_zod16.z.literal("UI_PREPARE_FOLLOW_UP_TASK"),
   idempotencyKey: idempotencyKeySchema,
   projectId: projectIdSchema,
   sourceTaskId: taskIdSchema,
   expectedSourceTaskRevision: entityRevisionSchema,
   userGoal: nonEmptyTextSchema
 });
-var uiUpdateLearningSpecCommandSchema = import_zod14.z.strictObject({
+var uiUpdateLearningSpecCommandSchema = import_zod16.z.strictObject({
   ...uiRequestMetadata,
-  kind: import_zod14.z.literal("UI_UPDATE_LEARNING_SPEC"),
+  kind: import_zod16.z.literal("UI_UPDATE_LEARNING_SPEC"),
   idempotencyKey: idempotencyKeySchema,
   projectId: projectIdSchema,
   learningSpecId: learningSpecIdSchema,
@@ -2869,60 +3421,60 @@ var uiUpdateLearningSpecCommandSchema = import_zod14.z.strictObject({
   expectedSpecRevision: entityRevisionSchema,
   draft: learningSpecDraftContentSchema
 });
-var uiReturnToDiscoveryCommandSchema = import_zod14.z.strictObject({
+var uiReturnToDiscoveryCommandSchema = import_zod16.z.strictObject({
   ...uiRequestMetadata,
-  kind: import_zod14.z.literal("UI_RETURN_TO_DISCOVERY"),
+  kind: import_zod16.z.literal("UI_RETURN_TO_DISCOVERY"),
   idempotencyKey: idempotencyKeySchema,
   projectId: projectIdSchema,
   discoverySessionId: discoverySessionIdSchema,
   expectedSessionRevision: entityRevisionSchema,
-  expectedSpecRevision: import_zod14.z.int().nonnegative(),
+  expectedSpecRevision: import_zod16.z.int().nonnegative(),
   input: discoveryInputSchema.optional()
 });
-var uiResolveDecisionCommandSchema = import_zod14.z.strictObject({
+var uiResolveDecisionCommandSchema = import_zod16.z.strictObject({
   ...uiRequestMetadata,
-  kind: import_zod14.z.literal("UI_RESOLVE_DECISION"),
+  kind: import_zod16.z.literal("UI_RESOLVE_DECISION"),
   idempotencyKey: idempotencyKeySchema,
   resolution: decisionResolutionSchema
 }).refine((command) => command.resolution.correlationId === command.correlationId, {
   path: ["resolution", "correlationId"],
   message: "Decision Resolution correlation ID must match its command"
 });
-var uiOpenHelperQuerySchema = import_zod14.z.strictObject({
+var uiOpenHelperQuerySchema = import_zod16.z.strictObject({
   ...uiRequestMetadata,
-  kind: import_zod14.z.literal("UI_OPEN_HELPER"),
+  kind: import_zod16.z.literal("UI_OPEN_HELPER"),
   projectId: projectIdSchema,
   taskId: taskIdSchema.optional(),
   decisionId: decisionIdSchema.optional(),
   question: nonEmptyTextSchema.optional()
 });
-var uiPrepareBuilderSessionQuerySchema = import_zod14.z.strictObject({
+var uiPrepareBuilderSessionQuerySchema = import_zod16.z.strictObject({
   ...uiRequestMetadata,
-  kind: import_zod14.z.literal("UI_PREPARE_BUILDER_SESSION"),
-  purpose: import_zod14.z.enum(["AGENT_SESSION", "WORKSPACE_VIEW"]).optional(),
+  kind: import_zod16.z.literal("UI_PREPARE_BUILDER_SESSION"),
+  purpose: import_zod16.z.enum(["AGENT_SESSION", "WORKSPACE_VIEW"]).optional(),
   projectId: projectIdSchema,
   taskId: taskIdSchema
 });
-var uiListProjectsQuerySchema = import_zod14.z.strictObject({
+var uiListProjectsQuerySchema = import_zod16.z.strictObject({
   ...uiRequestMetadata,
-  kind: import_zod14.z.literal("UI_LIST_PROJECTS"),
-  limit: import_zod14.z.int().min(1).max(100)
+  kind: import_zod16.z.literal("UI_LIST_PROJECTS"),
+  limit: import_zod16.z.int().min(1).max(100)
 });
-var uiRestoreProjectSessionQuerySchema = import_zod14.z.strictObject({
+var uiRestoreProjectSessionQuerySchema = import_zod16.z.strictObject({
   ...uiRequestMetadata,
-  kind: import_zod14.z.literal("UI_RESTORE_PROJECT_SESSION"),
+  kind: import_zod16.z.literal("UI_RESTORE_PROJECT_SESSION"),
   projectId: projectIdSchema,
-  helperConversationLimit: import_zod14.z.int().min(1).max(20)
+  helperConversationLimit: import_zod16.z.int().min(1).max(20)
 });
-var uiPrepareDiscoveryAgentContextQuerySchema = import_zod14.z.strictObject({
+var uiPrepareDiscoveryAgentContextQuerySchema = import_zod16.z.strictObject({
   ...uiRequestMetadata,
-  kind: import_zod14.z.literal("UI_PREPARE_DISCOVERY_AGENT_CONTEXT"),
+  kind: import_zod16.z.literal("UI_PREPARE_DISCOVERY_AGENT_CONTEXT"),
   projectId: projectIdSchema,
-  helperConversationLimit: import_zod14.z.int().min(1).max(20)
+  helperConversationLimit: import_zod16.z.int().min(1).max(20)
 });
-var uiRecordHelperExchangeCommandSchema = import_zod14.z.strictObject({
+var uiRecordHelperExchangeCommandSchema = import_zod16.z.strictObject({
   ...uiRequestMetadata,
-  kind: import_zod14.z.literal("UI_RECORD_HELPER_EXCHANGE"),
+  kind: import_zod16.z.literal("UI_RECORD_HELPER_EXCHANGE"),
   idempotencyKey: idempotencyKeySchema,
   projectId: projectIdSchema,
   taskId: taskIdSchema.optional(),
@@ -2930,33 +3482,69 @@ var uiRecordHelperExchangeCommandSchema = import_zod14.z.strictObject({
   conversationId: conversationIdSchema.optional(),
   userMessage: nonEmptyTextSchema,
   helperResponseSummary: shortTextSchema,
-  origin: import_zod14.z.enum(["FREE_TEXT", "QUICK_ACTION"]).default("FREE_TEXT"),
-  closeConversation: import_zod14.z.boolean()
+  origin: import_zod16.z.enum(["FREE_TEXT", "QUICK_ACTION"]).default("FREE_TEXT"),
+  closeConversation: import_zod16.z.boolean()
 });
-var uiRetryAnalysisCommandSchema = import_zod14.z.strictObject({
+var uiRecordChatMessageCommandSchema = import_zod16.z.strictObject({
   ...uiRequestMetadata,
-  kind: import_zod14.z.literal("UI_RETRY_ANALYSIS"),
+  kind: import_zod16.z.literal("UI_RECORD_CHAT_MESSAGE"),
+  idempotencyKey: idempotencyKeySchema,
+  projectId: projectIdSchema,
+  taskId: taskIdSchema.optional(),
+  conversationId: conversationIdSchema,
+  message: nonEmptyTextSchema
+});
+var uiRecordBuilderChatTurnCommandSchema = import_zod16.z.strictObject({
+  ...uiRequestMetadata,
+  kind: import_zod16.z.literal("UI_RECORD_BUILDER_CHAT_TURN"),
+  idempotencyKey: idempotencyKeySchema,
+  projectId: projectIdSchema,
+  taskId: taskIdSchema.optional(),
+  conversationId: conversationIdSchema,
+  reply: nonEmptyTextSchema
+});
+var uiRetryAnalysisCommandSchema = import_zod16.z.strictObject({
+  ...uiRequestMetadata,
+  kind: import_zod16.z.literal("UI_RETRY_ANALYSIS"),
   idempotencyKey: idempotencyKeySchema,
   projectId: projectIdSchema,
   analysisJobId: analysisJobIdSchema,
   expectedJobRevision: entityRevisionSchema
 });
-var uiReadAnalysisJobsQuerySchema = import_zod14.z.strictObject({
+var uiReadAnalysisJobsQuerySchema = import_zod16.z.strictObject({
   ...uiRequestMetadata,
-  kind: import_zod14.z.literal("UI_READ_ANALYSIS_JOBS"),
+  kind: import_zod16.z.literal("UI_READ_ANALYSIS_JOBS"),
   projectId: projectIdSchema,
   status: analysisJobStatusSchema.optional(),
-  limit: import_zod14.z.int().min(1).max(100)
+  limit: import_zod16.z.int().min(1).max(100)
 });
-var uiReadEvidenceTraceQuerySchema = import_zod14.z.strictObject({
+var uiReadNextMoveQuerySchema = import_zod16.z.strictObject({
   ...uiRequestMetadata,
-  kind: import_zod14.z.literal("UI_READ_EVIDENCE_TRACE"),
+  kind: import_zod16.z.literal("UI_READ_NEXT_MOVE"),
+  projectId: projectIdSchema
+});
+var uiRetryNextMoveCommandSchema = import_zod16.z.strictObject({
+  ...uiRequestMetadata,
+  kind: import_zod16.z.literal("UI_RETRY_NEXT_MOVE"),
+  idempotencyKey: idempotencyKeySchema,
+  projectId: projectIdSchema,
+  nextMoveJobId: nextMoveJobIdSchema,
+  expectedJobRevision: entityRevisionSchema
+});
+var uiReadEvidenceTraceQuerySchema = import_zod16.z.strictObject({
+  ...uiRequestMetadata,
+  kind: import_zod16.z.literal("UI_READ_EVIDENCE_TRACE"),
   projectId: projectIdSchema,
   conceptId: conceptIdSchema.optional()
 });
-var uiLaunchResultCommandSchema = import_zod14.z.strictObject({
+var uiReadLearnerProfileQuerySchema = import_zod16.z.strictObject({
   ...uiRequestMetadata,
-  kind: import_zod14.z.literal("UI_LAUNCH_RESULT"),
+  kind: import_zod16.z.literal("UI_READ_LEARNER_PROFILE"),
+  maxConcepts: import_zod16.z.int().min(1).max(100).optional()
+});
+var uiLaunchResultCommandSchema = import_zod16.z.strictObject({
+  ...uiRequestMetadata,
+  kind: import_zod16.z.literal("UI_LAUNCH_RESULT"),
   idempotencyKey: idempotencyKeySchema,
   projectId: projectIdSchema
 });
@@ -2966,48 +3554,70 @@ var generatedResultDescriptorBase = {
   projectId: projectIdSchema,
   workspacePath: relativePosixPathSchema
 };
-var generatedResultDescriptorSchema = import_zod14.z.discriminatedUnion("status", [
-  import_zod14.z.strictObject({
+var generatedResultDescriptorSchema = import_zod16.z.discriminatedUnion("status", [
+  import_zod16.z.strictObject({
     ...generatedResultDescriptorBase,
-    status: import_zod14.z.literal("READY")
+    status: import_zod16.z.literal("READY")
   }),
-  import_zod14.z.strictObject({
+  import_zod16.z.strictObject({
     ...generatedResultDescriptorBase,
-    status: import_zod14.z.literal("RUNNING"),
-    url: import_zod14.z.url().refine((value) => {
+    status: import_zod16.z.literal("RUNNING"),
+    url: import_zod16.z.url().refine((value) => {
       const match = value.match(/^http:\/\/127\.0\.0\.1:([1-9]\d{0,4})(?:\/[^?#]*)?$/);
       if (match?.[1] === void 0)
         return false;
       return Number(match[1]) <= 65535;
     }, "Generated result URL must use loopback HTTP"),
-    reused: import_zod14.z.boolean()
+    reused: import_zod16.z.boolean()
   })
 ]);
-var builderSessionBindingDescriptorSchema = import_zod14.z.strictObject({
+var builderSessionBindingDescriptorSchema = import_zod16.z.strictObject({
   schemaVersion: schemaVersionSchema,
   correlationId: correlationIdSchema,
   projectId: projectIdSchema,
   taskId: taskIdSchema,
-  workspaceDirectory: import_zod14.z.string().min(1).max(4096).refine((value) => (value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value)) && !/[\0\r\n]/.test(value), "Expected an absolute local POSIX or Windows drive path"),
-  status: import_zod14.z.literal("READY")
+  workspaceDirectory: import_zod16.z.string().min(1).max(4096).refine((value) => (value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value)) && !/[\0\r\n]/.test(value), "Expected an absolute local POSIX or Windows drive path"),
+  status: import_zod16.z.literal("READY")
 });
-var preparedBuilderTaskDescriptorSchema = import_zod14.z.strictObject({
+var preparedBuilderTaskDescriptorSchema = import_zod16.z.strictObject({
   schemaVersion: schemaVersionSchema,
   correlationId: correlationIdSchema,
   projectId: projectIdSchema,
   workspacePath: relativePosixPathSchema,
   task: builderTaskSchema,
-  status: import_zod14.z.literal("READY")
+  status: import_zod16.z.literal("READY")
 });
-var helperExchangeReceiptSchema = import_zod14.z.strictObject({
+var helperExchangeReceiptSchema = import_zod16.z.strictObject({
   schemaVersion: schemaVersionSchema,
   correlationId: correlationIdSchema,
   conversationId: conversationIdSchema,
   episodeId: episodeIdSchema,
   episodeRevision: entityRevisionSchema,
-  status: import_zod14.z.enum(["OPEN", "PENDING_ANALYSIS"])
+  status: import_zod16.z.enum(["OPEN", "PENDING_ANALYSIS"])
 });
-var uiRequestSchema = import_zod14.z.discriminatedUnion("kind", [
+var chatMessageReceiptSchema = import_zod16.z.strictObject({
+  schemaVersion: schemaVersionSchema,
+  correlationId: correlationIdSchema,
+  conversationId: conversationIdSchema,
+  messageId: messageIdSchema,
+  eventId: eventIdSchema,
+  episode: import_zod16.z.strictObject({
+    id: episodeIdSchema,
+    revision: entityRevisionSchema,
+    type: import_zod16.z.enum(["BUILD_TASK", "FINAL_UPGRADE", "DECISION"]),
+    decisionId: decisionIdSchema.optional()
+  }).optional()
+});
+var learnerProfileViewSchema = import_zod16.z.strictObject({
+  schemaVersion: schemaVersionSchema,
+  correlationId: correlationIdSchema,
+  profileVersion: import_zod16.z.string().regex(/^\d+\.\d+\.\d+$/),
+  conceptIds: import_zod16.z.array(conceptIdSchema).max(100),
+  omittedCount: import_zod16.z.int().nonnegative(),
+  text: import_zod16.z.string().min(1).max(2e4),
+  digest: import_zod16.z.string().regex(/^[0-9a-f]{64}$/)
+});
+var uiRequestSchema = import_zod16.z.discriminatedUnion("kind", [
   uiStartDiscoveryCommandSchema,
   uiRecordDiscoveryFeedbackCommandSchema,
   uiUpdateLearningSpecCommandSchema,
@@ -3023,20 +3633,21 @@ var uiRequestSchema = import_zod14.z.discriminatedUnion("kind", [
   uiOpenHelperQuerySchema,
   uiPrepareBuilderSessionQuerySchema,
   uiRecordHelperExchangeCommandSchema,
+  uiRecordChatMessageCommandSchema,
+  uiRecordBuilderChatTurnCommandSchema,
   uiRetryAnalysisCommandSchema,
   uiReadAnalysisJobsQuerySchema,
+  uiReadNextMoveQuerySchema,
+  uiRetryNextMoveCommandSchema,
   uiReadEvidenceTraceQuerySchema,
+  uiReadLearnerProfileQuerySchema,
   uiLaunchResultCommandSchema
 ]);
 
-// packages/contracts/dist/ui-protocol.js
-var CREW_UI_PROTOCOL_VERSION = 9;
-var CREW_APP_VERSION = "0.4.1";
-
 // packages/contracts/dist/ui-session.js
-var import_zod15 = require("zod");
-var crewAppSurfaceSchema = import_zod15.z.enum(["DISCOVERY", "SPEC", "BUILD"]);
-var helperConversationSummarySchema = import_zod15.z.strictObject({
+var import_zod17 = require("zod");
+var crewAppSurfaceSchema = import_zod17.z.enum(["DISCOVERY", "SPEC", "BUILD"]);
+var helperConversationSummarySchema = import_zod17.z.strictObject({
   conversationId: conversationIdSchema,
   episodeId: episodeIdSchema,
   /** Helper turn correlation; matches the PersonalizationTrace written for that turn. */
@@ -3046,28 +3657,28 @@ var helperConversationSummarySchema = import_zod15.z.strictObject({
   status: episodeStatusSchema,
   startedAt: utcTimestampSchema,
   endedAt: utcTimestampSchema.optional(),
-  redactedUserExcerpts: import_zod15.z.array(nonEmptyTextSchema).max(5),
-  helperResponseSummaries: import_zod15.z.array(nonEmptyTextSchema).max(5)
+  redactedUserExcerpts: import_zod17.z.array(nonEmptyTextSchema).max(5),
+  helperResponseSummaries: import_zod17.z.array(nonEmptyTextSchema).max(5)
 });
-var decisionSessionItemSchema = import_zod15.z.strictObject({
+var decisionSessionItemSchema = import_zod17.z.strictObject({
   request: decisionRequestSchema,
   resolution: decisionResolutionSchema.nullable(),
   application: decisionApplicationSchema.nullable()
 });
-var projectHistoryItemSchema = import_zod15.z.strictObject({
+var projectHistoryItemSchema = import_zod17.z.strictObject({
   project: projectSchema,
   suggestedSurface: crewAppSurfaceSchema,
   activeTask: builderTaskSchema.nullable(),
-  pendingDecisionCount: import_zod15.z.int().nonnegative().max(100),
-  currentContextVersion: import_zod15.z.int().positive().nullable(),
-  helperConversationCount: import_zod15.z.int().nonnegative()
+  pendingDecisionCount: import_zod17.z.int().nonnegative().max(100),
+  currentContextVersion: import_zod17.z.int().positive().nullable(),
+  helperConversationCount: import_zod17.z.int().nonnegative()
 });
-var projectHistorySchema = import_zod15.z.strictObject({
+var projectHistorySchema = import_zod17.z.strictObject({
   schemaVersion: schemaVersionSchema,
   correlationId: correlationIdSchema,
-  projects: import_zod15.z.array(projectHistoryItemSchema).max(100)
+  projects: import_zod17.z.array(projectHistoryItemSchema).max(100)
 });
-var projectSessionSnapshotSchema = import_zod15.z.strictObject({
+var projectSessionSnapshotSchema = import_zod17.z.strictObject({
   schemaVersion: schemaVersionSchema,
   correlationId: correlationIdSchema,
   project: projectSchema,
@@ -3079,35 +3690,149 @@ var projectSessionSnapshotSchema = import_zod15.z.strictObject({
   activeTask: builderTaskSchema.nullable(),
   currentTask: builderTaskSchema.nullable(),
   liveContext: liveProjectContextSchema.nullable(),
-  pendingDecisions: import_zod15.z.array(decisionRequestSchema).max(100),
-  decisions: import_zod15.z.array(decisionSessionItemSchema).max(100).default([]),
+  pendingDecisions: import_zod17.z.array(decisionRequestSchema).max(100),
+  decisions: import_zod17.z.array(decisionSessionItemSchema).max(100).default([]),
   completionReport: taskCompletionReportSchema.nullable().default(null),
-  helperConversations: import_zod15.z.array(helperConversationSummarySchema).max(20)
+  helperConversations: import_zod17.z.array(helperConversationSummarySchema).max(20)
 });
 
-// packages/contracts/dist/validation.js
-var import_zod16 = require("zod");
-var contractValidationIssueSchema = import_zod16.z.strictObject({
-  path: import_zod16.z.array(import_zod16.z.union([import_zod16.z.string(), import_zod16.z.int().nonnegative()])),
-  code: import_zod16.z.string().min(1),
-  message: import_zod16.z.string().min(1)
+// packages/contracts/dist/local-runtime.js
+var LOCAL_PROTOCOL_VERSION = 1;
+var FRONTEND_CLIENT_VERSION = "0.1.0";
+var localRunIdSchema = import_zod18.z.string().regex(/^run_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+var metadata = {
+  projectId: projectIdSchema,
+  idempotencyKey: idempotencyKeySchema
+};
+var localRunRequestSchema = import_zod18.z.discriminatedUnion("kind", [
+  import_zod18.z.strictObject({
+    ...metadata,
+    kind: import_zod18.z.literal("DISCOVERY"),
+    discoverySessionId: discoverySessionIdSchema,
+    expectedSessionRevision: expectedRevisionSchema,
+    phase: import_zod18.z.enum(["PREVIEW", "ENRICH_ALL", "ENRICH_SELECTED", "ROUND", "MERGE", "SPEC"]),
+    candidateIds: import_zod18.z.array(candidateIdSchema).max(10).default([]),
+    message: nonEmptyTextSchema.optional(),
+    expectedSpecRevision: expectedRevisionSchema.optional(),
+    enrichAfterPreview: import_zod18.z.boolean().default(true)
+  }),
+  import_zod18.z.strictObject({
+    ...metadata,
+    kind: import_zod18.z.literal("BUILDER"),
+    taskId: taskIdSchema,
+    expectedTaskRevision: expectedRevisionSchema,
+    // An explicit frontend start/resume may add no new instruction. The
+    // confirmed Task and durable Decision state still bind the Builder run.
+    message: import_zod18.z.string().trim().max(4e3)
+  }),
+  import_zod18.z.strictObject({
+    ...metadata,
+    kind: import_zod18.z.literal("HELPER"),
+    taskId: taskIdSchema,
+    decisionId: decisionIdSchema.optional(),
+    message: nonEmptyTextSchema,
+    origin: import_zod18.z.enum(["FREE_TEXT", "QUICK_ACTION"]).default("FREE_TEXT")
+  })
+]);
+var localRunSchema = import_zod18.z.strictObject({
+  protocolVersion: import_zod18.z.literal(LOCAL_PROTOCOL_VERSION),
+  backendInstanceId: import_zod18.z.string().uuid(),
+  id: localRunIdSchema,
+  projectId: projectIdSchema,
+  kind: import_zod18.z.enum(["DISCOVERY", "BUILDER", "HELPER"]),
+  phase: import_zod18.z.string().max(40),
+  status: import_zod18.z.enum(["ACCEPTED", "RUNNING", "SUCCEEDED", "FAILED", "CANCELLED"]),
+  outcome: import_zod18.z.enum(["PENDING", "DURABLE_RESULT", "TURN_ENDED", "HELPER_RECORDED", "NONE"]),
+  createdAt: utcTimestampSchema,
+  updatedAt: utcTimestampSchema,
+  errorCode: import_zod18.z.string().regex(/^[A-Z0-9_]{1,100}$/).nullable(),
+  lastSequence: import_zod18.z.int().nonnegative(),
+  retainedFromSequence: import_zod18.z.int().nonnegative()
 });
-var contractErrorSchema = import_zod16.z.strictObject({
+var localRunEventSchema = import_zod18.z.strictObject({
+  runId: localRunIdSchema,
+  projectId: projectIdSchema,
+  sequence: import_zod18.z.int().positive(),
+  kind: import_zod18.z.enum(["STATE", "TEXT", "TOOL", "PERMISSION_DENIED"]),
+  text: import_zod18.z.string().max(65536).optional(),
+  update: import_zod18.z.record(import_zod18.z.string(), import_zod18.z.unknown()).optional(),
+  run: localRunSchema.optional(),
+  transient: import_zod18.z.literal(true),
+  redactionStatus: import_zod18.z.literal("VERIFIED_REDACTED")
+});
+var localConnectionSchema = import_zod18.z.strictObject({
+  protocolVersion: import_zod18.z.literal(LOCAL_PROTOCOL_VERSION),
+  backendInstanceId: import_zod18.z.string().uuid(),
+  baseUrl: import_zod18.z.string().regex(/^http:\/\/127\.0\.0\.1:[1-9][0-9]{0,4}$/),
+  token: import_zod18.z.string().regex(/^[0-9a-f]{64}$/)
+});
+var localApplicationEnvelopeSchema = import_zod18.z.strictObject({
+  protocolVersion: import_zod18.z.literal(LOCAL_PROTOCOL_VERSION),
+  request: uiRequestSchema
+});
+var localRunEnvelopeSchema = import_zod18.z.strictObject({
+  protocolVersion: import_zod18.z.literal(LOCAL_PROTOCOL_VERSION),
+  request: localRunRequestSchema
+});
+var localResponseSchemas = {
+  UI_START_DISCOVERY: commandReceiptSchema,
+  UI_RECORD_DISCOVERY_FEEDBACK: commandReceiptSchema,
+  UI_UPDATE_LEARNING_SPEC: commandReceiptSchema,
+  UI_CONFIRM_LEARNING_SPEC: commandReceiptSchema,
+  UI_PREPARE_BUILDER_TASK: preparedBuilderTaskDescriptorSchema,
+  UI_PREPARE_FINAL_UPGRADE_TASK: preparedBuilderTaskDescriptorSchema,
+  UI_PREPARE_FOLLOW_UP_TASK: preparedBuilderTaskDescriptorSchema,
+  UI_RETURN_TO_DISCOVERY: commandReceiptSchema,
+  UI_RESOLVE_DECISION: commandReceiptSchema,
+  UI_LIST_PROJECTS: projectHistorySchema,
+  UI_RESTORE_PROJECT_SESSION: projectSessionSnapshotSchema,
+  UI_PREPARE_DISCOVERY_AGENT_CONTEXT: projectSessionSnapshotSchema,
+  UI_OPEN_HELPER: helperContextSchema,
+  UI_PREPARE_BUILDER_SESSION: builderSessionBindingDescriptorSchema,
+  UI_RECORD_HELPER_EXCHANGE: helperExchangeReceiptSchema,
+  UI_RECORD_CHAT_MESSAGE: chatMessageReceiptSchema,
+  UI_RECORD_BUILDER_CHAT_TURN: chatMessageReceiptSchema,
+  UI_RETRY_ANALYSIS: analysisJobSchema,
+  UI_READ_ANALYSIS_JOBS: analysisJobSchema.array(),
+  UI_READ_NEXT_MOVE: nextMoveViewSchema,
+  UI_RETRY_NEXT_MOVE: nextMoveViewSchema,
+  UI_READ_EVIDENCE_TRACE: projectEvidenceTraceSchema,
+  UI_READ_LEARNER_PROFILE: learnerProfileViewSchema,
+  UI_LAUNCH_RESULT: generatedResultDescriptorSchema
+};
+var localUiMetadataSchema = import_zod18.z.strictObject({
+  schemaVersion: import_zod18.z.literal(1),
+  correlationId: correlationIdSchema,
+  actor: import_zod18.z.strictObject({ kind: import_zod18.z.literal("UI") })
+});
+
+// packages/contracts/dist/ui-protocol.js
+var CREW_UI_PROTOCOL_VERSION = 9;
+var CREW_APP_VERSION = "0.4.1";
+
+// packages/contracts/dist/validation.js
+var import_zod19 = require("zod");
+var contractValidationIssueSchema = import_zod19.z.strictObject({
+  path: import_zod19.z.array(import_zod19.z.union([import_zod19.z.string(), import_zod19.z.int().nonnegative()])),
+  code: import_zod19.z.string().min(1),
+  message: import_zod19.z.string().min(1)
+});
+var contractErrorSchema = import_zod19.z.strictObject({
   schemaVersion: schemaVersionSchema,
-  kind: import_zod16.z.literal("CONTRACT_ERROR"),
-  category: import_zod16.z.enum(["VALIDATION", "PERMISSION"]),
-  code: import_zod16.z.enum([
+  kind: import_zod19.z.literal("CONTRACT_ERROR"),
+  category: import_zod19.z.enum(["VALIDATION", "PERMISSION"]),
+  code: import_zod19.z.enum([
     "INVALID_PAYLOAD",
     "UNSUPPORTED_SCHEMA_VERSION",
     "UNEXPECTED_FIELD",
     "AGENT_PERMISSION_MISMATCH"
   ]),
-  message: import_zod16.z.string().min(1),
+  message: import_zod19.z.string().min(1),
   correlationId: correlationIdSchema.optional(),
-  retryable: import_zod16.z.literal(false),
-  issues: import_zod16.z.array(contractValidationIssueSchema).min(1)
+  retryable: import_zod19.z.literal(false),
+  issues: import_zod19.z.array(contractValidationIssueSchema).min(1)
 });
-var operationErrorCategorySchema = import_zod16.z.enum([
+var operationErrorCategorySchema = import_zod19.z.enum([
   "VALIDATION",
   "PERMISSION",
   "STALE_CONTEXT",
@@ -3116,15 +3841,15 @@ var operationErrorCategorySchema = import_zod16.z.enum([
   "STORAGE",
   "GENERATED_PROJECT"
 ]);
-var operationErrorSchema = import_zod16.z.strictObject({
+var operationErrorSchema = import_zod19.z.strictObject({
   schemaVersion: schemaVersionSchema,
-  kind: import_zod16.z.literal("OPERATION_ERROR"),
+  kind: import_zod19.z.literal("OPERATION_ERROR"),
   category: operationErrorCategorySchema,
-  code: import_zod16.z.string().regex(/^[A-Z][A-Z0-9_]{0,79}$/),
-  disposition: import_zod16.z.enum(["RETRYABLE", "USER_ACTION_REQUIRED", "PERMANENT"]),
-  message: import_zod16.z.string().min(1).max(1e3),
+  code: import_zod19.z.string().regex(/^[A-Z][A-Z0-9_]{0,79}$/),
+  disposition: import_zod19.z.enum(["RETRYABLE", "USER_ACTION_REQUIRED", "PERMANENT"]),
+  message: import_zod19.z.string().min(1).max(1e3),
   correlationId: correlationIdSchema,
-  issues: import_zod16.z.array(contractValidationIssueSchema).max(100),
+  issues: import_zod19.z.array(contractValidationIssueSchema).max(100),
   redactionStatus: redactionStatusSchema
 });
 function readCorrelationId(input) {
@@ -3175,11 +3900,18 @@ var allowedKindsByRole = {
   BUILDER: /* @__PURE__ */ new Set([
     "BUILDER_GET_TASK",
     "BUILDER_GET_DECISION_RESULT",
+    "BUILDER_GET_BUILD_STATUS",
     "BUILDER_START_TASK",
     "BUILDER_UPDATE_LIVE_CONTEXT",
     "BUILDER_REQUEST_DECISION",
     "BUILDER_APPLY_DECISION",
-    "BUILDER_COMPLETE_TASK"
+    "BUILDER_RESOLVE_DECISION_FROM_CHAT",
+    "BUILDER_COMPLETE_TASK",
+    "BUILDER_CHAT_CHECK_PROGRESS",
+    "BUILDER_CHAT_SAVE_PROGRESS",
+    "BUILDER_CHAT_ASK_CHOICE",
+    "BUILDER_CHAT_SAVE_CHOICE",
+    "BUILDER_CHAT_FINISH_TASK"
   ]),
   HELPER: /* @__PURE__ */ new Set(["HELPER_GET_CONTEXT", "HELPER_REQUEST_CONTEXT_REFRESH"]),
   EVIDENCE_ANALYST: /* @__PURE__ */ new Set(["ANALYST_GET_EPISODE_CONTEXT", "ANALYST_SUBMIT_EVIDENCE_PROPOSALS"])
@@ -3211,112 +3943,6 @@ function validateAgentRequest(authenticatedRole, input) {
   }
   return validateContract(requestSchemaByRole[authenticatedRole], input);
 }
-
-// packages/contracts/dist/local-runtime.js
-var import_zod17 = require("zod");
-var LOCAL_PROTOCOL_VERSION = 1;
-var FRONTEND_CLIENT_VERSION = "0.1.0";
-var localRunIdSchema = import_zod17.z.string().regex(/^run_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
-var metadata = {
-  projectId: projectIdSchema,
-  idempotencyKey: idempotencyKeySchema
-};
-var localRunRequestSchema = import_zod17.z.discriminatedUnion("kind", [
-  import_zod17.z.strictObject({
-    ...metadata,
-    kind: import_zod17.z.literal("DISCOVERY"),
-    discoverySessionId: discoverySessionIdSchema,
-    expectedSessionRevision: expectedRevisionSchema,
-    phase: import_zod17.z.enum(["PREVIEW", "ENRICH_ALL", "ENRICH_SELECTED", "ROUND", "MERGE", "SPEC"]),
-    candidateIds: import_zod17.z.array(candidateIdSchema).max(10).default([]),
-    message: nonEmptyTextSchema.optional(),
-    expectedSpecRevision: expectedRevisionSchema.optional(),
-    enrichAfterPreview: import_zod17.z.boolean().default(true)
-  }),
-  import_zod17.z.strictObject({
-    ...metadata,
-    kind: import_zod17.z.literal("BUILDER"),
-    taskId: taskIdSchema,
-    expectedTaskRevision: expectedRevisionSchema,
-    // An explicit frontend start/resume may add no new instruction. The
-    // confirmed Task and durable Decision state still bind the Builder run.
-    message: import_zod17.z.string().trim().max(4e3)
-  }),
-  import_zod17.z.strictObject({
-    ...metadata,
-    kind: import_zod17.z.literal("HELPER"),
-    taskId: taskIdSchema,
-    decisionId: decisionIdSchema.optional(),
-    message: nonEmptyTextSchema,
-    origin: import_zod17.z.enum(["FREE_TEXT", "QUICK_ACTION"]).default("FREE_TEXT")
-  })
-]);
-var localRunSchema = import_zod17.z.strictObject({
-  protocolVersion: import_zod17.z.literal(LOCAL_PROTOCOL_VERSION),
-  backendInstanceId: import_zod17.z.string().uuid(),
-  id: localRunIdSchema,
-  projectId: projectIdSchema,
-  kind: import_zod17.z.enum(["DISCOVERY", "BUILDER", "HELPER"]),
-  phase: import_zod17.z.string().max(40),
-  status: import_zod17.z.enum(["ACCEPTED", "RUNNING", "SUCCEEDED", "FAILED", "CANCELLED"]),
-  outcome: import_zod17.z.enum(["PENDING", "DURABLE_RESULT", "TURN_ENDED", "HELPER_RECORDED", "NONE"]),
-  createdAt: utcTimestampSchema,
-  updatedAt: utcTimestampSchema,
-  errorCode: import_zod17.z.string().regex(/^[A-Z0-9_]{1,100}$/).nullable(),
-  lastSequence: import_zod17.z.int().nonnegative(),
-  retainedFromSequence: import_zod17.z.int().nonnegative()
-});
-var localRunEventSchema = import_zod17.z.strictObject({
-  runId: localRunIdSchema,
-  projectId: projectIdSchema,
-  sequence: import_zod17.z.int().positive(),
-  kind: import_zod17.z.enum(["STATE", "TEXT", "TOOL", "PERMISSION_DENIED"]),
-  text: import_zod17.z.string().max(65536).optional(),
-  update: import_zod17.z.record(import_zod17.z.string(), import_zod17.z.unknown()).optional(),
-  run: localRunSchema.optional(),
-  transient: import_zod17.z.literal(true),
-  redactionStatus: import_zod17.z.literal("VERIFIED_REDACTED")
-});
-var localConnectionSchema = import_zod17.z.strictObject({
-  protocolVersion: import_zod17.z.literal(LOCAL_PROTOCOL_VERSION),
-  backendInstanceId: import_zod17.z.string().uuid(),
-  baseUrl: import_zod17.z.string().regex(/^http:\/\/127\.0\.0\.1:[1-9][0-9]{0,4}$/),
-  token: import_zod17.z.string().regex(/^[0-9a-f]{64}$/)
-});
-var localApplicationEnvelopeSchema = import_zod17.z.strictObject({
-  protocolVersion: import_zod17.z.literal(LOCAL_PROTOCOL_VERSION),
-  request: uiRequestSchema
-});
-var localRunEnvelopeSchema = import_zod17.z.strictObject({
-  protocolVersion: import_zod17.z.literal(LOCAL_PROTOCOL_VERSION),
-  request: localRunRequestSchema
-});
-var localResponseSchemas = {
-  UI_START_DISCOVERY: commandReceiptSchema,
-  UI_RECORD_DISCOVERY_FEEDBACK: commandReceiptSchema,
-  UI_UPDATE_LEARNING_SPEC: commandReceiptSchema,
-  UI_CONFIRM_LEARNING_SPEC: commandReceiptSchema,
-  UI_PREPARE_BUILDER_TASK: preparedBuilderTaskDescriptorSchema,
-  UI_PREPARE_FINAL_UPGRADE_TASK: preparedBuilderTaskDescriptorSchema,
-  UI_PREPARE_FOLLOW_UP_TASK: preparedBuilderTaskDescriptorSchema,
-  UI_RETURN_TO_DISCOVERY: commandReceiptSchema,
-  UI_RESOLVE_DECISION: commandReceiptSchema,
-  UI_LIST_PROJECTS: projectHistorySchema,
-  UI_RESTORE_PROJECT_SESSION: projectSessionSnapshotSchema,
-  UI_PREPARE_DISCOVERY_AGENT_CONTEXT: projectSessionSnapshotSchema,
-  UI_OPEN_HELPER: helperContextSchema,
-  UI_PREPARE_BUILDER_SESSION: builderSessionBindingDescriptorSchema,
-  UI_RECORD_HELPER_EXCHANGE: helperExchangeReceiptSchema,
-  UI_RETRY_ANALYSIS: analysisJobSchema,
-  UI_READ_ANALYSIS_JOBS: analysisJobSchema.array(),
-  UI_READ_EVIDENCE_TRACE: projectEvidenceTraceSchema,
-  UI_LAUNCH_RESULT: generatedResultDescriptorSchema
-};
-var localUiMetadataSchema = import_zod17.z.strictObject({
-  schemaVersion: import_zod17.z.literal(1),
-  correlationId: correlationIdSchema,
-  actor: import_zod17.z.strictObject({ kind: import_zod17.z.literal("UI") })
-});
 
 // packages/frontend-client/dist/program-adapter.js
 var import_node_crypto = require("node:crypto");
@@ -3850,6 +4476,7 @@ var LocalCoreClient = class {
 0 && (module.exports = {
   ANALYSIS_MAX_ATTEMPTS,
   ANALYSIS_SOFT_TIMEOUT_MS,
+  BUILDER_CHAT_TURN_MAX_CHARS,
   CREW_APP_VERSION,
   CREW_UI_PROTOCOL_VERSION,
   CURRENT_SCHEMA_VERSION,
@@ -3860,6 +4487,10 @@ var LocalCoreClient = class {
   LocalClientError,
   LocalCoreClient,
   LocalProgramAdapter,
+  MAX_ACTIVE_DECISIONS,
+  NEXT_MOVE_COUNT,
+  NEXT_MOVE_MAX_ATTEMPTS,
+  NEXT_MOVE_SOFT_TIMEOUT_MS,
   acceptanceCriterionSchema,
   acceptedEvidenceSchema,
   activityEventSchema,
@@ -3890,15 +4521,29 @@ var LocalCoreClient = class {
   baselineResultIdSchema,
   baselineResultSchema,
   buildCheckpointSchema,
+  buildStatusSchema,
   builderAgentRequestSchema,
   builderApplyDecisionCommandSchema,
   builderApplyDecisionToolInputSchema,
+  builderChatAskChoiceCommandSchema,
+  builderChatAskChoiceReceiptSchema,
+  builderChatCheckProgressQuerySchema,
+  builderChatFinishTaskCommandSchema,
+  builderChatFinishTaskReceiptSchema,
+  builderChatProgressSchema,
+  builderChatSaveChoiceCommandSchema,
+  builderChatSaveChoiceReceiptSchema,
+  builderChatSaveProgressCommandSchema,
+  builderChatSaveProgressReceiptSchema,
   builderCompleteTaskCommandSchema,
   builderCompleteTaskToolInputSchema,
+  builderGetBuildStatusQuerySchema,
   builderGetDecisionResultQuerySchema,
   builderGetTaskQuerySchema,
   builderRequestDecisionCommandSchema,
   builderRequestDecisionToolInputSchema,
+  builderResolveDecisionFromChatCommandSchema,
+  builderResolveDecisionFromChatToolInputSchema,
   builderSessionBindingDescriptorSchema,
   builderStartTaskCommandSchema,
   builderTaskContextSchema,
@@ -3924,6 +4569,9 @@ var LocalCoreClient = class {
   candidateRoundSchema,
   candidateScopeSuggestionSchema,
   canonicalConceptSchema,
+  chatDecisionCitationSchema,
+  chatDecisionSelectionSchema,
+  chatMessageReceiptSchema,
   classifyBuilderTurn,
   classifyNativeWorkerStatus,
   codeReferenceSchema,
@@ -3951,9 +4599,11 @@ var LocalCoreClient = class {
   decisionApplicationIdSchema,
   decisionApplicationSchema,
   decisionCategorySchema,
+  decisionChatSourceSchema,
   decisionCommandReceiptSchema,
   decisionContextDraftSchema,
   decisionIdSchema,
+  decisionLinkedMessageSchema,
   decisionOptionDraftSchema,
   decisionOptionIdSchema,
   decisionOptionSchema,
@@ -4034,8 +4684,20 @@ var LocalCoreClient = class {
   helperSourceExcerptSchema,
   idempotencyKeySchema,
   isRunActive,
+  kiroChatAskChoiceSchema,
+  kiroChatAskChoiceToolInputSchema,
+  kiroChatCheckProgressToolInputSchema,
+  kiroChatChoiceOptionSchema,
+  kiroChatFinishTaskSchema,
+  kiroChatFinishTaskToolInputSchema,
+  kiroChatProgressKindSchema,
+  kiroChatProgressNoteSchema,
+  kiroChatSaveChoiceSchema,
+  kiroChatSaveChoiceToolInputSchema,
+  kiroChatSaveProgressToolInputSchema,
   labelSchema,
   learnerLevelSchema,
+  learnerProfileViewSchema,
   learningScopeCategorySchema,
   learningScopeItemSchema,
   learningSpecConfirmationSchema,
@@ -4059,6 +4721,23 @@ var LocalCoreClient = class {
   misconceptionIssueIdSchema,
   misconceptionIssueSchema,
   misconceptionProposalSchema,
+  nextMoveClaimJobCommandSchema,
+  nextMoveContextSchema,
+  nextMoveFailAttemptCommandSchema,
+  nextMoveGetContextQuerySchema,
+  nextMoveJobIdSchema,
+  nextMoveJobSchema,
+  nextMoveJobStatusSchema,
+  nextMoveListPendingQuerySchema,
+  nextMoveProposalSchema,
+  nextMoveRecoverExpiredCommandSchema,
+  nextMoveRuntimeRequestSchema,
+  nextMoveSchema,
+  nextMoveSemanticResultSchema,
+  nextMoveSizeSchema,
+  nextMoveSubmitResultCommandSchema,
+  nextMoveViewSchema,
+  nextMoveViewStatusSchema,
   nonEmptyTextSchema,
   operationErrorCategorySchema,
   operationErrorSchema,
@@ -4105,12 +4784,17 @@ var LocalCoreClient = class {
   uiPrepareFollowUpTaskCommandSchema,
   uiReadAnalysisJobsQuerySchema,
   uiReadEvidenceTraceQuerySchema,
+  uiReadLearnerProfileQuerySchema,
+  uiReadNextMoveQuerySchema,
+  uiRecordBuilderChatTurnCommandSchema,
+  uiRecordChatMessageCommandSchema,
   uiRecordDiscoveryFeedbackCommandSchema,
   uiRecordHelperExchangeCommandSchema,
   uiRequestSchema,
   uiResolveDecisionCommandSchema,
   uiRestoreProjectSessionQuerySchema,
   uiRetryAnalysisCommandSchema,
+  uiRetryNextMoveCommandSchema,
   uiReturnToDiscoveryCommandSchema,
   uiStartDiscoveryCommandSchema,
   uiUpdateLearningSpecCommandSchema,

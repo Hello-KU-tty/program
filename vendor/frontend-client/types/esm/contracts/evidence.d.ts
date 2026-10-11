@@ -510,6 +510,7 @@ export declare const evidenceDecisionSchema: z.ZodObject<{
     reasonCode: z.ZodEnum<{
         AGENT_AUTHORED_SOURCE: "AGENT_AUTHORED_SOURCE";
         DUPLICATE_PROPOSAL: "DUPLICATE_PROPOSAL";
+        DUPLICATE_USER_SOURCE: "DUPLICATE_USER_SOURCE";
         INSUFFICIENT_EVIDENCE: "INSUFFICIENT_EVIDENCE";
         INVALID_REFERENCE: "INVALID_REFERENCE";
         INVALID_SCHEMA: "INVALID_SCHEMA";
@@ -785,6 +786,7 @@ export declare const evidenceBatchApplicationResultSchema: z.ZodObject<{
             reasonCode: z.ZodEnum<{
                 AGENT_AUTHORED_SOURCE: "AGENT_AUTHORED_SOURCE";
                 DUPLICATE_PROPOSAL: "DUPLICATE_PROPOSAL";
+                DUPLICATE_USER_SOURCE: "DUPLICATE_USER_SOURCE";
                 INSUFFICIENT_EVIDENCE: "INSUFFICIENT_EVIDENCE";
                 INVALID_REFERENCE: "INVALID_REFERENCE";
                 INVALID_SCHEMA: "INVALID_SCHEMA";

@@ -84,6 +84,16 @@ export declare class LocalCoreClient {
                     personalizationTraceId: string;
                     userGoal: string;
                 } | undefined;
+                nextMove?: {
+                    nextMoveJobId: string;
+                    number: number;
+                    title: string;
+                    summary: string;
+                    source: {
+                        kind: "AGENT";
+                        role: "DISCOVERY";
+                    };
+                } | undefined;
                 sequence: number;
                 status: "ACTIVE" | "BLOCKED" | "CANCELLED" | "COMPLETED" | "FAILED" | "PENDING";
                 createdAt: string;
@@ -641,6 +651,16 @@ export declare class LocalCoreClient {
                 personalizationTraceId: string;
                 userGoal: string;
             } | undefined;
+            nextMove?: {
+                nextMoveJobId: string;
+                number: number;
+                title: string;
+                summary: string;
+                source: {
+                    kind: "AGENT";
+                    role: "DISCOVERY";
+                };
+            } | undefined;
             sequence: number;
             status: "ACTIVE" | "BLOCKED" | "CANCELLED" | "COMPLETED" | "FAILED" | "PENDING";
             createdAt: string;
@@ -673,6 +693,16 @@ export declare class LocalCoreClient {
                 sourceTaskId: string;
                 personalizationTraceId: string;
                 userGoal: string;
+            } | undefined;
+            nextMove?: {
+                nextMoveJobId: string;
+                number: number;
+                title: string;
+                summary: string;
+                source: {
+                    kind: "AGENT";
+                    role: "DISCOVERY";
+                };
             } | undefined;
             sequence: number;
             status: "ACTIVE" | "BLOCKED" | "CANCELLED" | "COMPLETED" | "FAILED" | "PENDING";
@@ -775,6 +805,7 @@ export declare class LocalCoreClient {
                 eventId: string;
             })[];
             independentWorkCanContinue: boolean;
+            replacesDecisionId?: string | undefined;
             requestedAt: string;
             source: {
                 kind: "AGENT";
@@ -843,6 +874,7 @@ export declare class LocalCoreClient {
                     eventId: string;
                 })[];
                 independentWorkCanContinue: boolean;
+                replacesDecisionId?: string | undefined;
                 requestedAt: string;
                 source: {
                     kind: "AGENT";
@@ -863,6 +895,17 @@ export declare class LocalCoreClient {
                 customProposal?: string | undefined;
                 rationale?: string | undefined;
                 helperUsed: boolean;
+                chatSource?: {
+                    mappedBy: "BUILDER";
+                    userMessageIds: string[];
+                    linkedMessages?: {
+                        conversationId: string;
+                        messageId: string;
+                        tab: "BUILDER" | "HELPER";
+                        timing: "AFTER_REQUEST" | "BEFORE_REQUEST";
+                    }[] | undefined;
+                    builderSummary?: string | undefined;
+                } | undefined;
                 resolvedAt: string;
                 source: {
                     kind: "USER";
@@ -935,7 +978,7 @@ export declare class LocalCoreClient {
             implementedFeatures: string[];
             acceptanceResults: {
                 criterionKey: string;
-                status: "FAILED" | "PASSED";
+                status: "CHANGED_BY_DECISION" | "FAILED" | "PASSED";
                 evidence: ({
                     kind: "CODE";
                     path: string;
@@ -975,6 +1018,7 @@ export declare class LocalCoreClient {
                     kind: "EVENT";
                     eventId: string;
                 })[];
+                decisionId?: string | undefined;
             }[];
             validationResults: {
                 name: string;

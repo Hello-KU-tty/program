@@ -93,6 +93,7 @@ export declare const decisionSessionItemSchema: z.ZodObject<{
             eventId: z.ZodString;
         }, z.core.$strict>], "kind">>;
         independentWorkCanContinue: z.ZodBoolean;
+        replacesDecisionId: z.ZodOptional<z.ZodString>;
         requestedAt: z.ZodISODateTime;
         source: z.ZodObject<{
             kind: z.ZodLiteral<"AGENT">;
@@ -121,6 +122,23 @@ export declare const decisionSessionItemSchema: z.ZodObject<{
         customProposal: z.ZodOptional<z.ZodString>;
         rationale: z.ZodOptional<z.ZodString>;
         helperUsed: z.ZodBoolean;
+        chatSource: z.ZodOptional<z.ZodObject<{
+            mappedBy: z.ZodLiteral<"BUILDER">;
+            userMessageIds: z.ZodArray<z.ZodString>;
+            linkedMessages: z.ZodOptional<z.ZodArray<z.ZodObject<{
+                conversationId: z.ZodString;
+                messageId: z.ZodString;
+                tab: z.ZodEnum<{
+                    BUILDER: "BUILDER";
+                    HELPER: "HELPER";
+                }>;
+                timing: z.ZodEnum<{
+                    AFTER_REQUEST: "AFTER_REQUEST";
+                    BEFORE_REQUEST: "BEFORE_REQUEST";
+                }>;
+            }, z.core.$strict>>>;
+            builderSummary: z.ZodOptional<z.ZodString>;
+        }, z.core.$strict>>;
         resolvedAt: z.ZodISODateTime;
         source: z.ZodObject<{
             kind: z.ZodLiteral<"USER">;
@@ -271,6 +289,16 @@ export declare const projectHistoryItemSchema: z.ZodObject<{
             personalizationTraceId: z.ZodString;
             userGoal: z.ZodString;
         }, z.core.$strict>>;
+        nextMove: z.ZodOptional<z.ZodObject<{
+            nextMoveJobId: z.ZodString;
+            number: z.ZodInt;
+            title: z.ZodString;
+            summary: z.ZodString;
+            source: z.ZodObject<{
+                kind: z.ZodLiteral<"AGENT">;
+                role: z.ZodLiteral<"DISCOVERY">;
+            }, z.core.$strict>;
+        }, z.core.$strict>>;
         sequence: z.ZodInt;
         status: z.ZodEnum<{
             ACTIVE: "ACTIVE";
@@ -377,6 +405,16 @@ export declare const projectHistorySchema: z.ZodObject<{
                 sourceTaskId: z.ZodString;
                 personalizationTraceId: z.ZodString;
                 userGoal: z.ZodString;
+            }, z.core.$strict>>;
+            nextMove: z.ZodOptional<z.ZodObject<{
+                nextMoveJobId: z.ZodString;
+                number: z.ZodInt;
+                title: z.ZodString;
+                summary: z.ZodString;
+                source: z.ZodObject<{
+                    kind: z.ZodLiteral<"AGENT">;
+                    role: z.ZodLiteral<"DISCOVERY">;
+                }, z.core.$strict>;
             }, z.core.$strict>>;
             sequence: z.ZodInt;
             status: z.ZodEnum<{
@@ -1219,6 +1257,16 @@ export declare const projectSessionSnapshotSchema: z.ZodObject<{
             personalizationTraceId: z.ZodString;
             userGoal: z.ZodString;
         }, z.core.$strict>>;
+        nextMove: z.ZodOptional<z.ZodObject<{
+            nextMoveJobId: z.ZodString;
+            number: z.ZodInt;
+            title: z.ZodString;
+            summary: z.ZodString;
+            source: z.ZodObject<{
+                kind: z.ZodLiteral<"AGENT">;
+                role: z.ZodLiteral<"DISCOVERY">;
+            }, z.core.$strict>;
+        }, z.core.$strict>>;
         sequence: z.ZodInt;
         status: z.ZodEnum<{
             ACTIVE: "ACTIVE";
@@ -1273,6 +1321,16 @@ export declare const projectSessionSnapshotSchema: z.ZodObject<{
             sourceTaskId: z.ZodString;
             personalizationTraceId: z.ZodString;
             userGoal: z.ZodString;
+        }, z.core.$strict>>;
+        nextMove: z.ZodOptional<z.ZodObject<{
+            nextMoveJobId: z.ZodString;
+            number: z.ZodInt;
+            title: z.ZodString;
+            summary: z.ZodString;
+            source: z.ZodObject<{
+                kind: z.ZodLiteral<"AGENT">;
+                role: z.ZodLiteral<"DISCOVERY">;
+            }, z.core.$strict>;
         }, z.core.$strict>>;
         sequence: z.ZodInt;
         status: z.ZodEnum<{
@@ -1409,6 +1467,7 @@ export declare const projectSessionSnapshotSchema: z.ZodObject<{
             eventId: z.ZodString;
         }, z.core.$strict>], "kind">>;
         independentWorkCanContinue: z.ZodBoolean;
+        replacesDecisionId: z.ZodOptional<z.ZodString>;
         requestedAt: z.ZodISODateTime;
         source: z.ZodObject<{
             kind: z.ZodLiteral<"AGENT">;
@@ -1492,6 +1551,7 @@ export declare const projectSessionSnapshotSchema: z.ZodObject<{
                 eventId: z.ZodString;
             }, z.core.$strict>], "kind">>;
             independentWorkCanContinue: z.ZodBoolean;
+            replacesDecisionId: z.ZodOptional<z.ZodString>;
             requestedAt: z.ZodISODateTime;
             source: z.ZodObject<{
                 kind: z.ZodLiteral<"AGENT">;
@@ -1520,6 +1580,23 @@ export declare const projectSessionSnapshotSchema: z.ZodObject<{
             customProposal: z.ZodOptional<z.ZodString>;
             rationale: z.ZodOptional<z.ZodString>;
             helperUsed: z.ZodBoolean;
+            chatSource: z.ZodOptional<z.ZodObject<{
+                mappedBy: z.ZodLiteral<"BUILDER">;
+                userMessageIds: z.ZodArray<z.ZodString>;
+                linkedMessages: z.ZodOptional<z.ZodArray<z.ZodObject<{
+                    conversationId: z.ZodString;
+                    messageId: z.ZodString;
+                    tab: z.ZodEnum<{
+                        BUILDER: "BUILDER";
+                        HELPER: "HELPER";
+                    }>;
+                    timing: z.ZodEnum<{
+                        AFTER_REQUEST: "AFTER_REQUEST";
+                        BEFORE_REQUEST: "BEFORE_REQUEST";
+                    }>;
+                }, z.core.$strict>>>;
+                builderSummary: z.ZodOptional<z.ZodString>;
+            }, z.core.$strict>>;
             resolvedAt: z.ZodISODateTime;
             source: z.ZodObject<{
                 kind: z.ZodLiteral<"USER">;
@@ -1601,6 +1678,7 @@ export declare const projectSessionSnapshotSchema: z.ZodObject<{
         acceptanceResults: z.ZodArray<z.ZodObject<{
             criterionKey: z.ZodString;
             status: z.ZodEnum<{
+                CHANGED_BY_DECISION: "CHANGED_BY_DECISION";
                 FAILED: "FAILED";
                 PASSED: "PASSED";
             }>;
@@ -1643,6 +1721,7 @@ export declare const projectSessionSnapshotSchema: z.ZodObject<{
                 kind: z.ZodLiteral<"EVENT">;
                 eventId: z.ZodString;
             }, z.core.$strict>], "kind">>;
+            decisionId: z.ZodOptional<z.ZodString>;
         }, z.core.$strict>>;
         validationResults: z.ZodArray<z.ZodObject<{
             name: z.ZodString;

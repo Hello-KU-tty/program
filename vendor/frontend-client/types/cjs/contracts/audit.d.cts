@@ -62,6 +62,7 @@ export declare const auditRecordSchema: z.ZodObject<{
             EVIDENCE_PROPOSAL: "EVIDENCE_PROPOSAL";
             LEARNING_SPEC: "LEARNING_SPEC";
             LIVE_CONTEXT: "LIVE_CONTEXT";
+            NEXT_MOVE_JOB: "NEXT_MOVE_JOB";
             PROJECT: "PROJECT";
         }>;
         id: z.ZodString;
