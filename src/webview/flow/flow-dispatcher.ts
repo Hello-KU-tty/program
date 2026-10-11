@@ -213,6 +213,14 @@ export class FlowDispatcher {
   ): DiscoveryFeedbackInput {
     const feedback: DiscoveryFeedbackInput = (() => {
       switch (action) {
+        case "refine":
+          // One "보완하기" control: the picked candidates and the free text decide
+          // the Core intent, so the learner never has to pick a mode.
+          if (targets.length === 1) return { intent: "REVISE", targets };
+          if (targets.length > 1) return { intent: "REGENERATE", targets };
+          return text.trim().length > 0
+            ? { intent: "REGENERATE", targets: [] }
+            : { intent: "MORE", targets: [] };
         case "narrow":
           return { intent: "REVISE", targets };
         case "merge":

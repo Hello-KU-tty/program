@@ -41,6 +41,7 @@ function noopCallbacks(): AgentRenderCallbacks {
     onHelperStart: () => {},
     onResolveDecision: () => {},
     onResumeAfterDecision: () => {},
+    onOpenInKiro: () => {},
     onNativeAnswer: () => {},
     onOpenWorkspace: () => {},
     onLaunchResult: () => {},
@@ -199,6 +200,34 @@ describe("generated workspace and result actions", () => {
       view.resetProject(); view.render(initialAgentViewModel());
       workspace.click(); result.click();
       expect(opened).toEqual(["task_synthetic"]); expect(launches).toBe(1);
+    } finally { restore(); }
+  });
+
+  it("on a Kiro-native host offers only 'Kiro 채팅에서 열기' for the task, never a panel Builder start", () => {
+    let opens = 0; let starts = 0;
+    const { root, view, restore } = mount({ ...noopCallbacks(), onOpenInKiro: () => opens++, onBuilderStart: () => starts++ });
+    try {
+      const kiro = { ...vmWithBuilder({ taskId: "task_synthetic", readyToStart: true }), hostChat: { opening: false } };
+      view.render(kiro);
+      const open = byClass(root, "agent-kiro-open")[0];
+      expect(open.hidden).toBe(false); expect(open.disabled).toBe(false);
+      expect(open.textContent).toBe("Kiro 채팅에서 열기");
+      for (const name of ["agent-builder-send", "agent-composer-input", "agent-workspace-open", "agent-builder-stop", "agent-builder-resume"])
+        expect(byClass(root, name)[0].hidden).toBe(true);
+      expect(byClass(root, "agent-builder-next")[0].textContent).toContain("Kiro 채팅에서 열기");
+      open.click();
+      expect(opens).toBe(1); expect(starts).toBe(0);
+      view.render({ ...kiro, hostChat: { opening: true } });
+      expect(open.disabled).toBe(true);
+      open.click();
+      expect(opens).toBe(1);
+      // No Task yet: nothing to connect.
+      view.render({ ...initialAgentViewModel(), hostChat: { opening: false } });
+      expect(open.hidden).toBe(true);
+      // Other hosts keep the panel Builder and never show the Kiro button.
+      view.render(vmWithBuilder({ taskId: "task_synthetic", readyToStart: true }));
+      expect(open.hidden).toBe(true);
+      expect(byClass(root, "agent-builder-send")[0].hidden).toBe(false);
     } finally { restore(); }
   });
 

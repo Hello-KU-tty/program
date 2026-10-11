@@ -205,14 +205,34 @@ describe("DiscoveryWorkspace (task 12.2)", () => {
     restore();
   });
 
-  it("renders accumulated feedback rounds in ascending roundIndex (Req 5.4)", () => {
+  it("shows only the latest round and folds earlier ones in ascending order (Req 5.4)", () => {
     const rounds: CandidateRound[] = [
       { roundIndex: 3, candidates: [], generationRationale: "R3", appliedFeedbackIds: [] },
       { roundIndex: 2, candidates: [], generationRationale: "R2", appliedFeedbackIds: [] },
     ];
     view.render(snapshot({ rounds }));
-    const headers = byClass(root, "flow-round-header").map((e) => e.textContent);
-    expect(headers).toEqual(["처음 후보", "다듬은 후보 1", "다듬은 후보 2"]);
+    const earlier = byClass(root, "flow-rounds-earlier")[0];
+    const folded = earlier.queryAll((e) => e.className === "flow-round-header").map((e) => e.textContent);
+    expect(folded).toEqual(["처음 후보", "보완한 후보 1"]);
+    const all = byClass(root, "flow-round-header").map((e) => e.textContent);
+    expect(all.filter((header) => !folded.includes(header))).toEqual(["보완한 후보 2"]);
+    expect(byClass(root, "flow-rounds-earlier-toggle")[0].textContent).toBe("이전 후보 보기 (2)");
+    restore();
+  });
+
+  it("shows the preview round alone, without an earlier-rounds fold, before any feedback", () => {
+    view.render(snapshot());
+    expect(byClass(root, "flow-round-header").map((e) => e.textContent)).toEqual(["처음 후보"]);
+    expect(byClass(root, "flow-rounds-earlier")).toHaveLength(0);
+    restore();
+  });
+
+  it("hides earlier candidates while the next round is generated", () => {
+    view.render(snapshot({ discoveryInProgress: true }));
+    expect(byClass(root, "flow-rounds")[0].hidden).toBe(true);
+    expect(byClass(root, "flow-agent-banner")[0].textContent).toBe("말씀하신 방향으로 후보를 다시 찾고 있어요…");
+    view.render(snapshot({ discoveryInProgress: false }));
+    expect(byClass(root, "flow-rounds")[0].hidden).toBe(false);
     restore();
   });
 
@@ -257,86 +277,44 @@ describe("DiscoveryWorkspace (task 12.2)", () => {
     restore();
   });
 
-  it("blocks narrow unless exactly 1 selected, then submits REVISE-style target (Req 7.2/7.3)", () => {
-    // 0 selected -> blocked with a message.
+  it("offers one 보완하기 action instead of four modes (feedback 2)", () => {
     view.render(snapshot());
-    const narrow = byClass(root, "flow-composer-action").find((b) => b.dataset.action === "narrow")!;
-    narrow.click();
-    expect(callbacks.refinements).toHaveLength(0);
-    expect(byClass(root, "flow-composer-message")[0].hidden).toBe(false);
+    const actions = byClass(root, "flow-composer-action");
+    expect(actions.map((b) => [b.dataset.action, b.textContent])).toEqual([["refine", "보완하기"]]);
+    restore();
+  });
 
-    // Exactly 1 selected -> submits with that target.
+  it("sends the basket selection and free text with 보완하기, then clears the text (Req 7.8)", () => {
+    view.render(snapshot());
+    const refine = byClass(root, "flow-composer-action")[0];
+    refine.click();
     view.render(snapshot({ basket: [refKey({ candidateId: "cand-4", revision: 1 })] }));
-    const narrow1 = byClass(root, "flow-composer-action").find((b) => b.dataset.action === "narrow")!;
-    narrow1.click();
+    const composer = byClass(root, "flow-composer-input")[0];
+    composer.value = "더 실용적으로";
+    refine.click();
     expect(callbacks.refinements).toEqual([
-      { action: "narrow", text: "", targets: [{ candidateId: "cand-4", revision: 1 }] },
+      { action: "refine", text: "", targets: [] },
+      { action: "refine", text: "더 실용적으로", targets: [{ candidateId: "cand-4", revision: 1 }] },
     ]);
+    expect(composer.value).toBe("");
     restore();
   });
 
-  it("blocks merge with < 2 selected and submits with >= 2 (Req 7.4/7.5)", () => {
-    view.render(snapshot({ basket: [refKey({ candidateId: "cand-1", revision: 1 })] }));
-    const merge = byClass(root, "flow-composer-action").find((b) => b.dataset.action === "merge")!;
-    merge.click();
-    expect(callbacks.refinements).toHaveLength(0);
-
-    view.render(
-      snapshot({
-        basket: [
-          refKey({ candidateId: "cand-1", revision: 1 }),
-          refKey({ candidateId: "cand-2", revision: 1 }),
-        ],
-      }),
-    );
-    const merge2 = byClass(root, "flow-composer-action").find((b) => b.dataset.action === "merge")!;
-    merge2.click();
-    expect(callbacks.refinements).toHaveLength(1);
-    expect(callbacks.refinements[0].action).toBe("merge");
-    expect(callbacks.refinements[0].targets).toHaveLength(2);
-    restore();
-  });
-
-  it("keeps a merge draft above 8 targets and allows correction to exactly 8", () => {
+  it("keeps a 보완하기 draft above 8 targets and allows correction to exactly 8", () => {
     const basket = Array.from({ length: 9 }, (_, i) => refKey({ candidateId: `cand-${i + 1}`, revision: 1 }));
     view.render(snapshot({ basket }));
     const composer = byClass(root, "flow-composer-input")[0];
-    const merge = byClass(root, "flow-composer-action").find((b) => b.dataset.action === "merge")!;
-    composer.value = "합치기 초안을 보존합니다.";
-    merge.click();
+    const refine = byClass(root, "flow-composer-action")[0];
+    composer.value = "둘을 합쳐 주세요.";
+    refine.click();
     expect(callbacks.refinements).toHaveLength(0);
-    expect(composer.value).toBe("합치기 초안을 보존합니다.");
+    expect(composer.value).toBe("둘을 합쳐 주세요.");
     expect(byClass(root, "flow-composer-message")[0].textContent).toContain("8");
     view.render(snapshot({ basket: basket.slice(0, 8) }));
-    merge.click();
+    refine.click();
     expect(callbacks.refinements).toHaveLength(1);
     expect(callbacks.refinements[0].targets).toHaveLength(8);
-    expect(callbacks.refinements[0].text).toBe("합치기 초안을 보존합니다.");
-    expect(composer.value).toBe("");
-    restore();
-  });
-
-  it("new_direction and show_more submit with no targets regardless of selection (Req 7.6/7.7)", () => {
-    view.render(snapshot({ basket: [refKey({ candidateId: "cand-1", revision: 1 })] }));
-    const newDir = byClass(root, "flow-composer-action").find((b) => b.dataset.action === "new_direction")!;
-    newDir.click();
-    const showMore = byClass(root, "flow-composer-action").find((b) => b.dataset.action === "show_more")!;
-    showMore.click();
-    expect(callbacks.refinements.map((r) => ({ action: r.action, targets: r.targets }))).toEqual([
-      { action: "new_direction", targets: [] },
-      { action: "show_more", targets: [] },
-    ]);
-    restore();
-  });
-
-  it("passes free text through and clears it optimistically after submit (Req 7.8)", () => {
-    view.render(snapshot());
-    const composer = byClass(root, "flow-composer-input")[0];
-    composer.value = "더 실용적으로";
-    const showMore = byClass(root, "flow-composer-action").find((b) => b.dataset.action === "show_more")!;
-    showMore.click();
-    expect(callbacks.refinements[0].text).toBe("더 실용적으로");
-    expect(composer.value).toBe("");
+    expect(callbacks.refinements[0].text).toBe("둘을 합쳐 주세요.");
     restore();
   });
 });

@@ -37,6 +37,18 @@ export interface AgentViewModel {
   readonly worker: NativeWorkerStatusView | null;
   /** Last error / info notice (code + message). */
   readonly notice: NoticeViewModel | null;
+  /**
+   * Present only on a Kiro-native host, where the Builder runs in the
+   * learner's Kiro chat and Core refuses panel Builder runs
+   * (`BUILDER_RUNS_IN_HOST_CHAT`). The panel then offers "Kiro 채팅에서 열기".
+   */
+  readonly hostChat?: HostChatViewModel;
+}
+
+/** Kiro-native Builder connection state (no path, no token). */
+export interface HostChatViewModel {
+  /** An open-in-Kiro request is in flight (host dialogs may be showing). */
+  readonly opening: boolean;
 }
 
 /** Builder turn projection. `phase` is the display-only turn state. */

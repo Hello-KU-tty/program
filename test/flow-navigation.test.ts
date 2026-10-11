@@ -91,7 +91,7 @@ describe("project navigation bar", () => {
     client.dispatch({ type: "hydrateFlow", snapshot });
     expect(byClass("flow-start-submit").textContent).toBe("새 후보 받기");
     expect(byClass("flow-candidate-title").textContent).toBe("저장된 프로젝트");
-    const specButton = root.queryAll(e => e.textContent === "현재 스펙 다시 보기")[0];
+    const specButton = root.queryAll(e => e.textContent === "현재 계획 다시 보기")[0];
     expect(specButton.disabled).toBe(false);
     specButton.click();
     expect(posted).toContainEqual({ type: "selectCandidate", target: selected });

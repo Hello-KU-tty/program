@@ -205,47 +205,7 @@ describe("composer action -> intent mapping surface (task 12.4, Req 7.2/7.4/7.6/
     view = new DiscoveryWorkspace(root as unknown as HTMLElement, callbacks);
   });
 
-  it("emits exactly the four documented actions (host maps narrow->REVISE, merge->MERGE, new_direction->REGENERATE, show_more->MORE)", () => {
-    // Select two candidates so narrow (needs 1) is skipped but merge (needs 2)
-    // fires; then drive each action button that is enabled with the current
-    // selection to collect the emitted RefinementActions.
-    const twoSelected = workspaceSnapshot({
-      basket: [
-        refKey({ candidateId: "cand-1", revision: 1 }),
-        refKey({ candidateId: "cand-2", revision: 1 }),
-      ],
-    });
-    view.render(twoSelected);
-
-    const actionOf = (a: RefinementAction) =>
-      byClass(root, "flow-composer-action").find((b) => b.dataset.action === a)!;
-
-    actionOf("merge").click(); // MERGE (>=2 targets)
-    actionOf("new_direction").click(); // REGENERATE (no targets)
-    actionOf("show_more").click(); // MORE (no targets)
-
-    // Re-render with exactly one selected so narrow submits.
-    view.render(
-      workspaceSnapshot({ basket: [refKey({ candidateId: "cand-3", revision: 1 })] }),
-    );
-    byClass(root, "flow-composer-action")
-      .find((b) => b.dataset.action === "narrow")!
-      .click(); // REVISE (1 target)
-
-    const actions = callbacks.refinements.map((r) => r.action);
-    expect(actions).toEqual(["merge", "new_direction", "show_more", "narrow"]);
-
-    // The action buttons expose exactly the four documented actions in order.
-    expect(byClass(root, "flow-composer-action").map((b) => b.dataset.action)).toEqual([
-      "narrow",
-      "merge",
-      "new_direction",
-      "show_more",
-    ]);
-    restore();
-  });
-
-  it("narrow/merge carry the selection as targets; new_direction/show_more carry none", () => {
+  it("emits the single refine action with the basket selection as targets", () => {
     view.render(
       workspaceSnapshot({
         basket: [
@@ -254,16 +214,10 @@ describe("composer action -> intent mapping surface (task 12.4, Req 7.2/7.4/7.6/
         ],
       }),
     );
-    const actionOf = (a: RefinementAction) =>
-      byClass(root, "flow-composer-action").find((b) => b.dataset.action === a)!;
-
-    actionOf("merge").click();
-    actionOf("new_direction").click();
-
-    const merge = callbacks.refinements.find((r) => r.action === "merge")!;
-    const newDir = callbacks.refinements.find((r) => r.action === "new_direction")!;
-    expect(merge.targets).toHaveLength(2);
-    expect(newDir.targets).toEqual([]);
+    const actions = byClass(root, "flow-composer-action");
+    expect(actions.map((b) => b.dataset.action)).toEqual(["refine"]);
+    actions[0].click();
+    expect(callbacks.refinements.map((r) => [r.action, r.targets.length])).toEqual([["refine", 2]]);
     restore();
   });
 });
@@ -280,10 +234,10 @@ describe("Korean copy strings (task 12.4, Req 7.1/9.4)", () => {
     );
     // The composer label copy (Req 7.1).
     const labels = byClass(root, "flow-field-label").map((e) => e.textContent);
-    expect(labels).toContain("어떻게 다듬을까요? (선택 입력)");
-    // Action button labels.
+    expect(labels).toContain("어떻게 보완할까요?");
+    // One action button (feedback 2).
     const actionLabels = byClass(root, "flow-composer-action").map((e) => e.textContent);
-    expect(actionLabels).toEqual(["좁히기", "합치기", "새 방향", "더 보기"]);
+    expect(actionLabels).toEqual(["보완하기"]);
     dom.restore();
   });
 
@@ -315,7 +269,8 @@ describe("saved candidate revision display", () => {
       view.render(workspaceSnapshot({ previewRound: null,
         rounds: [1, 2].map(revision => ({ roundIndex: revision, candidates: [{ candidateId: "same", revision }], generationRationale: "saved", appliedFeedbackIds: [] })),
         enrichedCandidates: [1, 2].map(revision => ({ ...enriched("same", []), revision, title: `저장된 후보 ${revision}` })) }));
-      expect(byClass(root, "flow-candidate-title").map(e => e.textContent)).toEqual(["저장된 후보 1", "저장된 후보 2"]);
+      // The latest round comes first; the earlier one is folded below it.
+      expect(byClass(root, "flow-candidate-title").map(e => e.textContent)).toEqual(["저장된 후보 2", "저장된 후보 1"]);
       expect(byClass(root, "flow-candidate-summary").every(e => e.textContent !== "세부 정보를 불러오는 중이에요.")).toBe(true);
     } finally { dom.restore(); }
   });

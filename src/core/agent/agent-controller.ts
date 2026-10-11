@@ -30,7 +30,7 @@ import type {
   AgentRunPort,
 } from "../../adapter/agent/agent-run-port";
 import type { NativeInputPort } from "../../adapter/agent/native-input-port";
-import { errorGuidance, runtimeErrorMessage } from "../runtime-errors";
+import { errorGuidance, runtimeErrorMessage, safeRuntimeCode } from "../runtime-errors";
 import {
   classifyNativeWorkerStatus,
   createDecisionResolutionRequest,
@@ -49,6 +49,7 @@ import {
   uiMetadata,
 } from "../../../vendor/frontend-client";
 import type {
+  FrontendHost,
   NativeAnswer,
   NativeQuestion,
 } from "../../../vendor/frontend-host";
@@ -86,7 +87,20 @@ export interface AgentControllerDeps {
   readonly openFolder: (absolutePath: string) => Promise<void> | Thenable<void>;
   /** Host-side open of a validated external URL (§3.7). Injected spy in tests. */
   readonly openExternal: (url: string) => Promise<void> | Thenable<void>;
+  /**
+   * Kiro-native host only: connect the Project to the learner's Kiro chat
+   * (`host.openProjectInKiro`). When present, the Builder runs in Kiro chat:
+   * the panel never starts a Builder run and offers this instead.
+   */
+  readonly openInKiro?: (projectId: string) => ReturnType<FrontendHost["openProjectInKiro"]>;
 }
+
+/** Notices after connecting a Project to Kiro chat; CANCELLED stays silent. */
+const OPEN_IN_KIRO_NOTICES = {
+  REGISTERED: "이 폴더를 Project로 연결했어요. Kiro 채팅에서 새 세션(+)을 열어 만들기를 시작하세요. 도우미는 새 탭에서 vibe-helper 에이전트를 고르면 돼요.",
+  GENERATED: "Project 폴더를 새 창으로 열었어요. 그 창의 Kiro 채팅에서 새 세션(+)을 열어 만들기를 시작하세요.",
+} as const;
+const BUILDER_IN_KIRO_CHAT = "만들기는 Kiro 채팅에서 진행돼요. 아직 연결하지 않았다면 ‘Kiro 채팅에서 열기’를 누르고, 연결했다면 Kiro 채팅에서 이어서 요청하세요.";
 
 /**
  * Host-side authoritative core for the agent surfaces. Owns the single
@@ -95,7 +109,7 @@ export interface AgentControllerDeps {
  */
 export class AgentSurfaceController {
   /** The authoritative, host-owned projection (single source of truth). */
-  private vm: AgentViewModel = initialAgentViewModel();
+  private vm: AgentViewModel;
 
   /** Independent streams: Helper must never replace the Builder stop target. */
   private readonly watches: Record<"builder" | "helper", AbortController | null> = { builder: null, helper: null };
@@ -134,6 +148,7 @@ export class AgentSurfaceController {
   private bindingVersion = 0;
 
   constructor(private readonly deps: AgentControllerDeps) {
+    this.vm = this.freshViewModel();
     // Worker status + user-input changes are async, non-intent-driven mutations
     // (design §B.5): subscribe once here and re-project on every notify.
     this.unsubStatus = deps.port.subscribeStatus((code) =>
@@ -149,6 +164,12 @@ export class AgentSurfaceController {
   /** The current safe projection posted to the webview. */
   getViewModel(): AgentViewModel {
     return this.vm;
+  }
+
+  /** The IDLE projection; a Kiro-native host also gets its hostChat state. */
+  private freshViewModel(): AgentViewModel {
+    const vm = initialAgentViewModel();
+    return this.deps.openInKiro ? { ...vm, hostChat: { opening: false } } : vm;
   }
 
   private isCurrentBinding(binding: number): boolean {
@@ -173,7 +194,7 @@ export class AgentSurfaceController {
     this.activeRunId = null;
     this.cancelRequested = false;
     this.lastProjectId = projectId;
-    this.vm = initialAgentViewModel();
+    this.vm = this.freshViewModel();
     this.refreshNativeQuestions();
     this.deps.onChange();
   }
@@ -208,6 +229,12 @@ export class AgentSurfaceController {
    *     full replay-from-start (`after: run.retainedFromSequence`).
    */
   startBuilder(message: string, expectedTaskId?: string): Promise<void> {
+    // Kiro-native: Core refuses panel Builder runs (BUILDER_RUNS_IN_HOST_CHAT).
+    // Point the learner at Kiro chat instead of sending a request bound to fail.
+    if (this.deps.openInKiro) {
+      this.notice("info", "BUILDER_RUNS_IN_HOST_CHAT", BUILDER_IN_KIRO_CHAT);
+      return Promise.resolve();
+    }
     if (this.builderFlight) return this.builderFlight;
     if (this.activeRunId || this.disposed) return Promise.resolve();
     const flight = this.startBuilderTurn(message, expectedTaskId).finally(() => {
@@ -1148,6 +1175,48 @@ export class AgentSurfaceController {
     // notice (Requirement 7.6), then re-list (host-memory only).
     this.notice("info", `NATIVE_${res.value}`, "");
     this.refreshNativeQuestions();
+  }
+
+  private kiroFlight: Promise<void> | null = null;
+
+  /**
+   * Kiro-native: connect the bound Project to the learner's Kiro chat through
+   * the host (Steering, hooks, MCP, Helper agent, Spec). The host shows its own
+   * dialogs (tool consent, new window). Non-throwing; the outcome becomes a
+   * notice. Ignored on other hosts.
+   */
+  openInKiro(): Promise<void> {
+    if (!this.deps.openInKiro || this.disposed) return Promise.resolve();
+    if (this.kiroFlight) return this.kiroFlight;
+    const flight = this.connectToKiro(this.deps.openInKiro).finally(() => {
+      if (this.kiroFlight === flight) this.kiroFlight = null;
+      if (!this.disposed && this.vm.hostChat) {
+        this.vm = { ...this.vm, hostChat: { opening: false } };
+        this.deps.onChange();
+      }
+    });
+    this.kiroFlight = flight;
+    return flight;
+  }
+
+  private async connectToKiro(open: NonNullable<AgentControllerDeps["openInKiro"]>): Promise<void> {
+    const projectId = this.lastProjectId ?? this.deps.globalState.get("bhlr.lastProjectId");
+    if (!projectId) {
+      this.notice("error", "PROJECT_REQUIRED", "no project bound");
+      return;
+    }
+    const binding = this.bindingVersion;
+    this.vm = { ...this.vm, notice: null, hostChat: { opening: true } };
+    this.deps.onChange();
+    try {
+      const opened = await open(projectId);
+      if (!this.isCurrentBinding(binding) || opened.folder === "CANCELLED") return;
+      this.notice("info", `KIRO_CHAT_${opened.folder}`, OPEN_IN_KIRO_NOTICES[opened.folder]);
+    } catch (error) {
+      if (!this.isCurrentBinding(binding)) return;
+      const code = safeRuntimeCode(error instanceof Error ? error.message : undefined);
+      this.notice("error", code, runtimeErrorMessage(code, `Kiro 채팅에 연결하지 못했어요 (${code}). Core 연결 상태를 확인한 뒤 다시 시도해 주세요.`));
+    }
   }
 
   // --- BEHAVIOR (task 5.8): workspace open / launch / evidence / final upgrade ---

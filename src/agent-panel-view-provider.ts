@@ -305,6 +305,9 @@ export function wireWebviewMessaging(
         openExternal: async (url) => {
           await vscode.env.openExternal(vscode.Uri.parse(url));
         },
+        // Kiro-native host (finals): the Builder runs in the learner's Kiro chat.
+        ...(typeof host.openProjectInKiro === "function"
+          ? { openInKiro: (projectId: string) => host.openProjectInKiro(projectId) } : {}),
       });
       agentDispatcher = new AgentDispatcher(agentController, (m) =>
         webview.postMessage(m),
@@ -400,6 +403,7 @@ export function wireWebviewMessaging(
         await agentHolder.controller.refreshProject();
         // "이걸로 시작" is one explicit user gesture: confirm, prepare, then
         // start once. Never reach this path on History/reload or after leaving.
+        // On a Kiro-native host "start" means connecting the Project to Kiro chat.
         const prepared = flowController.getPreparedTask();
         const builder = agentHolder.controller.getViewModel().builder;
         if (confirmProject && navigation === navigationVersion && !disposed &&
@@ -408,7 +412,8 @@ export function wireWebviewMessaging(
           prepared.projectId === confirmProject && builder.readyToStart && builder.taskId &&
           !startedPreparedTasks.has(builder.taskId)) {
           startedPreparedTasks.add(builder.taskId);
-          await agentHolder.controller.startBuilder("");
+          if (agentHolder.controller.getViewModel().hostChat) await agentHolder.controller.openInKiro();
+          else await agentHolder.controller.startBuilder("");
         }
         if (flowIntent.type === "openHistoryProject") void agentHolder.controller.recover();
       }
@@ -1370,12 +1375,43 @@ export function buildWebviewHtml(
     .flow-spec .flow-spec-composer > .flow-field-label,
     .flow-spec .flow-spec-composer > .flow-spec-refine-input { flex: 1 0 100%; }
     .flow-spec .flow-spec-refine-input { min-height: 0; height: 3.2em; resize: vertical; }
-    .flow-spec .flow-spec-composer > .flow-spec-confirm { order: 1; }
+    /* "이걸로 시작" sits above the refine input as its own row (trial feedback 5). */
+    .flow-spec .flow-spec-composer > .flow-spec-confirm { order: -1; }
     .flow-spec .flow-spec-composer > .flow-spec-refine-button { order: 2; }
     .flow-spec .flow-spec-composer > .flow-spec-return { order: 3; margin-left: auto; }
 
     /* Start screen: the goal form first, History after it (DOM order kept). */
     .flow-start .flow-history { order: 10; }
+    /* The goal form gives way to a loading card while candidates are found. */
+    .flow-start-form { display: flex; flex-direction: column; gap: var(--sp-3); }
+    .flow-start-form[hidden],
+    .flow-start-loading[hidden],
+    .flow-start .flow-history[hidden],
+    .flow-rounds[hidden] { display: none; }
+    .flow-start-loading {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-2);
+      padding: var(--sp-3);
+      border: 1px solid var(--vscode-panel-border, color-mix(in srgb, var(--vscode-foreground) 14%, transparent));
+      border-radius: var(--radius-md);
+    }
+    .flow-start-loading-goal { margin: 0; font-weight: 600; }
+    .flow-start-loading-hint,
+    .flow-composer-hint,
+    .flow-spec-decisions-note {
+      margin: 0;
+      color: var(--vscode-descriptionForeground);
+      font-size: 0.85em;
+      line-height: 1.5;
+    }
+    /* Earlier candidate rounds fold under the current one. */
+    .flow-rounds-earlier > summary {
+      cursor: pointer;
+      font-size: 0.9em;
+      color: var(--vscode-descriptionForeground);
+    }
+    .flow-rounds-earlier[open] > summary { margin-bottom: var(--sp-2); }
     .flow-data-notice > summary {
       cursor: pointer;
       font-size: 0.85em;

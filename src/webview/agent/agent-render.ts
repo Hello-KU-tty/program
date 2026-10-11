@@ -39,6 +39,7 @@
 import type {
   AgentViewModel,
   BuilderTurnViewModel,
+  HostChatViewModel,
   DecisionViewModel,
   HelperConversationViewModel,
   HelperViewModel,
@@ -83,6 +84,8 @@ export interface AgentRenderCallbacks {
   ): void;
   /** Explicit Builder resume; never auto-resumed on resolution (`builder/resumeAfterDecision`, Req 5.3). */
   onResumeAfterDecision(): void;
+  /** Kiro-native host: connect the Project to Kiro chat (`builder/openInKiro`). */
+  onOpenInKiro(): void;
   /** Submit exactly the user's native-question answer (`native/answer`, Req 7). */
   onNativeAnswer(
     requestId: string,
@@ -246,7 +249,10 @@ export class AgentSurfaceView {
   private readonly builderToolsToggle: HTMLButtonElement;
   private toolsExpanded = false;
   private lastToolRows: readonly ToolRowViewModel[] = [];
+  private readonly builderTranscriptLabel: HTMLElement;
+  private readonly builderComposerLabel: HTMLElement;
   private readonly builderComposerInput: HTMLTextAreaElement;
+  private readonly kiroOpenButton: HTMLButtonElement;
   private readonly builderSendButton: HTMLButtonElement;
   private readonly builderStopButton: HTMLButtonElement;
   private readonly builderResumeButton: HTMLButtonElement;
@@ -366,6 +372,7 @@ export class AgentSurfaceView {
     const transcriptLabel = this.el("h2", "agent-section-label");
     transcriptLabel.textContent = "진행 상황";
     builder.appendChild(transcriptLabel);
+    this.builderTranscriptLabel = transcriptLabel;
 
     this.builderTranscript = this.el("div", "agent-transcript");
     this.labelScrollable(this.builderTranscript, "빌더 진행 내용");
@@ -401,6 +408,7 @@ export class AgentSurfaceView {
     const builderComposerLabel = this.el("label", "agent-field-label");
     builderComposerLabel.textContent = "빌더에게 요청하기";
     builderComposer.appendChild(builderComposerLabel);
+    this.builderComposerLabel = builderComposerLabel;
 
     this.builderComposerInput = this.el("textarea", "agent-composer-input") as HTMLTextAreaElement;
     this.builderComposerInput.setAttribute("aria-label", "빌더 요청");
@@ -412,6 +420,15 @@ export class AgentSurfaceView {
     builderComposer.appendChild(this.builderComposerInput);
 
     const builderControls = this.el("div", "agent-composer-actions");
+    // Kiro-native host: the Builder runs in Kiro chat; this connects the Project.
+    this.kiroOpenButton = this.el("button", "agent-kiro-open") as HTMLButtonElement;
+    this.kiroOpenButton.type = "button";
+    this.kiroOpenButton.textContent = "Kiro 채팅에서 열기";
+    this.kiroOpenButton.hidden = true;
+    this.kiroOpenButton.addEventListener("click", () => {
+      if (!this.kiroOpenButton.hidden && !this.kiroOpenButton.disabled) this.callbacks.onOpenInKiro();
+    });
+    builderControls.appendChild(this.kiroOpenButton);
     this.builderSendButton = this.el("button", "agent-builder-send") as HTMLButtonElement;
     this.builderSendButton.type = "button";
     this.builderSendButton.textContent = "보내기";
@@ -661,7 +678,7 @@ export class AgentSurfaceView {
    * decisions, native questions, helper conversations) from the model each call.
    */
   render(vm: AgentViewModel): void {
-    this.renderBuilder(vm.builder);
+    this.renderBuilder(vm.builder, vm.hostChat);
     this.renderHelper(vm.helper);
     this.renderDecisions(vm.decisions);
     this.renderNativeQuestions(vm.nativeQuestions);
@@ -809,7 +826,7 @@ export class AgentSurfaceView {
   // Builder rendering
   // ==========================================================================
 
-  private renderBuilder(builder: BuilderTurnViewModel): void {
+  private renderBuilder(builder: BuilderTurnViewModel, hostChat?: HostChatViewModel): void {
     this.readyToStart = !!builder.readyToStart && !!builder.taskId;
     this.renderedTaskId = builder.taskId;
     // Final upgrade is a suggestion after completion, never shown up front.
@@ -850,9 +867,14 @@ export class AgentSurfaceView {
       this.builderCompletion.textContent = "";
     }
 
-    if (this.readyToStart && builder.phase === "IDLE") {
+    if (hostChat && builder.taskId) {
       this.builderNextHint.hidden = false;
-      this.builderNextHint.textContent = "스펙과 작업이 준비됐어요. ‘빌더 시작’을 누르면 확정한 스펙으로 만들기를 시작해요. 추가 요청은 선택 입력이에요.";
+      this.builderNextHint.textContent = this.readyToStart
+        ? "계획과 작업이 준비됐어요. ‘Kiro 채팅에서 열기’를 누르면 이 Project를 Kiro 채팅에 연결해요. 만들기와 결정은 Kiro 채팅에서 하고, 쌓인 기록은 ‘학습 기록’에서 볼 수 있어요."
+        : "만들기는 Kiro 채팅에서 진행돼요. 채팅 창을 닫았거나 다른 폴더를 열었다면 ‘Kiro 채팅에서 열기’를 다시 눌러 주세요.";
+    } else if (this.readyToStart && builder.phase === "IDLE") {
+      this.builderNextHint.hidden = false;
+      this.builderNextHint.textContent = "계획과 작업이 준비됐어요. ‘빌더 시작’을 누르면 확정한 계획으로 만들기를 시작해요. 추가 요청은 선택 입력이에요.";
     } else if (builder.phase === "TASK_COMPLETED") {
       this.builderNextHint.hidden = false;
       this.builderNextHint.textContent = "완료한 내용에 이어 실행, 설명, 수정 요청을 계속 보내 주세요. 도우미에게도 언제든 질문할 수 있어요.";
@@ -887,8 +909,8 @@ export class AgentSurfaceView {
     this.renderToolRows(builder.toolRows);
 
     // Stop shown only while RUNNING (Req 6.1); resume only while DECISION_REQUIRED.
-    this.builderStopButton.hidden = builder.phase !== "RUNNING";
-    this.builderResumeButton.hidden = builder.phase !== "DECISION_REQUIRED";
+    this.builderStopButton.hidden = !!hostChat || builder.phase !== "RUNNING";
+    this.builderResumeButton.hidden = !!hostChat || builder.phase !== "DECISION_REQUIRED";
 
     // Lock the composer/send while a turn is in flight.
     const inFlight =
@@ -901,7 +923,15 @@ export class AgentSurfaceView {
     this.builderComposerInput.disabled = inFlight;
     this.builderSendButton.disabled = inFlight;
     this.builderSendButton.textContent = this.readyToStart ? "빌더 시작" : "보내기";
-    this.workspaceOpenButton.hidden = !builder.taskId;
+    // Kiro-native: requests and runs live in Kiro chat, so only the connect
+    // button remains; the transcript shows only if a run ever streamed here.
+    this.kiroOpenButton.hidden = !hostChat || !builder.taskId;
+    this.kiroOpenButton.disabled = !!hostChat?.opening;
+    this.builderComposerLabel.hidden = this.builderComposerInput.hidden =
+      this.builderSendButton.hidden = !!hostChat;
+    this.builderTranscriptLabel.hidden = this.builderTranscript.hidden =
+      !!hostChat && builder.transcript.length === 0;
+    this.workspaceOpenButton.hidden = !!hostChat || !builder.taskId;
     this.workspaceOpenButton.disabled = inFlight || !builder.taskId;
     this.resultLaunchButton.hidden = !completed || !builder.taskId;
     this.resultLaunchButton.disabled = inFlight || !builder.taskId;

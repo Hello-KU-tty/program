@@ -138,6 +138,10 @@ export class AgentDispatcher {
         await this.controller.resumeAfterDecision();
         return;
       }
+      case "builder/openInKiro": {
+        await this.controller.openInKiro();
+        return;
+      }
       case "native/answer": {
         // The webview cannot supply a trusted projectId; the controller binds
         // it host-side (§B.10) via submitNativeAnswerAction.

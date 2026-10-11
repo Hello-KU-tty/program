@@ -146,10 +146,42 @@ describe("16.1 discovery start + workspace rendering (Req 4.1, 4.6, 5.1-5.5, 6.3
     h.client.postFlow({ type: "submitRefinement", action: "show_more", text: "", targets: [] });
     await h.settle();
 
+    // The latest round comes first; the preview is folded under it.
     const headers = h.byClass("flow-round-header").map((e) => e.textContent);
-    expect(headers).toEqual(["처음 후보", "다듬은 후보 1"]);
+    expect(headers).toEqual(["보완한 후보 1", "처음 후보"]);
     // The controller accumulated exactly one feedback round (roundIndex 2).
     expect(h.controller.getRounds().map((r) => r.roundIndex)).toEqual([2]);
+  });
+
+  it("maps 보완하기 to REVISE, REGENERATE or MORE from the selection and the text", async () => {
+    h.client.postFlow({ type: "startDiscovery", input: { learningGoal: "메모 앱" } });
+    await h.settle();
+    const [first, second] = h.controller.getPreviewRound()!.previews.map((p) => ({
+      candidateId: p.candidateId,
+      revision: 1,
+    }));
+    const intents = () =>
+      h.ports!.calls
+        .filter((call) => call.op === "submitFeedback")
+        .map((call) => {
+          const feedback = (call.req as { feedback: { intent: string; targets: unknown[]; message?: string } }).feedback;
+          return [feedback.intent, feedback.targets.length, feedback.message ?? null];
+        });
+    for (const [targets, text] of [
+      [[], ""],
+      [[], "친구와 같이 쓰는 쪽으로"],
+      [[first], ""],
+      [[first, second], "둘을 합쳐 줘"],
+    ] as const) {
+      h.client.postFlow({ type: "submitRefinement", action: "refine", text, targets: [...targets] });
+      await h.settle();
+    }
+    expect(intents()).toEqual([
+      ["MORE", 0, null],
+      ["REGENERATE", 0, "친구와 같이 쓰는 쪽으로"],
+      ["REVISE", 1, null],
+      ["REGENERATE", 2, "둘을 합쳐 줘"],
+    ]);
   });
 
   it("shows the Agent_Run_Banner + disables controls while a discovery op is in flight (Req 5.5, 7.11)", async () => {
