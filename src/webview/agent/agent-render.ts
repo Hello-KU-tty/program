@@ -46,6 +46,7 @@ import type {
   NativeQuestionViewModel,
   NextMoveViewModel,
   NoticeViewModel,
+  TaskEvidenceViewModel,
   ToolRowViewModel,
 } from "../../core/agent/agent-view-model";
 import type {
@@ -177,6 +178,13 @@ const WORKER_ROLE_LABELS: Readonly<Record<string, string>> = {
 export type AgentTab = "builder" | "helper" | "record";
 
 /** Short local date/time for display; the raw value is kept when unparsable. */
+/** How a learner's accepted Evidence reads in the Kiro-native Builder tab (K17). */
+const TASK_EVIDENCE_STATE_LABELS: Readonly<Record<TaskEvidenceViewModel["state"], string>> = {
+  EXPLAINED: "설명할 수 있어요",
+  DEMONSTRATED: "직접 적용했어요",
+  TRANSFERRED: "다른 곳에도 써 봤어요",
+};
+
 function formatDate(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
@@ -275,6 +283,12 @@ export class AgentSurfaceView {
 
   // --- Decisions / native / worker / notice --------------------------------
   private readonly decisionsRegion: HTMLElement;
+  private readonly decisionsLabel: HTMLElement;
+  /** Kiro-native: this Task's accepted learner Evidence (K17). */
+  private readonly taskEvidenceSection: HTMLElement;
+  private readonly taskEvidenceList: HTMLElement;
+  private readonly taskEvidenceEmpty: HTMLElement;
+  private taskEvidenceRenderKey: string | undefined;
   private readonly nativeRegion: HTMLElement;
   private decisionsRenderKey: string | undefined;
   private nativeRenderKey: string | undefined;
@@ -551,6 +565,7 @@ export class AgentSurfaceView {
     const decisionsLabel = this.el("h1", "agent-section-heading");
     decisionsLabel.textContent = "함께 정할 결정";
     decisions.appendChild(decisionsLabel);
+    this.decisionsLabel = decisionsLabel;
     this.decisionsRegion = this.el("div", "agent-decisions-list");
     decisions.appendChild(this.decisionsRegion);
     container.appendChild(decisions);
@@ -703,6 +718,23 @@ export class AgentSurfaceView {
     nextMove.appendChild(this.nextMoveRetryButton);
     container.appendChild(nextMove);
 
+    // ---- This Task's learning records (Kiro-native, K17) -------------------
+    // What chat does not show: which of the learner's own words Core accepted
+    // as understanding in this Task. Agent output never appears here.
+    const taskEvidence = this.el("section", "agent-task-evidence");
+    taskEvidence.setAttribute("aria-label", "이번 작업의 학습 기록");
+    taskEvidence.hidden = true;
+    const taskEvidenceLabel = this.el("h1", "agent-section-heading");
+    taskEvidenceLabel.textContent = "이번 작업의 학습 기록";
+    taskEvidence.appendChild(taskEvidenceLabel);
+    this.taskEvidenceList = this.el("ul", "agent-task-evidence-list");
+    taskEvidence.appendChild(this.taskEvidenceList);
+    this.taskEvidenceEmpty = this.el("p", "agent-task-evidence-empty");
+    this.taskEvidenceEmpty.textContent = "아직 없어요. Kiro 채팅에서 고른 이유나 직접 한 설명이 인정되면 여기에 보여요.";
+    taskEvidence.appendChild(this.taskEvidenceEmpty);
+    container.appendChild(taskEvidence);
+    this.taskEvidenceSection = taskEvidence;
+
     this.selectTab("builder");
     root.appendChild(container);
   }
@@ -718,10 +750,18 @@ export class AgentSurfaceView {
    * decisions, native questions, helper conversations) from the model each call.
    */
   render(vm: AgentViewModel): void {
-    this.renderBuilder(vm.builder, vm.hostChat);
+    // Kiro-native: building and choosing happen in Kiro chat; this tab shows
+    // the state, this Task's learning records, Next Move and a compact list of
+    // choices (K17). Section order follows data-host in the panel CSS.
+    this.surface.dataset.host = vm.hostChat ? "kiro" : "panel";
+    const waiting = vm.hostChat
+      ? vm.decisions.find(d => d.taskId === vm.builder.taskId && !d.resolved && !d.replaced)
+      : undefined;
+    this.renderBuilder(vm.builder, vm.hostChat, waiting?.question);
     this.renderNextMove(vm.hostChat ? vm.nextMove : undefined);
+    this.renderTaskEvidence(vm.hostChat ? vm.taskEvidence ?? [] : undefined);
     this.renderHelper(vm.helper);
-    this.renderDecisions(vm.decisions);
+    this.renderDecisions(vm.decisions, vm.hostChat ? vm.builder.taskId : undefined);
     this.renderNativeQuestions(vm.nativeQuestions);
     this.renderWorker(vm.worker);
     this.renderNotice(vm.notice);
@@ -760,6 +800,9 @@ export class AgentSurfaceView {
     this.nextMoveRenderKey = undefined;
     this.nextMoveList.textContent = "";
     this.nextMoveSection.hidden = true;
+    this.taskEvidenceRenderKey = undefined;
+    this.taskEvidenceList.textContent = "";
+    this.taskEvidenceSection.hidden = true;
     this.renderedTaskId = null;
     this.workspaceOpenButton.hidden = true;
     this.resultLaunchButton.hidden = true;
@@ -870,7 +913,7 @@ export class AgentSurfaceView {
   // Builder rendering
   // ==========================================================================
 
-  private renderBuilder(builder: BuilderTurnViewModel, hostChat?: HostChatViewModel): void {
+  private renderBuilder(builder: BuilderTurnViewModel, hostChat?: HostChatViewModel, waitingQuestion?: string): void {
     this.readyToStart = !!builder.readyToStart && !!builder.taskId;
     this.renderedTaskId = builder.taskId;
     // Final upgrade is a suggestion after completion, never shown up front.
@@ -904,7 +947,7 @@ export class AgentSurfaceView {
     // Completion indicator (only in TASK_COMPLETED).
     if (builder.phase === "TASK_COMPLETED") {
       this.builderCompletion.hidden = false;
-      this.builderCompletion.textContent = builder.completionReportId
+      this.builderCompletion.textContent = builder.completionReportId && !hostChat
         ? `완료 보고서: ${builder.completionReportId}`
         : "이번 작업을 완료했어요.";
     } else {
@@ -912,11 +955,16 @@ export class AgentSurfaceView {
       this.builderCompletion.textContent = "";
     }
 
+    this.builderNextHint.dataset.waiting = String(!!hostChat && !!waitingQuestion && !this.readyToStart);
     if (hostChat && builder.taskId) {
       this.builderNextHint.hidden = false;
       this.builderNextHint.textContent = this.readyToStart
         ? "계획과 작업이 준비됐어요. ‘Kiro 채팅에서 열기’를 누르면 이 Project를 Kiro 채팅에 연결해요. 만들기와 결정은 Kiro 채팅에서 하고, 쌓인 기록은 ‘학습 기록’에서 볼 수 있어요."
-        : "만들기는 Kiro 채팅에서 진행돼요. 채팅 창을 닫았거나 다른 폴더를 열었다면 ‘Kiro 채팅에서 열기’를 다시 눌러 주세요.";
+        : waitingQuestion
+          ? `Kiro 채팅이 답을 기다려요: ${waitingQuestion}`
+          : builder.phase === "TASK_COMPLETED"
+            ? "이번 작업을 마쳤어요. 아래 ‘다음 한 걸음’을 보거나, 하고 싶은 것을 Kiro 채팅에 말해 주세요."
+            : "만들기는 Kiro 채팅에서 진행돼요. 채팅 창을 닫았거나 다른 폴더를 열었다면 ‘Kiro 채팅에서 열기’를 다시 눌러 주세요.";
     } else if (this.readyToStart && builder.phase === "IDLE") {
       this.builderNextHint.hidden = false;
       this.builderNextHint.textContent = "계획과 작업이 준비됐어요. ‘빌더 시작’을 누르면 확정한 계획으로 만들기를 시작해요. 추가 요청은 선택 입력이에요.";
@@ -1270,15 +1318,79 @@ export class AgentSurfaceView {
   // Decisions rendering
   // ==========================================================================
 
-  private renderDecisions(decisions: readonly DecisionViewModel[]): void {
+  /**
+   * `hostTaskId` set (Kiro-native, K17): the learner chooses in Kiro chat, so
+   * this Task's current choices show as one compact line each, without the
+   * panel's choose buttons. Otherwise the full panel forms.
+   */
+  private renderDecisions(decisions: readonly DecisionViewModel[], hostTaskId?: string | null): void {
+    const compact = hostTaskId !== undefined;
+    const shown = compact
+      ? decisions.filter(d => d.taskId === hostTaskId && !d.replaced)
+        .sort((left, right) => Number(left.resolved) - Number(right.resolved))
+      : decisions;
     // Streaming Builder/Helper updates must not replace the focused inputs.
     // Context revisions are host-validated and do not change this form's content.
-    const key = JSON.stringify(decisions.map(({ contextVersion: _version, ...form }) => form));
+    const key = JSON.stringify([compact, shown.map(({ contextVersion: _version, ...form }) => form)]);
     if (key === this.decisionsRenderKey) return;
     this.decisionsRenderKey = key;
+    this.decisionsLabel.textContent = compact ? "이번 작업의 결정" : "함께 정할 결정";
     this.decisionsRegion.textContent = "";
-    for (const decision of decisions) {
-      this.decisionsRegion.appendChild(this.buildDecision(decision));
+    for (const decision of shown) {
+      this.decisionsRegion.appendChild(compact ? this.buildCompactDecision(decision) : this.buildDecision(decision));
+    }
+  }
+
+  /** One Kiro-native choice: the question and what was chosen; options fold away. */
+  private buildCompactDecision(decision: DecisionViewModel): HTMLElement {
+    const block = this.el("details", "agent-decision agent-decision-compact");
+    block.dataset.decisionId = decision.decisionId;
+    block.dataset.state = !decision.resolved ? "waiting" : decision.applied ? "applied" : "chosen";
+    const summary = this.el("summary", "agent-decision-compact-summary");
+    const question = this.el("span", "agent-decision-compact-question");
+    question.textContent = decision.question;
+    summary.appendChild(question);
+    const state = this.el("span", "agent-decision-compact-state");
+    state.textContent = !decision.resolved
+      ? "Kiro 채팅에서 답을 기다려요"
+      : `${decision.chosenLabel ?? "골랐어요"}${decision.applied ? " · 반영함" : ""}`;
+    summary.appendChild(state);
+    block.appendChild(summary);
+    const options = this.el("ol", "agent-decision-compact-options");
+    for (const option of decision.options) {
+      const item = this.el("li", "agent-decision-compact-option");
+      item.textContent = option.id === decision.recommendedOptionId ? `${option.label} (추천)` : option.label;
+      options.appendChild(item);
+    }
+    block.appendChild(options);
+    return block;
+  }
+
+  /** Kiro-native: this Task's accepted learner Evidence, newest first; hidden elsewhere. */
+  private renderTaskEvidence(items: readonly TaskEvidenceViewModel[] | undefined): void {
+    this.taskEvidenceSection.hidden = items === undefined;
+    if (items === undefined) return;
+    const key = JSON.stringify(items);
+    if (key === this.taskEvidenceRenderKey) return;
+    this.taskEvidenceRenderKey = key;
+    this.taskEvidenceEmpty.hidden = items.length > 0;
+    this.taskEvidenceList.textContent = "";
+    for (const item of items) {
+      const row = this.el("li", "agent-task-evidence-item");
+      const head = this.el("div", "agent-task-evidence-head");
+      const name = this.el("span", "agent-task-evidence-concept");
+      name.textContent = item.conceptName;
+      head.appendChild(name);
+      const state = this.el("span", "agent-task-evidence-state");
+      state.textContent = TASK_EVIDENCE_STATE_LABELS[item.state];
+      head.appendChild(state);
+      row.appendChild(head);
+      if (item.excerpt) {
+        const quote = this.el("q", "agent-task-evidence-excerpt");
+        quote.textContent = item.excerpt;
+        row.appendChild(quote);
+      }
+      this.taskEvidenceList.appendChild(row);
     }
   }
 

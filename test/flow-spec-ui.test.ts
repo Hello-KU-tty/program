@@ -274,21 +274,19 @@ describe("SpecReview (task 12.3)", () => {
     expect(byClass(root, "flow-spec-confirm")[0].disabled).toBe(false);
     restore();
   });
-  it("offers 이걸로 시작 at the top and again above the refine input (feedback 5)", () => {
+  it("offers 이걸로 시작 once, with the pinned refine input below the plan (K17)", () => {
     view.render(snapshot());
     const all = root.queryAll(() => true);
     const confirms = all.filter((e) => e.textContent === "이걸로 시작");
-    expect(confirms).toHaveLength(2);
-    const heading = byClass(root, "flow-spec-heading")[0];
+    expect(confirms).toHaveLength(1);
     const content = byClass(root, "flow-spec-content")[0];
     const refineLabel = all.find((e) => e.textContent === "고치고 싶은 부분이 있나요? (선택)")!;
-    expect(all.indexOf(heading)).toBeLessThan(all.indexOf(confirms[0]));
-    expect(all.indexOf(confirms[0])).toBeLessThan(all.indexOf(content));
-    expect(all.indexOf(confirms[1])).toBeLessThan(all.indexOf(refineLabel));
-    for (const button of confirms) button.click();
-    expect(callbacks.confirmCount).toBe(2);
+    expect(all.indexOf(content)).toBeLessThan(all.indexOf(confirms[0]));
+    expect(all.indexOf(confirms[0])).toBeLessThan(all.indexOf(refineLabel));
+    confirms[0].click();
+    expect(callbacks.confirmCount).toBe(1);
     view.render(snapshot({ specInProgress: true }));
-    expect(confirms.every((button) => button.disabled)).toBe(true);
+    expect(confirms[0].disabled).toBe(true);
     restore();
   });
 

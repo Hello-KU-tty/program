@@ -23,6 +23,7 @@
  * 10.*, 11.*, 13.1, 14.*.
  */
 
+import { estimateOperationMs, type OperationProgress } from "./flow-progress";
 import { type Clock, SystemClock, type TimerId } from "../../core/clock";
 import { runtimeErrorMessage } from "../runtime-errors";
 import type {
@@ -152,6 +153,9 @@ export interface FlowControllerState {
   preparedTask: PreparedBuilderTask | null;
   discoveryInProgress: boolean;
   specInProgress: boolean;
+  /** The running step's countdown per surface (K17), null when idle. */
+  discoveryProgress: OperationProgress | null;
+  specProgress: OperationProgress | null;
   /** Read-only History list (guide §6/§10-2). Empty until loaded. */
   history: HistoryProjectView[];
   /** Whether the read-only History list is currently loading. */
@@ -203,6 +207,19 @@ export class FlowController {
   private readonly inFlight: Record<FlowSurface, InFlightOp | null> = {
     discovery: null,
     spec: null,
+  };
+  /**
+   * The countdown per surface (K17). A step chained from another step's
+   * success on the same surface (start → first previews) keeps the first
+   * step's clock, so the learner sees one countdown for the whole wait.
+   */
+  private readonly progress: Record<FlowSurface, OperationProgress | null> = {
+    discovery: null,
+    spec: null,
+  };
+  private readonly chaining: Record<FlowSurface, boolean> = {
+    discovery: false,
+    spec: false,
   };
   private readonly _notices: FlowNotice[] = [];
   private recovery: {
@@ -375,6 +392,8 @@ export class FlowController {
       preparedTask: this.preparedTask,
       discoveryInProgress: this.isInProgress("discovery"),
       specInProgress: this.isInProgress("spec"),
+      discoveryProgress: this.inFlight.discovery === null && !this.chaining.discovery ? null : this.progress.discovery,
+      specProgress: this.inFlight.spec === null && !this.chaining.spec ? null : this.progress.spec,
       history: [...this.history],
       historyLoading: this.historyLoading,
     };
@@ -455,6 +474,8 @@ export class FlowController {
     expectedRevision: number,
     onOk: (value: T) => void | Promise<void>,
     onErr: (error: PortError) => void,
+    /** The usual duration when the kind alone does not tell (K17 countdown). */
+    estimateMs?: number,
   ): Promise<boolean> {
     if (!this.canMutate(surface)) return false;
     // Single-flight: refuse a same-surface op while one is already active.
@@ -472,12 +493,18 @@ export class FlowController {
         return; // already settled
       }
       this.inFlight[surface] = null;
+      if (!this.chaining[surface]) this.progress[surface] = null;
       this.emitNotice(surface, "error", TIMEOUT_MESSAGE);
       onErr({ code: "timeout", message: TIMEOUT_MESSAGE });
       this.notifyChange();
     }, this.timeoutMs);
 
     this.inFlight[surface] = { kind, timerId, token };
+    if (!this.chaining[surface] || this.progress[surface] === null)
+      this.progress[surface] = {
+        startedAt: this.clock.now(),
+        estimateMs: estimateMs ?? estimateOperationMs(kind, { hasRounds: this.rounds.length > 0 }),
+      };
     this.notifyChange();
 
     const result = await call(this.envelope(expectedRevision));
@@ -496,10 +523,17 @@ export class FlowController {
     this.inFlight[surface] = null;
 
     if (result.ok) {
-      await onOk(result.value);
+      const outer = this.chaining[surface];
+      this.chaining[surface] = true;
+      try {
+        await onOk(result.value);
+      } finally {
+        this.chaining[surface] = outer;
+      }
     } else {
       onErr(result.error);
     }
+    if (!this.chaining[surface] && this.inFlight[surface] === null) this.progress[surface] = null;
     this.notifyChange();
     return true;
   }
@@ -689,6 +723,8 @@ export class FlowController {
           this.lastSuccessfulStatus = priorStatus;
           this.emitNotice("discovery", "error", runtimeErrorMessage(error.message, "선택을 처리하지 못했습니다. 다시 시도해 주세요."));
         },
+        // One countdown for the choice and the Spec draft it leads to.
+        55_000,
       );
       return { accepted: true };
     }
@@ -712,6 +748,8 @@ export class FlowController {
         // Abort the round request; retain basket + input (Req 7.10).
         this.emitNotice("discovery", "error", runtimeErrorMessage(error.message, "요청을 처리하지 못했습니다. 다시 시도해 주세요."));
       },
+      // From the first previews Core fills the referenced ones (or all of them) first.
+      this.rounds.length > 0 ? 45_000 : feedback.targets.length > 0 ? 75_000 : 120_000,
     );
     return { accepted: true };
   }

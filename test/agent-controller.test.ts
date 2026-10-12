@@ -1045,7 +1045,7 @@ describe("AgentSurfaceController — Kiro-native Next Move card", () => {
     h.script(job("GENERATING"));
     await h.tick(NEXT_MOVE_REFRESH_MS.IDLE);
     await vi.waitFor(() => expect(h.controller.getViewModel().nextMove?.status).toBe("GENERATING"));
-    await vi.waitFor(() => expect(restores).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(restores).toHaveBeenCalled());
 
     // Generating re-reads sooner, and suggestions arrive without concepts.
     h.script(job("READY", { moves: moves.map((move) => ({ ...move, concepts: ["secret concept"] })) }));
@@ -1054,19 +1054,56 @@ describe("AgentSurfaceController — Kiro-native Next Move card", () => {
     expect(h.controller.getViewModel().nextMove?.moves).toEqual(moves);
     expect(JSON.stringify(h.controller.getViewModel())).not.toContain("secret concept");
     expect(JSON.stringify(h.controller.getViewModel())).not.toContain(JOB_ID);
-    // Same Task: no extra snapshot read; unchanged reads do not re-hydrate.
-    expect(restores).toHaveBeenCalledTimes(1);
+    // K17: every refresh re-reads the snapshot quietly, so choices made in
+    // Kiro chat reach the panel; unchanged reads do not re-hydrate.
     const changes = h.changeCount();
+    const before = restores.mock.calls.length;
     await h.tick(NEXT_MOVE_REFRESH_MS.IDLE);
     await vi.waitFor(() => expect(h.reads()).toBe(4));
+    await vi.waitFor(() => expect(restores.mock.calls.length).toBeGreaterThan(before));
     expect(h.changeCount()).toBe(changes);
 
     // A follow-up Task started from Kiro chat hides the card and refreshes the header.
     h.script(none);
     await h.tick(NEXT_MOVE_REFRESH_MS.IDLE);
     await vi.waitFor(() => expect(h.controller.getViewModel().nextMove?.status).toBe("NONE"));
-    await vi.waitFor(() => expect(restores).toHaveBeenCalledTimes(2));
-    expect(h.client.executeKinds.filter((kind) => kind !== "UI_READ_NEXT_MOVE")).toEqual([]);
+    // Only reads: the Next Move card and this Task's learning records.
+    expect(new Set(h.client.executeKinds.filter((kind) => kind !== "UI_READ_NEXT_MOVE")))
+      .toEqual(new Set(["UI_READ_EVIDENCE_TRACE"]));
+  });
+
+  it("shows choices made in Kiro chat and this Task's learner Evidence (K17)", async () => {
+    const h = kiroHarness();
+    h.script(none);
+    const request = snapshotWithPendingDecision().pendingDecisions[0];
+    const reopened = { ...request, id: "decision_2", replacesDecisionId: "decision_1" };
+    h.client.restoreProjectResult = { resolve: fakeSnapshot({ decisions: [
+      { request, resolution: { selectionKind: "OPTION", selectedOptionId: "option_b" }, application: null },
+      { request: reopened, resolution: null, application: null },
+    ] }) };
+    const at = "2026-10-12T02:00:00.000Z";
+    h.client.executeResultByKind.UI_READ_EVIDENCE_TRACE = { resolve: { ...emptyTrace, concepts: [{
+      conceptName: "SQLite Locking",
+      evidence: [
+        { evidenceId: "evidence_1", kind: "USER_UNDERSTANDING", taskId: TASK_ID, supportsState: "EXPLAINED", acceptedAt: at, redactedEvidenceExcerpt: "확장하면 2번이 안전하다" },
+        { evidenceId: "evidence_2", kind: "USER_UNDERSTANDING", taskId: "task_other", supportsState: "DEMONSTRATED", acceptedAt: at },
+        { evidenceId: "evidence_3", kind: "CONCEPT_OBSERVATION", taskId: TASK_ID, supportsState: "OBSERVED", acceptedAt: at },
+      ],
+    }] } };
+    await h.controller.refreshProject();
+    await h.tick(0);
+    await vi.waitFor(() => expect(h.controller.getViewModel().taskEvidence).toEqual([
+      { evidenceId: "evidence_1", conceptName: "SQLite Locking", state: "EXPLAINED", excerpt: "확장하면 2번이 안전하다" },
+    ]));
+    const decisions = h.controller.getViewModel().decisions;
+    expect(decisions.find((d) => d.decisionId === "decision_1")).toMatchObject({ chosenLabel: "옵션 B", replaced: true });
+    expect(decisions.find((d) => d.decisionId === "decision_2")).toMatchObject({ chosenLabel: null, replaced: false, resolved: false });
+    // Evidence is re-read at most every TASK_EVIDENCE_REFRESH_MS, not on every refresh.
+    const evidenceReads = () => h.client.executeKinds.filter((kind) => kind === "UI_READ_EVIDENCE_TRACE").length;
+    const read = evidenceReads();
+    await h.tick(NEXT_MOVE_REFRESH_MS.IDLE);
+    await vi.waitFor(() => expect(h.reads()).toBe(2));
+    expect(evidenceReads()).toBe(read);
   });
 
   it("retries a failed job once with its id and revision, and only from the failure state", async () => {

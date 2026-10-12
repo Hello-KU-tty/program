@@ -843,3 +843,56 @@ describe("continuous use after MVP completion", () => {
     } finally {restore();}
   });
 });
+
+describe("Kiro-native Builder tab (K17)", () => {
+  const kiroVm = (overrides: Partial<AgentViewModel> = {}): AgentViewModel => ({
+    ...vmWithBuilder({ phase: "IDLE", taskId: "task_synthetic", taskRevision: 2 }),
+    hostChat: { opening: false },
+    ...overrides,
+  });
+
+  it("lists this Task's choices compactly, with no panel choose buttons, and names the one Kiro chat waits on", () => {
+    const { root, view, restore } = mount();
+    try {
+      const waiting = { ...pendingDecision(), decisionId: "decision_waiting", question: "잠금 방식은?" };
+      const chosen = { ...pendingDecision(), decisionId: "decision_chosen", question: "저장 방식은?", resolved: true, chosenLabel: "하이브리드" };
+      const replaced = { ...pendingDecision(), decisionId: "decision_old", question: "예전 질문", resolved: true, replaced: true };
+      const otherTask = { ...pendingDecision(), decisionId: "decision_other", taskId: "task_other", question: "다른 작업" };
+      view.render(kiroVm({ decisions: [chosen, waiting, replaced, otherTask] }));
+      const rows = byClass(root, "agent-decision agent-decision-compact");
+      expect(rows.map((row) => row.dataset.decisionId)).toEqual(["decision_waiting", "decision_chosen"]);
+      expect(rows.map((row) => row.dataset.state)).toEqual(["waiting", "chosen"]);
+      expect(byClass(root, "agent-decision-compact-state").map((el) => el.textContent))
+        .toEqual(["Kiro 채팅에서 답을 기다려요", "하이브리드"]);
+      expect(byClass(root, "agent-decision-choose")).toHaveLength(0);
+      expect(byClass(root, "agent-builder-next")[0].textContent).toBe("Kiro 채팅이 답을 기다려요: 잠금 방식은?");
+      expect(byClass(root, "agent-builder-next")[0].dataset.waiting).toBe("true");
+      expect(root.queryAll((e) => e.textContent === "이번 작업의 결정")).toHaveLength(1);
+    } finally {
+      restore();
+    }
+  });
+
+  it("shows this Task's accepted learner Evidence, and nothing of it on a panel host", () => {
+    const { root, view, restore } = mount();
+    try {
+      view.render(kiroVm({ taskEvidence: [] }));
+      const section = byClass(root, "agent-task-evidence")[0];
+      expect(section.hidden).toBe(false);
+      expect(byClass(root, "agent-task-evidence-empty")[0].hidden).toBe(false);
+      view.render(kiroVm({ taskEvidence: [
+        { evidenceId: "evidence_1", conceptName: "SQLite Locking", state: "EXPLAINED", excerpt: "확장하면 <b>2번</b>이 안전하다" },
+      ] }));
+      expect(byClass(root, "agent-task-evidence-concept")[0].textContent).toBe("SQLite Locking");
+      expect(byClass(root, "agent-task-evidence-state")[0].textContent).toBe("설명할 수 있어요");
+      const excerpt = byClass(root, "agent-task-evidence-excerpt")[0];
+      expect(excerpt.textContent).toBe("확장하면 <b>2번</b>이 안전하다");
+      expect(excerpt.children).toHaveLength(0);
+      expect(byClass(root, "agent-task-evidence-empty")[0].hidden).toBe(true);
+      view.render(vmWithBuilder({ phase: "IDLE", taskId: "task_synthetic" }));
+      expect(section.hidden).toBe(true);
+    } finally {
+      restore();
+    }
+  });
+});

@@ -50,86 +50,51 @@ export function activate(context: vscode.ExtensionContext): { backend: Promise<F
     vscode.window.registerWebviewViewProvider(AGENT_PANEL_VIEW_ID, provider),
   );
 
-  // Best-effort: move the Agent_Panel view to the secondary (right) side bar.
-  //
-  // VS Code/Kiro manifests cannot pin a custom view container to the secondary
-  // side bar - only `activitybar` and `panel` are valid `viewsContainers`
-  // contribution points, so the container is registered on the activity bar and
-  // relocated here at runtime. This is intentionally NOT awaited: activation
-  // must stay fast (Req 1.1) and must never fail because of this cosmetic move.
-  // The routine catches all errors internally, but we also swallow here as a
-  // final backstop so a rejected promise can never surface as an activation
-  // error or an unhandled rejection.
-  void revealAgentPanelOnRight().catch(() => {
-    // no-op: relocation is best-effort and never affects activation success.
-  });
+  // Reveal the panel where it is: its own container on the activity bar (K17).
+  // Earlier versions tried to move it to the secondary side bar; in Kiro the
+  // only move command that existed moved the whole bottom panel (Terminal,
+  // Output) into the side bar where Kiro chat lives, so long commands replaced
+  // the chat. Never awaited: activation stays fast and never fails on this.
+  void revealAgentPanel().catch(() => {});
+  void offerLayoutRepair(context).catch(() => {});
   return { backend: managedHost };
 }
 
 /**
- * Best-effort attempt to reveal the Agent_Panel view and move it to the
- * secondary (right) side bar.
- *
- * IMPORTANT CAVEATS:
- * - The workbench commands used below are NOT guaranteed to exist across
- *   VS Code / Kiro versions. Each call is individually wrapped in try/catch and
- *   the whole function can never reject, so if a command is missing or rejects
- *   it is simply skipped.
- * - If none of the move commands are supported, this silently no-ops: the panel
- *   just remains on the activity bar and the user can drag it to the right
- *   manually. This must never affect the extension's core behavior or
- *   activation success.
- * - When `vscode.commands` is unavailable (e.g. a minimal host or a test mock),
- *   the routine no-ops immediately.
+ * Best-effort: focus the Agent_Panel view in its own activity-bar container.
+ * Never moves views; a missing command is skipped and the routine never rejects.
  */
-async function revealAgentPanelOnRight(): Promise<void> {
+export async function revealAgentPanel(): Promise<void> {
   try {
-    // Guard: if the host doesn't expose the commands API, there's nothing to do.
-    if (!vscode.commands?.executeCommand) {
-      return;
-    }
-
-    // 1. Focus/open the view first. VS Code auto-registers a `<viewId>.focus`
-    //    command for contributed views.
-    try {
-      await vscode.commands.executeCommand("builderHelperAgentPanel.view.focus");
-    } catch {
-      // View focus command may not exist in this host - keep going.
-    }
-
-    // Small delay so the view is resolved before we try to move it. Kept short.
-    await new Promise((resolve) => setTimeout(resolve, 300));
-
-    // 2. Try, in order, to move the focused view to the secondary side bar.
-    //    Stop at the first command that succeeds; each is wrapped so a missing
-    //    or rejecting command is skipped.
-    const moveCommands = [
-      "workbench.action.moveFocusedViewToSecondarySideBar",
-      "workbench.action.moveViewToSecondarySideBar",
-      "workbench.action.movePanelToSecondarySideBar",
-    ];
-    for (const command of moveCommands) {
-      try {
-        await vscode.commands.executeCommand(command);
-        break; // first success wins
-      } catch {
-        // Command unsupported/rejected in this host - try the next candidate.
-      }
-    }
-
-    // Ensure the secondary side bar is visible. Prefer FOCUS (which reveals it)
-    // over TOGGLE (which could hide it if it's already open). Never toggle
-    // blindly.
-    try {
-      await vscode.commands.executeCommand("workbench.action.focusAuxiliaryBar");
-    } catch {
-      // Auxiliary bar focus command may not exist - leave visibility as-is.
-    }
+    if (!vscode.commands?.executeCommand) return;
+    await vscode.commands.executeCommand("builderHelperAgentPanel.view.focus");
   } catch (error) {
-    // Final backstop: this routine must never reject. A single quiet debug log
-    // only - no user-facing error.
-    console.debug("revealAgentPanelOnRight: relocation skipped", error);
+    console.debug("revealAgentPanel: focus skipped", error);
   }
+}
+
+const LAYOUT_REPAIR_KEY = "vibeHelper.layoutRepairOffered";
+
+/**
+ * Asked once after upgrading from a version that moved the bottom panel into
+ * the side bar (every earlier Kiro-native build did on each start). A fresh
+ * install has nothing to repair and is not asked. The learner decides: the
+ * reset also undoes their own view moves.
+ */
+export async function offerLayoutRepair(
+  context: Pick<vscode.ExtensionContext, "globalState">,
+): Promise<void> {
+  const state = context.globalState;
+  if (state.get(LAYOUT_REPAIR_KEY) === true) return;
+  const upgraded = state.keys().some((key) => key.startsWith("vibeHelper.") || key.startsWith("bhlr."));
+  await state.update(LAYOUT_REPAIR_KEY, true);
+  if (!upgraded) return;
+  const repair = "원래 배치로 되돌리기";
+  const choice = await vscode.window.showInformationMessage(
+    "이전 Vibe Helper가 터미널과 출력 창을 Kiro 채팅 자리로 옮겨서, 긴 명령이 돌 때 채팅이 가려졌을 수 있어요. Kiro 화면 배치를 처음 상태로 되돌릴까요?",
+    repair,
+  );
+  if (choice === repair) await vscode.commands.executeCommand("workbench.action.resetViewLocations");
 }
 
 /**

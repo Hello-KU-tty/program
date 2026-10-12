@@ -18,6 +18,7 @@
  * Requirements: 12.2, 12.3, 13.2.
  */
 
+import type { OperationProgress } from "./flow-progress";
 import type { FlowControllerState, FlowNotice } from "./flow-controller";
 import type {
   CandidateRevisionReference,
@@ -96,6 +97,9 @@ export interface FlowSnapshot {
   discoveryInProgress: boolean;
   /** Whether a spec-surface op is in flight (drives the Agent_Run_Banner). */
   specInProgress: boolean;
+  /** The running step's countdown (K17): when it started and its usual duration. */
+  discoveryProgress?: OperationProgress | null;
+  specProgress?: OperationProgress | null;
   /** The latest notice per the append-only log, or null if none. */
   notice: { surface: string; kind: string; message: string } | null;
   /**
@@ -167,6 +171,8 @@ export function buildFlowSnapshot(
     preparedTask: state.preparedTask ? { projectId: state.preparedTask.projectId, status: state.preparedTask.status } : null,
     discoveryInProgress: state.discoveryInProgress,
     specInProgress: state.specInProgress,
+    discoveryProgress: state.discoveryProgress === null ? null : { ...state.discoveryProgress },
+    specProgress: state.specProgress === null ? null : { ...state.specProgress },
     notice: lastNotice
       ? { surface: lastNotice.surface, kind: lastNotice.kind, message: lastNotice.message }
       : null,
