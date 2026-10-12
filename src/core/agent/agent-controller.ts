@@ -456,7 +456,7 @@ export class AgentSurfaceController {
       // Completion gating (Requirement 5.4 / Property 3): do NOT present
       // TASK_COMPLETED while any decision for this task is still unapplied.
       const hasUnappliedForTask = this.vm.decisions.some(
-        (d) => d.taskId === taskId && d.applied === false,
+        (d) => d.taskId === taskId && d.applied === false && d.replaced !== true,
       );
       if (hasUnappliedForTask) {
         this.setBuilder({ phase: "TURN_ENDED", completionReportId: null });
@@ -1783,7 +1783,8 @@ export class AgentSurfaceController {
     let builder = { ...previousBuilder, taskId, taskTitle, taskRevision: currentTask?.revision ?? null,
       readyToStart: currentTask?.status === "PENDING" };
     if (restoreIdleBuilder && !this.activeRunId && !this.builderFlight) {
-      const unapplied = decisions.some(d => d.taskId === taskId && !d.applied) ||
+      // A replaced choice (changed or undone in Kiro chat, K17) is history, never applied.
+      const unapplied = decisions.some(d => d.taskId === taskId && !d.applied && !d.replaced) ||
         s.pendingDecisions.some(d => d.taskId === taskId);
       const completed = currentTask?.status === "COMPLETED" &&
         s.completionReport?.taskId === currentTask.id && !unapplied;

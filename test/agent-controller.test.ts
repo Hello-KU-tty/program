@@ -1072,6 +1072,24 @@ describe("AgentSurfaceController — Kiro-native Next Move card", () => {
       .toEqual(new Set(["UI_READ_EVIDENCE_TRACE"]));
   });
 
+  it("shows a finished Task as finished even when a replaced choice was never applied (K17)", async () => {
+    const h = kiroHarness();
+    h.script(none);
+    const request = snapshotWithPendingDecision().pendingDecisions[0];
+    const reopened = { ...request, id: "decision_2", replacesDecisionId: "decision_1" };
+    const done = completedSnapshot();
+    h.client.restoreProjectResult = { resolve: fakeSnapshot({
+      currentTask: done.currentTask, completionReport: done.completionReport, pendingDecisions: [],
+      decisions: [
+        { request, resolution: { selectionKind: "OPTION", selectedOptionId: "option_a" }, application: null },
+        { request: reopened, resolution: { selectionKind: "OPTION", selectedOptionId: "option_b" }, application: { id: "decision_application_1" } },
+      ],
+    }) };
+    await h.controller.refreshProject();
+    await h.tick(0);
+    await vi.waitFor(() => expect(h.controller.getViewModel().builder.phase).toBe("TASK_COMPLETED"));
+  });
+
   it("shows choices made in Kiro chat and this Task's learner Evidence (K17)", async () => {
     const h = kiroHarness();
     h.script(none);
@@ -1098,6 +1116,8 @@ describe("AgentSurfaceController — Kiro-native Next Move card", () => {
     const decisions = h.controller.getViewModel().decisions;
     expect(decisions.find((d) => d.decisionId === "decision_1")).toMatchObject({ chosenLabel: "옵션 B", replaced: true });
     expect(decisions.find((d) => d.decisionId === "decision_2")).toMatchObject({ chosenLabel: null, replaced: false, resolved: false });
+    // The open reopened choice is what Kiro chat waits on, not the replaced one.
+    expect(h.controller.getViewModel().builder.phase).toBe("DECISION_REQUIRED");
     // Evidence is re-read at most every TASK_EVIDENCE_REFRESH_MS, not on every refresh.
     const evidenceReads = () => h.client.executeKinds.filter((kind) => kind === "UI_READ_EVIDENCE_TRACE").length;
     const read = evidenceReads();
