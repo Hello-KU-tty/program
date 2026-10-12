@@ -114,6 +114,10 @@ const OPEN_IN_KIRO_NOTICES = {
   REGISTERED: "이 폴더를 Project로 연결했어요. Kiro 채팅에서 새 세션(+)을 열어 만들기를 시작하세요. 궁금한 건 채팅에서 /vibe-helper 로 물어볼 수 있어요.",
   REGISTERED_FRESH: "이 폴더를 Project로 연결하고 Kiro 채팅에 새 세션을 열었어요. 거기서 만들기를 시작하세요. 궁금한 건 /vibe-helper 로 물어볼 수 있어요.",
   GENERATED: "Project 폴더를 새 창으로 열었어요. 그 창에서 폴더를 신뢰하면 Kiro 채팅에 새 세션이 열려요. 거기서 만들기를 시작하세요.",
+  // Kiro read this window before the folder was trusted (on Windows, every newly opened folder),
+  // so its hooks and MCP stay off until a reload; the host already offers the reload and opens a
+  // new chat session after it (K17).
+  RELOAD_REQUIRED: "이 폴더를 Project로 연결했어요. 이 창은 폴더를 신뢰하기 전에 열려서, 알림의 ‘다시 로드’(또는 Developer: Reload Window)로 창을 다시 로드해 주세요. 다시 로드하면 Kiro 채팅에 새 세션이 열려요.",
 } as const;
 /** Kiro-native: this Task's learner Evidence is re-read at most this often (K17). */
 export const TASK_EVIDENCE_REFRESH_MS = 15_000;
@@ -1245,9 +1249,10 @@ export class AgentSurfaceController {
     try {
       const opened = await open(projectId);
       if (!this.isCurrentBinding(binding) || opened.folder === "CANCELLED") return;
-      this.notice("info", `KIRO_CHAT_${opened.folder}`,
-        opened.folder === "REGISTERED" && opened.freshSession === true
-          ? OPEN_IN_KIRO_NOTICES.REGISTERED_FRESH : OPEN_IN_KIRO_NOTICES[opened.folder]);
+      const outcome = opened.folder === "REGISTERED" && opened.reloadRequired === true
+        ? "RELOAD_REQUIRED"
+        : opened.folder === "REGISTERED" && opened.freshSession === true ? "REGISTERED_FRESH" : opened.folder;
+      this.notice("info", `KIRO_CHAT_${outcome}`, OPEN_IN_KIRO_NOTICES[outcome]);
     } catch (error) {
       if (!this.isCurrentBinding(binding)) return;
       const code = safeRuntimeCode(error instanceof Error ? error.message : undefined);

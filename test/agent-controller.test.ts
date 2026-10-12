@@ -975,6 +975,17 @@ describe("AgentSurfaceController — Kiro-native host runs the Builder in Kiro c
     expect(h.controller.getViewModel().notice?.message).toContain("새 창");
   });
 
+  it("tells the learner to reload first when the window opened before the folder was trusted", async () => {
+    const late = buildHarness({ openInKiro: async () => ({ ...opened("REGISTERED"), reloadRequired: true }) });
+    await late.controller.openInKiro();
+    expect(late.controller.getViewModel().notice).toMatchObject({ kind: "info", code: "KIRO_CHAT_RELOAD_REQUIRED" });
+    expect(late.controller.getViewModel().notice?.message).toContain("다시 로드");
+
+    const trusted = buildHarness({ openInKiro: async () => ({ ...opened("REGISTERED"), reloadRequired: false }) });
+    await trusted.controller.openInKiro();
+    expect(trusted.controller.getViewModel().notice?.code).toBe("KIRO_CHAT_REGISTERED");
+  });
+
   it("stays silent when the learner declines the new window", async () => {
     const h = buildHarness({ openInKiro: async () => opened("CANCELLED") });
     await h.controller.openInKiro();
