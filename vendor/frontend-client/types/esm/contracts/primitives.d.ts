@@ -25,6 +25,7 @@ export declare const diffIdSchema: z.ZodString;
 export declare const eventIdSchema: z.ZodString;
 export declare const episodeIdSchema: z.ZodString;
 export declare const analysisJobIdSchema: z.ZodString;
+export declare const nextMoveJobIdSchema: z.ZodString;
 export declare const conceptIdSchema: z.ZodString;
 export declare const aliasProposalIdSchema: z.ZodString;
 export declare const evidenceProposalIdSchema: z.ZodString;

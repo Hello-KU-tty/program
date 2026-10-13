@@ -23,6 +23,7 @@
  * Requirements: 4.1, 4.2, 4.3, 4.6, 13 (draft restore).
  */
 
+import { Countdown } from "./countdown";
 import type { FlowSnapshot } from "../../core/flow/flow-snapshot";
 import { runtimeErrorMessage } from "../../core/runtime-errors";
 import type {
@@ -202,6 +203,7 @@ export class DiscoveryStartView {
   private readonly historySection: HTMLElement;
   /** Loading card shown instead of the form while candidates are being found. */
   private readonly loadingCard: HTMLElement;
+  private readonly loadingCountdown: Countdown;
   private readonly loadingGoal: HTMLElement;
 
   constructor(root: HTMLElement, callbacks: FlowRenderCallbacks) {
@@ -305,8 +307,8 @@ export class DiscoveryStartView {
     loading.appendChild(loadingGoal);
     this.loadingGoal = loadingGoal;
     const loadingHint = this.el("p", "flow-start-loading-hint");
-    loadingHint.textContent = "보통 20~40초쯤 걸려요. 후보가 준비되면 바로 보여 드릴게요.";
     loading.appendChild(loadingHint);
+    this.loadingCountdown = new Countdown(loadingHint);
     container.appendChild(loading);
     this.loadingCard = loading;
 
@@ -440,6 +442,10 @@ export class DiscoveryStartView {
     const goal = (snapshot.input?.learningGoal ?? this.goalInput.value).trim();
     this.loadingGoal.textContent = goal ? `배우고 싶은 것: ${goal}` : "";
     this.loadingGoal.hidden = goal.length === 0;
+    this.loadingCountdown.set(
+      this.discoveryInProgress ? snapshot.discoveryProgress : null,
+      this.discoveryInProgress ? "보통 20~40초쯤 걸려요. 후보가 준비되면 바로 보여 드릴게요." : "",
+    );
 
     // Native-support banner (guide §10-1) from the non-sensitive verdict.
     this.renderSupportBanner(snapshot);
@@ -673,6 +679,7 @@ export class DiscoveryWorkspace {
   private readonly container: HTMLElement;
   /** The Agent_Run_Banner, hidden unless a discovery op is in flight. */
   private readonly agentBanner: HTMLElement;
+  private readonly roundCountdown: Countdown;
   /** The scrollable region holding the round sections + candidate cards. */
   private readonly roundsRegion: HTMLElement;
   /** The composer free-text input (<= {@link MAX_REFINEMENT_TEXT} chars). */
@@ -716,6 +723,10 @@ export class DiscoveryWorkspace {
     banner.hidden = true;
     container.appendChild(banner);
     this.agentBanner = banner;
+    const roundCountdown = this.el("p", "flow-agent-countdown");
+    roundCountdown.hidden = true;
+    container.appendChild(roundCountdown);
+    this.roundCountdown = new Countdown(roundCountdown);
 
     // Dynamic rounds region — rebuilt in place each render.
     const rounds = this.el("div", "flow-rounds");
@@ -797,6 +808,7 @@ export class DiscoveryWorkspace {
     this.agentBanner.textContent = snapshot.rounds.length > 0 || snapshot.previewRound
       ? "말씀하신 방향으로 후보를 다시 찾고 있어요…"
       : "후보를 준비하고 있어요…";
+    this.roundCountdown.set(this.discoveryInProgress ? snapshot.discoveryProgress : null);
 
     // Disable composer + select controls while a discovery op is in flight
     // (Req 5.5, 7.11); re-enable otherwise (Req 7.12).
@@ -1267,8 +1279,9 @@ export class SpecReview {
   private readonly refineInput: HTMLTextAreaElement;
   /** The refine ("다듬기") button. */
   private readonly refineButton: HTMLButtonElement;
-  /** The confirm ("이걸로 시작") buttons: at the top and above the refine input. */
+  /** The confirm ("이걸로 시작") button above the refine input, pinned at the bottom (K17). */
   private readonly confirmButtons: HTMLButtonElement[] = [];
+  private readonly specCountdown: Countdown;
   private readonly returnButton: HTMLButtonElement;
 
   /** True while a spec op is in flight (mirrors the last snapshot). */
@@ -1284,9 +1297,6 @@ export class SpecReview {
     heading.textContent = "이 계획대로 만들어 볼까요?";
     container.appendChild(heading);
 
-    // Confirm control (Req 11.1) at the top, for a learner who is already happy.
-    container.appendChild(this.buildConfirmButton("flow-spec-confirm flow-spec-confirm-top"));
-
     // Agent_Run_Banner (Req 10.4, 11.6) — hidden by default.
     const banner = this.el("div", "flow-agent-banner");
     banner.setAttribute("role", "status");
@@ -1295,14 +1305,19 @@ export class SpecReview {
     banner.hidden = true;
     container.appendChild(banner);
     this.agentBanner = banner;
+    const specCountdown = this.el("p", "flow-agent-countdown");
+    specCountdown.hidden = true;
+    container.appendChild(specCountdown);
+    this.specCountdown = new Countdown(specCountdown);
 
     // Dynamic spec-content region — rebuilt in place each render.
     const content = this.el("div", "flow-spec-content");
     container.appendChild(content);
     this.contentRegion = content;
 
-    // Refine composer (Req 10.1). The confirm control comes first, so starting
-    // and refining read as two separate choices.
+    // Refine composer (Req 10.1), pinned at the bottom with the only confirm
+    // control (K17). The confirm control comes first, so starting and refining
+    // read as two separate choices.
     const composer = this.el("div", "flow-spec-composer");
     composer.appendChild(this.buildConfirmButton("flow-spec-confirm"));
 
@@ -1363,6 +1378,10 @@ export class SpecReview {
     const generating = snapshot.specInProgress || snapshot.discoveryInProgress;
     this.specInProgress = generating || snapshot.spec === null || snapshot.flowSupport.mode === "unavailable";
     this.agentBanner.hidden = !generating;
+    this.agentBanner.textContent = snapshot.spec === null
+      ? "만들 프로젝트의 계획을 세우고 있어요…"
+      : "말씀하신 내용으로 계획을 고치고 있어요…";
+    this.specCountdown.set(generating ? snapshot.discoveryProgress ?? snapshot.specProgress : null);
 
     // Disable the refine + confirm controls while a spec op is in flight
     // (Req 10.4, 11.6); re-enable otherwise.

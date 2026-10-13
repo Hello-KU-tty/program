@@ -574,6 +574,14 @@ describe("parseAgentAction - finalUpgrade/list (task 1.3)", () => {
   });
 });
 
+describe("parseAgentAction - nextMove/retry (Kiro-native Next Move)", () => {
+  it("accepts the bare payload and drops anything the webview adds", () => {
+    expect(parseAgentAction({ kind: "nextMove/retry" })).toEqual<AgentAction>({ kind: "nextMove/retry" });
+    const action = parseAgentAction({ kind: "nextMove/retry", nextMoveJobId: "forged", expectedJobRevision: 9 });
+    expect(action).toEqual<AgentAction>({ kind: "nextMove/retry" });
+  });
+});
+
 describe("parseAgentAction - finalUpgrade/prepare (task 1.3)", () => {
   it("accepts a well-formed payload verbatim", () => {
     expect(

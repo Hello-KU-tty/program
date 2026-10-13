@@ -43,12 +43,34 @@ export interface AgentViewModel {
    * (`BUILDER_RUNS_IN_HOST_CHAT`). The panel then offers "Kiro 채팅에서 열기".
    */
   readonly hostChat?: HostChatViewModel;
+  /**
+   * Kiro-native host only: Agent-authored ways to grow the project after the
+   * latest finished Task (Core `UI_READ_NEXT_MOVE`). Suggestions only; the
+   * learner starts one by saying it in Kiro chat, so there is no start button.
+   */
+  readonly nextMove?: NextMoveViewModel;
+  /** Kiro-native only: what this Task's learner Evidence shows (K17). */
+  readonly taskEvidence?: readonly TaskEvidenceViewModel[];
 }
 
 /** Kiro-native Builder connection state (no path, no token). */
 export interface HostChatViewModel {
   /** An open-in-Kiro request is in flight (host dialogs may be showing). */
   readonly opening: boolean;
+}
+
+/** Next Move card state. `NONE` hides the card (no finished latest Task). */
+export interface NextMoveViewModel {
+  readonly status: "NONE" | "GENERATING" | "READY" | "FAILED";
+  readonly moves: readonly {
+    readonly number: number;
+    readonly title: string;
+    readonly summary: string;
+    readonly benefit: string;
+    readonly size: "SMALL" | "MEDIUM";
+  }[];
+  /** An explicit "다시 만들기" request is in flight. */
+  readonly retrying: boolean;
 }
 
 /** Builder turn projection. `phase` is the display-only turn state. */
@@ -154,6 +176,23 @@ export interface DecisionViewModel {
   /** application != null (blocks completion display when false). */
   readonly applied: boolean;
   readonly contextVersion: number;
+  /** The chosen option's label, "직접 낸 안" for the learner's own idea, or null while open. */
+  readonly chosenLabel?: string | null;
+  /** A later Decision replaced this one (a changed or undone choice); Kiro-native hides it. */
+  readonly replaced?: boolean;
+}
+
+/**
+ * Kiro-native: learner Evidence Core accepted in the current Task (K17), for the
+ * Builder tab. Agent output and clicks never appear here; only accepted user
+ * understanding with its quoted learner words.
+ */
+export interface TaskEvidenceViewModel {
+  readonly evidenceId: string;
+  readonly conceptName: string;
+  readonly state: "EXPLAINED" | "DEMONSTRATED" | "TRANSFERRED";
+  /** The learner's own words Core quoted, if any. */
+  readonly excerpt: string | null;
 }
 
 /** A native user-input question awaiting a verbatim answer. */

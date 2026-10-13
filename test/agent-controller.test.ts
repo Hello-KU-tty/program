@@ -38,6 +38,8 @@ import {
 } from "./support/fake-native-worker";
 import { FakeGlobalState } from "./support/fake-global-state";
 import { AgentDispatcher } from "../src/webview/agent/agent-dispatcher";
+import { FakeClock } from "./support/fake-clock";
+import { NEXT_MOVE_REFRESH_MS } from "../src/core/agent/agent-controller";
 
 const PROJECT_ID = "project_1";
 const TASK_ID = "task_1";
@@ -289,6 +291,7 @@ function buildHarness(options: {
   worker?: FakeNativeWorker;
   seedProjectId?: boolean;
   openInKiro?: AgentControllerDeps["openInKiro"];
+  clock?: FakeClock;
 } = {}) {
   const client = new FakeCoreClient(options.client ?? {});
   const worker = options.worker ?? new FakeNativeWorker();
@@ -322,6 +325,7 @@ function buildHarness(options: {
       openedUrls.push(u);
     },
     ...(options.openInKiro ? { openInKiro: options.openInKiro } : {}),
+    ...(options.clock ? { clock: options.clock } : {}),
   });
 
   return {
@@ -971,6 +975,17 @@ describe("AgentSurfaceController — Kiro-native host runs the Builder in Kiro c
     expect(h.controller.getViewModel().notice?.message).toContain("새 창");
   });
 
+  it("tells the learner to reload first when the window opened before the folder was trusted", async () => {
+    const late = buildHarness({ openInKiro: async () => ({ ...opened("REGISTERED"), reloadRequired: true }) });
+    await late.controller.openInKiro();
+    expect(late.controller.getViewModel().notice).toMatchObject({ kind: "info", code: "KIRO_CHAT_RELOAD_REQUIRED" });
+    expect(late.controller.getViewModel().notice?.message).toContain("다시 로드");
+
+    const trusted = buildHarness({ openInKiro: async () => ({ ...opened("REGISTERED"), reloadRequired: false }) });
+    await trusted.controller.openInKiro();
+    expect(trusted.controller.getViewModel().notice?.code).toBe("KIRO_CHAT_REGISTERED");
+  });
+
   it("stays silent when the learner declines the new window", async () => {
     const h = buildHarness({ openInKiro: async () => opened("CANCELLED") });
     await h.controller.openInKiro();
@@ -1002,5 +1017,208 @@ describe("AgentSurfaceController — Kiro-native host runs the Builder in Kiro c
     expect(other.controller.getViewModel().hostChat).toBeUndefined();
     await other.controller.openInKiro();
     expect(other.controller.getViewModel().notice).toBeNull();
+  });
+});
+
+describe("AgentSurfaceController — Kiro-native Next Move card", () => {
+  const JOB_ID = "next_move_job_1";
+  const moves = [1, 2, 3].map((number) => ({
+    number, title: `제안 ${number}`, summary: `설명 ${number}`, benefit: `좋아지는 점 ${number}`, size: "SMALL" as const,
+  }));
+  const none = { status: "NONE", moves: [] };
+  const job = (status: "GENERATING" | "READY" | "FAILED", extra: Record<string, unknown> = {}) => ({
+    status, nextMoveJobId: JOB_ID, jobRevision: status === "FAILED" ? 4 : 2, sourceTaskId: TASK_ID,
+    moves: status === "READY" ? moves : [], ...extra,
+  });
+  const kiroHarness = () => {
+    const clock = new FakeClock();
+    const h = buildHarness({ clock, openInKiro: async () => ({ projectId: PROJECT_ID, taskId: TASK_ID, openedNewWindow: false, folder: "REGISTERED" }) });
+    const reads = () => h.client.executeKinds.filter((kind) => kind === "UI_READ_NEXT_MOVE").length;
+    const script = (view: unknown) => { h.client.executeResultByKind.UI_READ_NEXT_MOVE = { resolve: view }; };
+    // Advance only once the next refresh is armed (it is armed after a read settles).
+    const tick = async (ms: number) => {
+      await vi.waitFor(() => expect(clock.pendingCount()).toBe(1));
+      clock.advance(ms);
+    };
+    return { ...h, clock, reads, script, tick };
+  };
+
+  it("follows a Task finished in Kiro chat from generating to three suggestions", async () => {
+    const h = kiroHarness();
+    h.script(none);
+    await h.controller.refreshProject();
+    await h.tick(0);
+    await vi.waitFor(() => expect(h.reads()).toBe(1));
+    expect(h.controller.getViewModel().nextMove).toEqual({ status: "NONE", moves: [], retrying: false });
+    const restores = vi.spyOn(h.client, "restoreProject");
+
+    // The Builder finished the Task in Kiro chat; the card is the first to know.
+    h.script(job("GENERATING"));
+    await h.tick(NEXT_MOVE_REFRESH_MS.IDLE);
+    await vi.waitFor(() => expect(h.controller.getViewModel().nextMove?.status).toBe("GENERATING"));
+    await vi.waitFor(() => expect(restores).toHaveBeenCalled());
+
+    // Generating re-reads sooner, and suggestions arrive without concepts.
+    h.script(job("READY", { moves: moves.map((move) => ({ ...move, concepts: ["secret concept"] })) }));
+    await h.tick(NEXT_MOVE_REFRESH_MS.GENERATING);
+    await vi.waitFor(() => expect(h.controller.getViewModel().nextMove?.status).toBe("READY"));
+    expect(h.controller.getViewModel().nextMove?.moves).toEqual(moves);
+    expect(JSON.stringify(h.controller.getViewModel())).not.toContain("secret concept");
+    expect(JSON.stringify(h.controller.getViewModel())).not.toContain(JOB_ID);
+    // K17: every refresh re-reads the snapshot quietly, so choices made in
+    // Kiro chat reach the panel; unchanged reads do not re-hydrate.
+    const changes = h.changeCount();
+    const before = restores.mock.calls.length;
+    await h.tick(NEXT_MOVE_REFRESH_MS.IDLE);
+    await vi.waitFor(() => expect(h.reads()).toBe(4));
+    await vi.waitFor(() => expect(restores.mock.calls.length).toBeGreaterThan(before));
+    expect(h.changeCount()).toBe(changes);
+
+    // A follow-up Task started from Kiro chat hides the card and refreshes the header.
+    h.script(none);
+    await h.tick(NEXT_MOVE_REFRESH_MS.IDLE);
+    await vi.waitFor(() => expect(h.controller.getViewModel().nextMove?.status).toBe("NONE"));
+    // Only reads: the Next Move card and this Task's learning records.
+    expect(new Set(h.client.executeKinds.filter((kind) => kind !== "UI_READ_NEXT_MOVE")))
+      .toEqual(new Set(["UI_READ_EVIDENCE_TRACE"]));
+  });
+
+  it("shows a finished Task as finished even when a replaced choice was never applied (K17)", async () => {
+    const h = kiroHarness();
+    h.script(none);
+    const request = snapshotWithPendingDecision().pendingDecisions[0];
+    const reopened = { ...request, id: "decision_2", replacesDecisionId: "decision_1" };
+    const done = completedSnapshot();
+    h.client.restoreProjectResult = { resolve: fakeSnapshot({
+      currentTask: done.currentTask, completionReport: done.completionReport, pendingDecisions: [],
+      decisions: [
+        { request, resolution: { selectionKind: "OPTION", selectedOptionId: "option_a" }, application: null },
+        { request: reopened, resolution: { selectionKind: "OPTION", selectedOptionId: "option_b" }, application: { id: "decision_application_1" } },
+      ],
+    }) };
+    await h.controller.refreshProject();
+    await h.tick(0);
+    await vi.waitFor(() => expect(h.controller.getViewModel().builder.phase).toBe("TASK_COMPLETED"));
+  });
+
+  it("shows choices made in Kiro chat and this Task's learner Evidence (K17)", async () => {
+    const h = kiroHarness();
+    h.script(none);
+    const request = snapshotWithPendingDecision().pendingDecisions[0];
+    const reopened = { ...request, id: "decision_2", replacesDecisionId: "decision_1" };
+    h.client.restoreProjectResult = { resolve: fakeSnapshot({ decisions: [
+      { request, resolution: { selectionKind: "OPTION", selectedOptionId: "option_b" }, application: null },
+      { request: reopened, resolution: null, application: null },
+    ] }) };
+    const at = "2026-10-12T02:00:00.000Z";
+    h.client.executeResultByKind.UI_READ_EVIDENCE_TRACE = { resolve: { ...emptyTrace, concepts: [{
+      conceptName: "SQLite Locking",
+      evidence: [
+        { evidenceId: "evidence_1", kind: "USER_UNDERSTANDING", taskId: TASK_ID, supportsState: "EXPLAINED", acceptedAt: at, redactedEvidenceExcerpt: "확장하면 2번이 안전하다" },
+        { evidenceId: "evidence_2", kind: "USER_UNDERSTANDING", taskId: "task_other", supportsState: "DEMONSTRATED", acceptedAt: at },
+        { evidenceId: "evidence_3", kind: "CONCEPT_OBSERVATION", taskId: TASK_ID, supportsState: "OBSERVED", acceptedAt: at },
+      ],
+    }] } };
+    await h.controller.refreshProject();
+    await h.tick(0);
+    await vi.waitFor(() => expect(h.controller.getViewModel().taskEvidence).toEqual([
+      { evidenceId: "evidence_1", conceptName: "SQLite Locking", state: "EXPLAINED", excerpt: "확장하면 2번이 안전하다" },
+    ]));
+    const decisions = h.controller.getViewModel().decisions;
+    expect(decisions.find((d) => d.decisionId === "decision_1")).toMatchObject({ chosenLabel: "옵션 B", replaced: true });
+    expect(decisions.find((d) => d.decisionId === "decision_2")).toMatchObject({ chosenLabel: null, replaced: false, resolved: false });
+    // The open reopened choice is what Kiro chat waits on, not the replaced one.
+    expect(h.controller.getViewModel().builder.phase).toBe("DECISION_REQUIRED");
+    // Evidence is re-read at most every TASK_EVIDENCE_REFRESH_MS, not on every refresh.
+    const evidenceReads = () => h.client.executeKinds.filter((kind) => kind === "UI_READ_EVIDENCE_TRACE").length;
+    const read = evidenceReads();
+    await h.tick(NEXT_MOVE_REFRESH_MS.IDLE);
+    await vi.waitFor(() => expect(h.reads()).toBe(2));
+    expect(evidenceReads()).toBe(read);
+  });
+
+  it("retries a failed job once with its id and revision, and only from the failure state", async () => {
+    const h = kiroHarness();
+    h.script(job("FAILED", { failureCode: "NEXT_MOVE_TIMEOUT" }));
+    await h.controller.refreshProject();
+    await h.tick(0);
+    await vi.waitFor(() => expect(h.controller.getViewModel().nextMove?.status).toBe("FAILED"));
+    const execute = vi.spyOn(h.client, "execute");
+    let release!: () => void;
+    h.client.executeResultByKind.UI_RETRY_NEXT_MOVE = { resolve: job("GENERATING", { jobRevision: 5 }) };
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    execute.mockImplementationOnce(async (request) => { await gate; return FakeCoreClient.prototype.execute.call(h.client, request); });
+    const first = h.controller.retryNextMove();
+    const second = h.controller.retryNextMove();
+    expect(h.controller.getViewModel().nextMove?.retrying).toBe(true);
+    release();
+    await Promise.all([first, second]);
+    const retries = execute.mock.calls.map(([request]) => request).filter((request) => request.kind === "UI_RETRY_NEXT_MOVE");
+    expect(retries).toHaveLength(1);
+    expect(retries[0]).toMatchObject({ projectId: PROJECT_ID, nextMoveJobId: JOB_ID, expectedJobRevision: 4 });
+    expect(h.controller.getViewModel().nextMove).toEqual({ status: "GENERATING", moves: [], retrying: false });
+    // Not failed any more: a stray retry does nothing.
+    await h.controller.retryNextMove();
+    expect(execute.mock.calls.filter(([request]) => request.kind === "UI_RETRY_NEXT_MOVE")).toHaveLength(1);
+  });
+
+  it("reports a refused retry with fixed guidance and keeps the failure card", async () => {
+    const h = kiroHarness();
+    h.script(job("FAILED"));
+    await h.controller.refreshProject();
+    await h.tick(0);
+    await vi.waitFor(() => expect(h.controller.getViewModel().nextMove?.status).toBe("FAILED"));
+    h.client.executeResultByKind.UI_RETRY_NEXT_MOVE = { throw: clientError("NEXT_MOVE_RETRY_NOT_ALLOWED", 400, "/Users/learner details") };
+    await h.controller.retryNextMove();
+    const vm = h.controller.getViewModel();
+    expect(vm.notice).toMatchObject({ kind: "error", code: "NEXT_MOVE_RETRY_NOT_ALLOWED" });
+    expect(vm.notice?.message).toContain("다시 만들지 못했어요");
+    expect(JSON.stringify(vm)).not.toContain("learner");
+    expect(vm.nextMove).toEqual({ status: "FAILED", moves: [], retrying: false });
+  });
+
+  it("keeps the last card when Core cannot be read, and stops after dispose", async () => {
+    const h = kiroHarness();
+    h.script(job("READY"));
+    await h.controller.refreshProject();
+    await h.tick(0);
+    await vi.waitFor(() => expect(h.controller.getViewModel().nextMove?.status).toBe("READY"));
+    h.client.executeResultByKind.UI_READ_NEXT_MOVE = { throw: clientError("CORE_UNAVAILABLE", 503) };
+    await h.tick(NEXT_MOVE_REFRESH_MS.IDLE);
+    await vi.waitFor(() => expect(h.reads()).toBe(2));
+    expect(h.controller.getViewModel().nextMove?.status).toBe("READY");
+    expect(h.controller.getViewModel().notice).toBeNull();
+    // Malformed views are ignored too.
+    h.script({ status: "SOMETHING", moves: [] });
+    await h.tick(NEXT_MOVE_REFRESH_MS.IDLE);
+    await vi.waitFor(() => expect(h.reads()).toBe(3));
+    expect(h.controller.getViewModel().nextMove?.status).toBe("READY");
+    h.controller.dispose();
+    h.clock.advance(NEXT_MOVE_REFRESH_MS.IDLE * 3 + 1);
+    await Promise.resolve();
+    expect(h.reads()).toBe(3);
+  });
+
+  it("starts over for another Project and never reads on other hosts", async () => {
+    const h = kiroHarness();
+    h.script(job("READY"));
+    await h.controller.refreshProject();
+    await h.tick(0);
+    await vi.waitFor(() => expect(h.controller.getViewModel().nextMove?.status).toBe("READY"));
+    h.script(none);
+    h.controller.bindProject("project_other");
+    expect(h.controller.getViewModel().nextMove).toEqual({ status: "NONE", moves: [], retrying: false });
+    await h.tick(0);
+    await vi.waitFor(() => expect(h.reads()).toBe(2));
+
+    const clock = new FakeClock();
+    const other = buildHarness({ clock });
+    await other.controller.refreshProject();
+    clock.advance(NEXT_MOVE_REFRESH_MS.IDLE * 3);
+    await Promise.resolve();
+    expect(other.client.executeKinds).not.toContain("UI_READ_NEXT_MOVE");
+    expect(other.controller.getViewModel().nextMove).toBeUndefined();
+    await other.controller.retryNextMove();
+    expect(other.client.executeKinds).not.toContain("UI_RETRY_NEXT_MOVE");
   });
 });

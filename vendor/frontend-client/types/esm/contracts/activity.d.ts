@@ -1,4 +1,5 @@
 import { z } from 'zod';
+export declare const BUILDER_CHAT_TURN_MAX_CHARS = 1000;
 export declare const activityPayloadSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     type: z.ZodLiteral<"TASK_STARTED">;
     taskId: z.ZodString;
@@ -18,6 +19,11 @@ export declare const activityPayloadSchema: z.ZodDiscriminatedUnion<[z.ZodObject
     redactedExcerpt: z.ZodString;
 }, z.core.$strict>, z.ZodObject<{
     type: z.ZodLiteral<"HELPER_RESPONSE">;
+    conversationId: z.ZodString;
+    messageId: z.ZodString;
+    summary: z.ZodString;
+}, z.core.$strict>, z.ZodObject<{
+    type: z.ZodLiteral<"BUILDER_CHAT_TURN">;
     conversationId: z.ZodString;
     messageId: z.ZodString;
     summary: z.ZodString;
@@ -92,6 +98,11 @@ export declare const activityEventSchema: z.ZodObject<{
         redactedExcerpt: z.ZodString;
     }, z.core.$strict>, z.ZodObject<{
         type: z.ZodLiteral<"HELPER_RESPONSE">;
+        conversationId: z.ZodString;
+        messageId: z.ZodString;
+        summary: z.ZodString;
+    }, z.core.$strict>, z.ZodObject<{
+        type: z.ZodLiteral<"BUILDER_CHAT_TURN">;
         conversationId: z.ZodString;
         messageId: z.ZodString;
         summary: z.ZodString;

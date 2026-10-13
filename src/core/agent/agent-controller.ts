@@ -30,6 +30,7 @@ import type {
   AgentRunPort,
 } from "../../adapter/agent/agent-run-port";
 import type { NativeInputPort } from "../../adapter/agent/native-input-port";
+import { type Clock, SystemClock, type TimerId } from "../clock";
 import { errorGuidance, runtimeErrorMessage, safeRuntimeCode } from "../runtime-errors";
 import {
   classifyNativeWorkerStatus,
@@ -42,6 +43,7 @@ import {
   type FinalUpgradeCandidate,
   isRunActive,
   type LocalRun,
+  type NextMoveView,
   type ProjectEvidenceTrace,
   type ProjectSessionSnapshot,
   type RunEventView,
@@ -62,7 +64,9 @@ import {
   type HelperViewModel,
   initialAgentViewModel,
   type NativeQuestionViewModel,
+  type NextMoveViewModel,
   type NoticeViewModel,
+  type TaskEvidenceViewModel,
 } from "./agent-view-model";
 import { classifyTurn, phaseFromOutcome, reduceEvent } from "./builder-turn";
 
@@ -93,13 +97,31 @@ export interface AgentControllerDeps {
    * the panel never starts a Builder run and offers this instead.
    */
   readonly openInKiro?: (projectId: string) => ReturnType<FrontendHost["openProjectInKiro"]>;
+  /** Timer source for the Kiro-native Next Move refresh. Defaults to {@link SystemClock}. */
+  readonly clock?: Clock;
 }
+
+/**
+ * Kiro-native: Core has no push channel to the panel, so the Next Move card is
+ * re-read while the learner works in Kiro chat. Faster while suggestions are
+ * being generated (about 10 s), slower otherwise.
+ */
+export const NEXT_MOVE_REFRESH_MS = { GENERATING: 1_500, IDLE: 4_000 } as const;
+const NEXT_MOVE_STATUSES: ReadonlySet<string> = new Set(["NONE", "GENERATING", "READY", "FAILED"]);
 
 /** Notices after connecting a Project to Kiro chat; CANCELLED stays silent. */
 const OPEN_IN_KIRO_NOTICES = {
-  REGISTERED: "이 폴더를 Project로 연결했어요. Kiro 채팅에서 새 세션(+)을 열어 만들기를 시작하세요. 도우미는 새 탭에서 vibe-helper 에이전트를 고르면 돼요.",
-  GENERATED: "Project 폴더를 새 창으로 열었어요. 그 창의 Kiro 채팅에서 새 세션(+)을 열어 만들기를 시작하세요.",
+  REGISTERED: "이 폴더를 Project로 연결했어요. Kiro 채팅에서 새 세션(+)을 열어 만들기를 시작하세요. 궁금한 건 채팅에서 /vibe-helper 로 물어볼 수 있어요.",
+  REGISTERED_FRESH: "이 폴더를 Project로 연결하고 Kiro 채팅에 새 세션을 열었어요. 거기서 만들기를 시작하세요. 궁금한 건 /vibe-helper 로 물어볼 수 있어요.",
+  GENERATED: "Project 폴더를 새 창으로 열었어요. 그 창에서 폴더를 신뢰하면 Kiro 채팅에 새 세션이 열려요. 거기서 만들기를 시작하세요.",
+  // Kiro read this window before the folder was trusted (on Windows, every newly opened folder),
+  // so its hooks and MCP stay off until a reload; the host already offers the reload and opens a
+  // new chat session after it (K17).
+  RELOAD_REQUIRED: "이 폴더를 Project로 연결했어요. 이 창은 폴더를 신뢰하기 전에 열려서, 알림의 ‘다시 로드’(또는 Developer: Reload Window)로 창을 다시 로드해 주세요. 다시 로드하면 Kiro 채팅에 새 세션이 열려요.",
 } as const;
+/** Kiro-native: this Task's learner Evidence is re-read at most this often (K17). */
+export const TASK_EVIDENCE_REFRESH_MS = 15_000;
+const TASK_EVIDENCE_LIMIT = 10;
 const BUILDER_IN_KIRO_CHAT = "만들기는 Kiro 채팅에서 진행돼요. 아직 연결하지 않았다면 ‘Kiro 채팅에서 열기’를 누르고, 연결했다면 Kiro 채팅에서 이어서 요청하세요.";
 
 /**
@@ -147,7 +169,15 @@ export class AgentSurfaceController {
   private disposed = false;
   private bindingVersion = 0;
 
+  private readonly clock: Clock;
+  /** Kiro-native Next Move refresh: one pending timer at most. */
+  private nextMoveTimer: TimerId | null = null;
+  /** Host-only retry target and the Task the shown suggestions belong to. */
+  private nextMoveJob: { id: string; revision: number; sourceTaskId: string | null } | null = null;
+  private nextMoveRead = false;
+
   constructor(private readonly deps: AgentControllerDeps) {
+    this.clock = deps.clock ?? new SystemClock();
     this.vm = this.freshViewModel();
     // Worker status + user-input changes are async, non-intent-driven mutations
     // (design §B.5): subscribe once here and re-project on every notify.
@@ -169,7 +199,9 @@ export class AgentSurfaceController {
   /** The IDLE projection; a Kiro-native host also gets its hostChat state. */
   private freshViewModel(): AgentViewModel {
     const vm = initialAgentViewModel();
-    return this.deps.openInKiro ? { ...vm, hostChat: { opening: false } } : vm;
+    return this.deps.openInKiro
+      ? { ...vm, hostChat: { opening: false }, nextMove: { status: "NONE", moves: [], retrying: false } }
+      : vm;
   }
 
   private isCurrentBinding(binding: number): boolean {
@@ -195,12 +227,18 @@ export class AgentSurfaceController {
     this.cancelRequested = false;
     this.lastProjectId = projectId;
     this.vm = this.freshViewModel();
+    this.nextMoveJob = null;
+    this.nextMoveRead = false;
     this.refreshNativeQuestions();
     this.deps.onChange();
+    this.scheduleNextMove(0);
   }
 
   async refreshProject(): Promise<void> {
-    if (!this.disposed && this.lastProjectId) await this.reprojectFromSnapshot(this.lastProjectId);
+    if (!this.disposed && this.lastProjectId) {
+      await this.reprojectFromSnapshot(this.lastProjectId);
+      this.scheduleNextMove(0);
+    }
   }
 
   // --- BEHAVIORS (task 5.2): start a Builder run + supervise its stream ---
@@ -422,7 +460,7 @@ export class AgentSurfaceController {
       // Completion gating (Requirement 5.4 / Property 3): do NOT present
       // TASK_COMPLETED while any decision for this task is still unapplied.
       const hasUnappliedForTask = this.vm.decisions.some(
-        (d) => d.taskId === taskId && d.applied === false,
+        (d) => d.taskId === taskId && d.applied === false && d.replaced !== true,
       );
       if (hasUnappliedForTask) {
         this.setBuilder({ phase: "TURN_ENDED", completionReportId: null });
@@ -1181,7 +1219,7 @@ export class AgentSurfaceController {
 
   /**
    * Kiro-native: connect the bound Project to the learner's Kiro chat through
-   * the host (Steering, hooks, MCP, Helper agent, Spec). The host shows its own
+   * the host (Steering, hooks, MCP, Spec). The host shows its own
    * dialogs (tool consent, new window). Non-throwing; the outcome becomes a
    * notice. Ignored on other hosts.
    */
@@ -1211,12 +1249,130 @@ export class AgentSurfaceController {
     try {
       const opened = await open(projectId);
       if (!this.isCurrentBinding(binding) || opened.folder === "CANCELLED") return;
-      this.notice("info", `KIRO_CHAT_${opened.folder}`, OPEN_IN_KIRO_NOTICES[opened.folder]);
+      const outcome = opened.folder === "REGISTERED" && opened.reloadRequired === true
+        ? "RELOAD_REQUIRED"
+        : opened.folder === "REGISTERED" && opened.freshSession === true ? "REGISTERED_FRESH" : opened.folder;
+      this.notice("info", `KIRO_CHAT_${outcome}`, OPEN_IN_KIRO_NOTICES[outcome]);
     } catch (error) {
       if (!this.isCurrentBinding(binding)) return;
       const code = safeRuntimeCode(error instanceof Error ? error.message : undefined);
       this.notice("error", code, runtimeErrorMessage(code, `Kiro 채팅에 연결하지 못했어요 (${code}). Core 연결 상태를 확인한 뒤 다시 시도해 주세요.`));
     }
+  }
+
+  // --- Kiro-native: Next Move (다음 한 걸음) ---
+
+  /** Arm the single Next Move refresh timer (Kiro-native host, bound Project only). */
+  private scheduleNextMove(delay: number): void {
+    if (!this.deps.openInKiro || this.disposed || !this.lastProjectId) return;
+    if (this.nextMoveTimer !== null) this.clock.clearTimeout(this.nextMoveTimer);
+    this.nextMoveTimer = this.clock.setTimeout(() => {
+      this.nextMoveTimer = null;
+      void this.readNextMove().finally(() => {
+        // A bind or retry may have armed a sooner read meanwhile; keep it.
+        if (this.nextMoveTimer !== null) return;
+        this.scheduleNextMove(this.vm.nextMove?.status === "GENERATING"
+          ? NEXT_MOVE_REFRESH_MS.GENERATING : NEXT_MOVE_REFRESH_MS.IDLE);
+      });
+    }, delay);
+  }
+
+  /** Read Core's Next Move view. A failed read keeps the last card; Core may be restarting. */
+  private async readNextMove(): Promise<void> {
+    const projectId = this.lastProjectId;
+    if (this.disposed || !projectId) return;
+    const binding = this.bindingVersion;
+    const res = await this.deps.port.execute({ ...uiMetadata(), kind: "UI_READ_NEXT_MOVE", projectId });
+    if (this.isCurrentBinding(binding) && res.ok) await this.applyNextMove(projectId, res.value);
+    if (this.isCurrentBinding(binding)) await this.refreshKiroChat(projectId);
+  }
+
+  private taskEvidenceReadAt: number | null = null;
+
+  /**
+   * Kiro-native (K17): choices and learning records change in Kiro chat, not
+   * here, so the panel re-reads them with the Next Move refresh: the snapshot
+   * every time, this Task's Evidence at most every {@link TASK_EVIDENCE_REFRESH_MS}.
+   * Quiet: a failed read keeps the last view; Core may be restarting.
+   */
+  private async refreshKiroChat(projectId: string): Promise<void> {
+    await this.reprojectFromSnapshot(projectId, true, true);
+    const now = this.clock.now();
+    if (this.taskEvidenceReadAt !== null && now - this.taskEvidenceReadAt < TASK_EVIDENCE_REFRESH_MS) return;
+    this.taskEvidenceReadAt = now;
+    const binding = this.bindingVersion;
+    const res = await this.deps.port.execute({ ...uiMetadata(), kind: "UI_READ_EVIDENCE_TRACE", projectId });
+    if (!this.isCurrentBinding(binding) || !res.ok) return;
+    const taskId = this.vm.builder.taskId;
+    const trace = res.value as ProjectEvidenceTrace;
+    const taskEvidence: TaskEvidenceViewModel[] = (trace.concepts ?? [])
+      .flatMap(concept => concept.evidence.flatMap(item =>
+        item.kind === "USER_UNDERSTANDING" && taskId !== null && item.taskId === taskId &&
+        (item.supportsState === "EXPLAINED" || item.supportsState === "DEMONSTRATED" || item.supportsState === "TRANSFERRED")
+          ? [{ at: item.acceptedAt, view: { evidenceId: item.evidenceId, conceptName: concept.conceptName,
+            state: item.supportsState, excerpt: item.redactedEvidenceExcerpt ?? null } }]
+          : []))
+      .sort((left, right) => right.at.localeCompare(left.at))
+      .slice(0, TASK_EVIDENCE_LIMIT)
+      .map(({ view }) => view);
+    if (JSON.stringify(taskEvidence) === JSON.stringify(this.vm.taskEvidence ?? [])) return;
+    this.vm = { ...this.vm, taskEvidence };
+    this.deps.onChange();
+  }
+
+  private async applyNextMove(projectId: string, view: NextMoveView): Promise<void> {
+    if (typeof view !== "object" || view === null || !NEXT_MOVE_STATUSES.has(view.status) ||
+      !Array.isArray(view.moves)) return;
+    const previousTask = this.nextMoveJob?.sourceTaskId ?? null;
+    const firstRead = !this.nextMoveRead;
+    this.nextMoveRead = true;
+    this.nextMoveJob = view.nextMoveJobId && view.jobRevision !== undefined
+      ? { id: view.nextMoveJobId, revision: view.jobRevision, sourceTaskId: view.sourceTaskId ?? null }
+      : null;
+    const nextMove: NextMoveViewModel = {
+      status: view.status,
+      moves: view.status === "READY"
+        ? view.moves.map(({ number, title, summary, benefit, size }) => ({ number, title, summary, benefit, size }))
+        : [],
+      retrying: this.vm.nextMove?.retrying ?? false,
+    };
+    if (JSON.stringify(nextMove) !== JSON.stringify(this.vm.nextMove)) {
+      this.vm = { ...this.vm, nextMove };
+      this.deps.onChange();
+    }
+    // A Task finished in Kiro chat, or a follow-up Task started there: the
+    // panel learns it here first, so the Builder header re-reads the snapshot.
+    if (!firstRead && previousTask !== (this.nextMoveJob?.sourceTaskId ?? null))
+      await this.reprojectFromSnapshot(projectId, true);
+  }
+
+  /**
+   * "다시 만들기": one new attempt after both automatic attempts failed (Core
+   * `UI_RETRY_NEXT_MOVE`). The card's only button. Non-throwing.
+   */
+  async retryNextMove(): Promise<void> {
+    const projectId = this.lastProjectId;
+    const job = this.nextMoveJob;
+    const shown = this.vm.nextMove;
+    if (!this.deps.openInKiro || this.disposed || !projectId || !job ||
+      shown?.status !== "FAILED" || shown.retrying) return;
+    const binding = this.bindingVersion;
+    this.setNextMoveRetrying(true);
+    const res = await this.deps.port.execute({
+      ...uiMetadata(), kind: "UI_RETRY_NEXT_MOVE", idempotencyKey: entityId("idem"),
+      projectId, nextMoveJobId: job.id, expectedJobRevision: job.revision,
+    });
+    if (!this.isCurrentBinding(binding)) return;
+    this.setNextMoveRetrying(false);
+    if (res.ok) await this.applyNextMove(projectId, res.value);
+    else this.notice("error", res.error.raw, "다음 한 걸음을 다시 만들지 못했어요. 잠시 뒤 다시 시도해 주세요.");
+    this.scheduleNextMove(res.ok ? NEXT_MOVE_REFRESH_MS.GENERATING : 0);
+  }
+
+  private setNextMoveRetrying(retrying: boolean): void {
+    if (!this.vm.nextMove) return;
+    this.vm = { ...this.vm, nextMove: { ...this.vm.nextMove, retrying } };
+    this.deps.onChange();
   }
 
   // --- BEHAVIOR (task 5.8): workspace open / launch / evidence / final upgrade ---
@@ -1572,20 +1728,26 @@ export class AgentSurfaceController {
    * `ProjectSessionSnapshot` contract (`decisions[].request/resolution/
    * application`, `helperConversations`, `currentTask`).
    */
-  private async reprojectFromSnapshot(projectId: string, restoreIdleBuilder = false): Promise<void> {
+  private async reprojectFromSnapshot(projectId: string, restoreIdleBuilder = false, quiet = false): Promise<void> {
     if (this.disposed || projectId !== this.lastProjectId) return;
     const binding = this.bindingVersion;
     const snap = await this.deps.port.snapshot(projectId);
     if (this.disposed || binding !== this.bindingVersion || projectId !== this.lastProjectId) return;
     if (!snap.ok) {
-      this.notify(snap.error);
+      if (!quiet) this.notify(snap.error);
       return;
     }
     const s = snap.value;
 
     // Decisions: project the request + resolution/application presence.
+    const replacedIds = new Set((s.decisions ?? []).flatMap(d =>
+      d.request.replacesDecisionId ? [d.request.replacesDecisionId] : []));
     const decisions: DecisionViewModel[] = (s.decisions ?? []).map((d) => {
       const req = d.request;
+      const resolution = d.resolution;
+      const chosenLabel = resolution == null ? null
+        : resolution.selectionKind === "CUSTOM" ? "직접 낸 안"
+          : req.options.find(option => option.id === resolution.selectedOptionId)?.label ?? null;
       return {
         decisionId: req.id,
         taskId: req.taskId,
@@ -1600,6 +1762,8 @@ export class AgentSurfaceController {
         resolved: d.resolution != null,
         applied: d.application != null,
         contextVersion: req.contextVersion,
+        chosenLabel,
+        replaced: replacedIds.has(req.id),
       };
     });
 
@@ -1624,7 +1788,8 @@ export class AgentSurfaceController {
     let builder = { ...previousBuilder, taskId, taskTitle, taskRevision: currentTask?.revision ?? null,
       readyToStart: currentTask?.status === "PENDING" };
     if (restoreIdleBuilder && !this.activeRunId && !this.builderFlight) {
-      const unapplied = decisions.some(d => d.taskId === taskId && !d.applied) ||
+      // A replaced choice (changed or undone in Kiro chat, K17) is history, never applied.
+      const unapplied = decisions.some(d => d.taskId === taskId && !d.applied && !d.replaced) ||
         s.pendingDecisions.some(d => d.taskId === taskId);
       const completed = currentTask?.status === "COMPLETED" &&
         s.completionReport?.taskId === currentTask.id && !unapplied;
@@ -1635,12 +1800,15 @@ export class AgentSurfaceController {
       };
     }
 
-    this.vm = {
+    const next = {
       ...this.vm,
       decisions,
       builder,
       helper: { ...this.vm.helper, conversations },
     };
+    // The Kiro-native refresh re-reads often; repaint only when something changed.
+    if (quiet && JSON.stringify(next) === JSON.stringify(this.vm)) return;
+    this.vm = next;
     this.deps.onChange();
   }
 
@@ -1659,6 +1827,8 @@ export class AgentSurfaceController {
   dispose(): void {
     this.disposed = true;
     this.bindingVersion++;
+    if (this.nextMoveTimer !== null) this.clock.clearTimeout(this.nextMoveTimer);
+    this.nextMoveTimer = null;
     this.watches.builder?.abort();
     this.watches.helper?.abort();
     this.unsubStatus?.();

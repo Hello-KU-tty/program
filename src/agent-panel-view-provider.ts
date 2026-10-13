@@ -1398,6 +1398,7 @@ export function buildWebviewHtml(
     }
     .flow-start-loading-goal { margin: 0; font-weight: 600; }
     .flow-start-loading-hint,
+    .flow-agent-countdown,
     .flow-composer-hint,
     .flow-spec-decisions-note {
       margin: 0;
@@ -1405,6 +1406,8 @@ export function buildWebviewHtml(
       font-size: 0.85em;
       line-height: 1.5;
     }
+    /* K17: the running step's countdown sits right under its banner. */
+    .flow-agent-countdown { font-variant-numeric: tabular-nums; }
     /* Earlier candidate rounds fold under the current one. */
     .flow-rounds-earlier > summary {
       cursor: pointer;
@@ -1970,10 +1973,19 @@ export function buildWebviewHtml(
     .agent-worker-status, .agent-notice { order: 1; }
     .agent-decisions, .agent-native-questions { order: 2; }
     .agent-builder, .agent-helper, .agent-evidence { order: 3; }
-    .agent-final-upgrade { order: 4; }
+    .agent-final-upgrade, .agent-next-move, .agent-task-evidence { order: 4; }
+    /* Kiro-native (K17): building and choosing happen in Kiro chat, so the panel
+       shows the state first, then this Task's learning records and Next Move,
+       then the compact list of choices. */
+    .agent-surface[data-host="kiro"] .agent-builder { order: 2; }
+    .agent-surface[data-host="kiro"] .agent-task-evidence { order: 3; }
+    .agent-surface[data-host="kiro"] .agent-next-move { order: 4; }
+    .agent-surface[data-host="kiro"] .agent-decisions { order: 5; }
 
     .agent-surface:not([data-tab="builder"]) .agent-builder,
     .agent-surface:not([data-tab="builder"]) .agent-final-upgrade,
+    .agent-surface:not([data-tab="builder"]) .agent-next-move,
+    .agent-surface:not([data-tab="builder"]) .agent-task-evidence,
     .agent-surface:not([data-tab="helper"]) .agent-helper,
     .agent-surface:not([data-tab="record"]) .agent-evidence,
     .agent-surface[data-tab="record"] .agent-decisions,
@@ -2021,7 +2033,9 @@ export function buildWebviewHtml(
     .agent-decisions,
     .agent-native-questions,
     .agent-evidence,
-    .agent-final-upgrade {
+    .agent-final-upgrade,
+    .agent-next-move,
+    .agent-task-evidence {
       display: flex;
       flex-direction: column;
       gap: var(--sp-2);
@@ -2535,6 +2549,158 @@ export function buildWebviewHtml(
       gap: var(--sp-2);
     }
     .agent-final-upgrade-list:empty { display: none; }
+
+    /* ---- Kiro-native Builder tab (K17) ---- */
+    .agent-builder-next[data-waiting="true"] {
+      font-weight: 600;
+      color: var(--vscode-foreground);
+      border-left: 3px solid var(--vscode-charts-orange, #f5a524);
+      padding-left: var(--sp-2);
+    }
+    .agent-task-evidence { --accent: var(--vscode-charts-green, #3fb950); }
+    .agent-task-evidence[hidden] { display: none; }
+    .agent-task-evidence-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-2);
+    }
+    .agent-task-evidence-list:empty { display: none; }
+    .agent-task-evidence-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      border-left: 3px solid var(--accent);
+      padding: 2px 0 2px var(--sp-2);
+    }
+    .agent-task-evidence-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: var(--sp-1) var(--sp-2);
+    }
+    .agent-task-evidence-concept { font-weight: 600; overflow-wrap: anywhere; }
+    .agent-task-evidence-state,
+    .agent-task-evidence-empty {
+      margin: 0;
+      font-size: 0.85em;
+      color: var(--vscode-descriptionForeground);
+    }
+    .agent-task-evidence-excerpt {
+      font-size: 0.9em;
+      line-height: 1.45;
+      overflow-wrap: anywhere;
+    }
+    .agent-decision-compact {
+      border: 1px solid var(--vscode-panel-border, color-mix(in srgb, var(--vscode-foreground) 12%, transparent));
+      border-radius: var(--radius-md);
+      padding: var(--sp-1) var(--sp-2);
+    }
+    .agent-decision-compact[data-state="waiting"] { border-color: var(--accent); }
+    .agent-decision-compact-summary {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 2px var(--sp-2);
+      cursor: pointer;
+      list-style-position: inside;
+    }
+    .agent-decision-compact-question { flex: 1 1 12rem; min-width: 0; overflow-wrap: anywhere; }
+    .agent-decision-compact-state {
+      font-size: 0.85em;
+      color: var(--vscode-descriptionForeground);
+      overflow-wrap: anywhere;
+    }
+    .agent-decision-compact[data-state="waiting"] .agent-decision-compact-state {
+      color: var(--accent);
+      font-weight: 600;
+    }
+    .agent-decision-compact-options {
+      margin: var(--sp-1) 0 0;
+      padding-left: 1.4rem;
+      font-size: 0.9em;
+      color: var(--vscode-descriptionForeground);
+    }
+
+    /* ---- Next Move (Kiro-native): suggestions only, no start button ---- */
+    .agent-next-move { --accent: var(--vscode-charts-green, #3fb950); }
+    .agent-next-move[hidden] { display: none; }
+    .agent-next-move-status,
+    .agent-next-move-note {
+      margin: 0;
+      font-size: 0.9em;
+      line-height: 1.45;
+      color: var(--vscode-descriptionForeground);
+      overflow-wrap: anywhere;
+    }
+    .agent-next-move[data-status="GENERATING"] .agent-next-move-status {
+      animation: bhap-pulse 1.4s ease-in-out infinite;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .agent-next-move[data-status="GENERATING"] .agent-next-move-status { animation: none; }
+    }
+    .agent-next-move-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-2);
+    }
+    .agent-next-move-list:empty { display: none; }
+    .agent-next-move-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      border: 1px solid var(--vscode-panel-border, color-mix(in srgb, var(--vscode-foreground) 12%, transparent));
+      border-radius: var(--radius-md);
+      padding: var(--sp-2);
+    }
+    .agent-next-move-head {
+      display: flex;
+      align-items: flex-start;
+      gap: var(--sp-2);
+    }
+    .agent-next-move-number {
+      flex: none;
+      min-width: 1.5rem;
+      height: 1.5rem;
+      border-radius: var(--radius-pill);
+      font-size: 0.85em;
+      font-weight: 700;
+      line-height: 1.5rem;
+      text-align: center;
+      color: var(--accent);
+      background: color-mix(in srgb, var(--accent) 16%, transparent);
+    }
+    .agent-next-move-title {
+      flex: 1;
+      min-width: 0;
+      font-weight: 600;
+      line-height: 1.5rem;
+      overflow-wrap: anywhere;
+    }
+    .agent-next-move-size {
+      flex: none;
+      margin-top: 0.2rem;
+      font-size: 0.75em;
+      color: var(--vscode-descriptionForeground);
+      border: 1px solid var(--vscode-panel-border, color-mix(in srgb, var(--vscode-foreground) 18%, transparent));
+      border-radius: var(--radius-pill);
+      padding: 0 6px;
+    }
+    .agent-next-move-summary,
+    .agent-next-move-benefit {
+      margin: 0;
+      line-height: 1.45;
+      overflow-wrap: anywhere;
+    }
+    .agent-next-move-benefit {
+      font-size: 0.85em;
+      color: var(--vscode-descriptionForeground);
+    }
+    .agent-next-move-retry { align-self: flex-start; }
   </style>
 </head>
 <body>

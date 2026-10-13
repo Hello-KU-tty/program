@@ -194,6 +194,10 @@ export class AgentDispatcher {
         });
         return;
       }
+      case "nextMove/retry": {
+        await this.controller.retryNextMove();
+        return;
+      }
       default: {
         // Exhaustiveness guard: a new AgentAction kind surfaces here at compile
         // time so the dispatcher stays in sync with the protocol.

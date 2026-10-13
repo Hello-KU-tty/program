@@ -339,6 +339,9 @@ export function bootstrap(
     onPrepareFinalUpgrade: (input) => {
       client.postAgent({ kind: "finalUpgrade/prepare", ...input });
     },
+    onRetryNextMove: () => {
+      client.postAgent({ kind: "nextMove/retry" });
+    },
   };
 
   const agentView = new AgentSurfaceView(agentContainer, agentCallbacks);

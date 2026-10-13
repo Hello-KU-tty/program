@@ -49,6 +49,7 @@ function noopCallbacks(): AgentRenderCallbacks {
     onRetryAnalysis: () => {},
     onListFinalUpgrade: () => {},
     onPrepareFinalUpgrade: () => {},
+    onRetryNextMove: () => {},
   };
 }
 
@@ -690,6 +691,92 @@ describe("final upgrade is a suggestion after completion", () => {
   });
 });
 
+describe("Kiro-native Next Move card", () => {
+  const moves = [1, 2, 3].map((number) => ({
+    number, title: `제안 ${number}`, summary: `제안 ${number} 설명`, benefit: `좋아지는 점 ${number}`,
+    size: number === 3 ? "MEDIUM" as const : "SMALL" as const,
+  }));
+  const kiro = (nextMove: AgentViewModel["nextMove"], phase: BuilderTurnViewModel["phase"] = "TASK_COMPLETED"): AgentViewModel =>
+    ({ ...vmWithBuilder({ phase, taskId: "task_1", taskRevision: 3 }), hostChat: { opening: false }, nextMove });
+
+  it("shows generating, then three suggestions without any start button, and replaces the final upgrade", () => {
+    let lists = 0;
+    const { root, view, restore } = mount({ ...noopCallbacks(), onListFinalUpgrade: () => lists++ });
+    try {
+      const section = () => byClass(root, "agent-next-move")[0];
+      view.render(kiro({ status: "NONE", moves: [], retrying: false }, "IDLE"));
+      expect(section().hidden).toBe(true);
+
+      view.render(kiro({ status: "GENERATING", moves: [], retrying: false }));
+      expect(section().hidden).toBe(false);
+      expect(section().dataset.status).toBe("GENERATING");
+      expect(byClass(root, "agent-next-move-status")[0].hidden).toBe(false);
+      expect(byClass(root, "agent-next-move-status")[0].textContent).toContain("고르고 있어요");
+      expect(byClass(root, "agent-next-move-item")).toHaveLength(0);
+      expect(byClass(root, "agent-next-move-retry")[0].hidden).toBe(true);
+      // Kiro-native hosts never offer the panel final upgrade.
+      expect(byClass(root, "agent-final-upgrade")[0].hidden).toBe(true);
+      expect(lists).toBe(0);
+
+      view.render(kiro({ status: "READY", moves, retrying: false }));
+      const items = byClass(root, "agent-next-move-item");
+      expect(items).toHaveLength(3);
+      expect(byClass(root, "agent-next-move-number").map((n) => n.textContent)).toEqual(["1", "2", "3"]);
+      expect(byClass(root, "agent-next-move-title")[1].textContent).toBe("제안 2");
+      expect(byClass(root, "agent-next-move-summary")[1].textContent).toBe("제안 2 설명");
+      expect(byClass(root, "agent-next-move-benefit")[1].textContent).toBe("좋아지는 점: 좋아지는 점 2");
+      expect(byClass(root, "agent-next-move-size").map((n) => n.textContent)).toEqual(["작음", "작음", "보통"]);
+      expect(byClass(root, "agent-next-move-status")[0].hidden).toBe(true);
+      expect(byClass(root, "agent-next-move-note")[0].hidden).toBe(false);
+      expect(byClass(root, "agent-next-move-note")[0].textContent).toContain("Kiro 채팅에 번호");
+      expect(byClass(root, "agent-next-move-retry")[0].hidden).toBe(true);
+      for (const item of items) expect(byClass(item, "agent-next-move-number")).toHaveLength(1);
+      // Same suggestions on the next hydrate keep the same nodes.
+      view.render(kiro({ status: "READY", moves, retrying: false }));
+      expect(byClass(root, "agent-next-move-item")[0]).toBe(items[0]);
+
+      // A follow-up Task started in Kiro chat: the card goes away.
+      view.render(kiro({ status: "NONE", moves: [], retrying: false }, "IDLE"));
+      expect(section().hidden).toBe(true);
+    } finally { restore(); }
+  });
+
+  it("offers one retry after a failure and blocks repeated clicks while it runs", () => {
+    let retries = 0;
+    const { root, view, restore } = mount({ ...noopCallbacks(), onRetryNextMove: () => retries++ });
+    try {
+      view.render(kiro({ status: "FAILED", moves: [], retrying: false }));
+      const retry = byClass(root, "agent-next-move-retry")[0];
+      expect(retry.hidden).toBe(false);
+      expect(retry.textContent).toBe("다시 만들기");
+      expect(byClass(root, "agent-next-move-status")[0].textContent).toContain("만들지 못했어요");
+      expect(byClass(root, "agent-next-move-note")[0].hidden).toBe(true);
+      retry.click();
+      expect(retries).toBe(1);
+      view.render(kiro({ status: "FAILED", moves: [], retrying: true }));
+      expect(retry.disabled).toBe(true);
+      retry.click();
+      expect(retries).toBe(1);
+    } finally { restore(); }
+  });
+
+  it("renders suggestion text literally and stays off other hosts and other tabs", () => {
+    const { root, view, restore } = mount();
+    try {
+      const html = "<img src=x onerror=alert(1)>";
+      view.render(kiro({ status: "READY", moves: [{ ...moves[0], title: html }, moves[1], moves[2]], retrying: false }));
+      const title = byClass(root, "agent-next-move-title")[0];
+      expect(title.textContent).toBe(html);
+      expect(title.children).toHaveLength(0);
+      // The panel Builder host keeps its final upgrade and never shows the card.
+      view.render({ ...vmWithBuilder({ phase: "TASK_COMPLETED", taskId: "task_1", taskRevision: 3 }),
+        nextMove: { status: "READY", moves, retrying: false } });
+      expect(byClass(root, "agent-next-move")[0].hidden).toBe(true);
+      expect(byClass(root, "agent-final-upgrade")[0].hidden).toBe(false);
+    } finally { restore(); }
+  });
+});
+
 describe("agent surface tabs", () => {
   it("switches surfaces and badges waiting decisions", () => {
     const { root, view, restore } = mount();
@@ -754,5 +841,58 @@ describe("continuous use after MVP completion", () => {
       composer.value="접속할 수 있게 해줘";send.click();
       expect(sent).toEqual(["접속할 수 있게 해줘"]);
     } finally {restore();}
+  });
+});
+
+describe("Kiro-native Builder tab (K17)", () => {
+  const kiroVm = (overrides: Partial<AgentViewModel> = {}): AgentViewModel => ({
+    ...vmWithBuilder({ phase: "IDLE", taskId: "task_synthetic", taskRevision: 2 }),
+    hostChat: { opening: false },
+    ...overrides,
+  });
+
+  it("lists this Task's choices compactly, with no panel choose buttons, and names the one Kiro chat waits on", () => {
+    const { root, view, restore } = mount();
+    try {
+      const waiting = { ...pendingDecision(), decisionId: "decision_waiting", question: "잠금 방식은?" };
+      const chosen = { ...pendingDecision(), decisionId: "decision_chosen", question: "저장 방식은?", resolved: true, chosenLabel: "하이브리드" };
+      const replaced = { ...pendingDecision(), decisionId: "decision_old", question: "예전 질문", resolved: true, replaced: true };
+      const otherTask = { ...pendingDecision(), decisionId: "decision_other", taskId: "task_other", question: "다른 작업" };
+      view.render(kiroVm({ decisions: [chosen, waiting, replaced, otherTask] }));
+      const rows = byClass(root, "agent-decision agent-decision-compact");
+      expect(rows.map((row) => row.dataset.decisionId)).toEqual(["decision_waiting", "decision_chosen"]);
+      expect(rows.map((row) => row.dataset.state)).toEqual(["waiting", "chosen"]);
+      expect(byClass(root, "agent-decision-compact-state").map((el) => el.textContent))
+        .toEqual(["Kiro 채팅에서 답을 기다려요", "하이브리드"]);
+      expect(byClass(root, "agent-decision-choose")).toHaveLength(0);
+      expect(byClass(root, "agent-builder-next")[0].textContent).toBe("Kiro 채팅이 답을 기다려요: 잠금 방식은?");
+      expect(byClass(root, "agent-builder-next")[0].dataset.waiting).toBe("true");
+      expect(root.queryAll((e) => e.textContent === "이번 작업의 결정")).toHaveLength(1);
+    } finally {
+      restore();
+    }
+  });
+
+  it("shows this Task's accepted learner Evidence, and nothing of it on a panel host", () => {
+    const { root, view, restore } = mount();
+    try {
+      view.render(kiroVm({ taskEvidence: [] }));
+      const section = byClass(root, "agent-task-evidence")[0];
+      expect(section.hidden).toBe(false);
+      expect(byClass(root, "agent-task-evidence-empty")[0].hidden).toBe(false);
+      view.render(kiroVm({ taskEvidence: [
+        { evidenceId: "evidence_1", conceptName: "SQLite Locking", state: "EXPLAINED", excerpt: "확장하면 <b>2번</b>이 안전하다" },
+      ] }));
+      expect(byClass(root, "agent-task-evidence-concept")[0].textContent).toBe("SQLite Locking");
+      expect(byClass(root, "agent-task-evidence-state")[0].textContent).toBe("설명할 수 있어요");
+      const excerpt = byClass(root, "agent-task-evidence-excerpt")[0];
+      expect(excerpt.textContent).toBe("확장하면 <b>2번</b>이 안전하다");
+      expect(excerpt.children).toHaveLength(0);
+      expect(byClass(root, "agent-task-evidence-empty")[0].hidden).toBe(true);
+      view.render(vmWithBuilder({ phase: "IDLE", taskId: "task_synthetic" }));
+      expect(section.hidden).toBe(true);
+    } finally {
+      restore();
+    }
   });
 });

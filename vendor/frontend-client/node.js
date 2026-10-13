@@ -37,6 +37,7 @@ var diffIdSchema = prefixedUuidSchema("diff");
 var eventIdSchema = prefixedUuidSchema("event");
 var episodeIdSchema = prefixedUuidSchema("episode");
 var analysisJobIdSchema = prefixedUuidSchema("analysis_job");
+var nextMoveJobIdSchema = prefixedUuidSchema("next_move_job");
 var conceptIdSchema = prefixedUuidSchema("concept");
 var aliasProposalIdSchema = prefixedUuidSchema("alias_proposal");
 var evidenceProposalIdSchema = prefixedUuidSchema("evidence_proposal");
@@ -171,6 +172,7 @@ var contextualSourceReferenceSchema = z2.discriminatedUnion("kind", [
 ]);
 
 // packages/contracts/dist/activity.js
+var BUILDER_CHAT_TURN_MAX_CHARS = 1e3;
 var activityPayloadSchema = z3.discriminatedUnion("type", [
   z3.strictObject({ type: z3.literal("TASK_STARTED"), taskId: taskIdSchema }),
   z3.strictObject({
@@ -195,6 +197,14 @@ var activityPayloadSchema = z3.discriminatedUnion("type", [
     conversationId: conversationIdSchema,
     messageId: messageIdSchema,
     summary: shortTextSchema
+  }),
+  // The Builder's chat reply at the end of a Kiro turn (K10). Agent-authored context for the
+  // Analyst; it can never be a direct user Evidence source.
+  z3.strictObject({
+    type: z3.literal("BUILDER_CHAT_TURN"),
+    conversationId: conversationIdSchema,
+    messageId: messageIdSchema,
+    summary: nonEmptyTextSchema.max(BUILDER_CHAT_TURN_MAX_CHARS)
   }),
   z3.strictObject({ type: z3.literal("DECISION_REQUESTED"), decisionId: decisionIdSchema }),
   z3.strictObject({
@@ -242,6 +252,13 @@ var activityEventSchema = z3.strictObject({
       code: "custom",
       path: ["actor"],
       message: "HELPER_RESPONSE must be authored by the Helper Agent"
+    });
+  }
+  if (event.payload.type === "BUILDER_CHAT_TURN" && (event.actor.kind !== "AGENT" || event.actor.role !== "BUILDER")) {
+    context.addIssue({
+      code: "custom",
+      path: ["actor"],
+      message: "BUILDER_CHAT_TURN must be authored by the Builder Agent"
     });
   }
 });
@@ -301,6 +318,9 @@ var episodeSchema = z3.strictObject({
     });
   }
 });
+
+// packages/contracts/dist/agent-contracts.js
+import { z as z12 } from "zod";
 
 // packages/contracts/dist/analysis.js
 import { z as z5 } from "zod";
@@ -522,6 +542,7 @@ var evidenceDecisionSchema = z4.strictObject({
     "OVERSTATED_MAXIMUM_STATE",
     "STALE_EPISODE_REVISION",
     "DUPLICATE_PROPOSAL",
+    "DUPLICATE_USER_SOURCE",
     "INVALID_REFERENCE",
     "INVALID_STATE_TRANSITION",
     "MISCONCEPTION_ISSUE_NOT_FOUND"
@@ -811,11 +832,9 @@ var analysisRuntimeRequestSchema = z5.discriminatedUnion("kind", [
   analysisSubmitResultCommandSchema
 ]);
 
-// packages/contracts/dist/agent-contracts.js
-import { z as z10 } from "zod";
-
 // packages/contracts/dist/build.js
 import { z as z6 } from "zod";
+var MAX_ACTIVE_DECISIONS = 30;
 var builderTaskStatusSchema = z6.enum([
   "PENDING",
   "ACTIVE",
@@ -849,6 +868,14 @@ var builderTaskSchema = z6.strictObject({
     personalizationTraceId: personalizationTraceIdSchema,
     userGoal: nonEmptyTextSchema
   }).optional(),
+  /** The Next Move suggestion (Agent-authored) the learner chose in chat to start this Task. */
+  nextMove: z6.strictObject({
+    nextMoveJobId: nextMoveJobIdSchema,
+    number: z6.int().min(1).max(3),
+    title: labelSchema,
+    summary: nonEmptyTextSchema,
+    source: z6.strictObject({ kind: z6.literal("AGENT"), role: z6.literal("DISCOVERY") })
+  }).optional(),
   sequence: z6.int().positive(),
   status: builderTaskStatusSchema,
   createdAt: utcTimestampSchema,
@@ -877,7 +904,7 @@ var liveProjectContextSchema = z6.strictObject({
   stage: labelSchema,
   currentGoal: nonEmptyTextSchema,
   recentChanges: z6.array(shortTextSchema).max(30),
-  activeDecisionIds: z6.array(decisionIdSchema).max(10),
+  activeDecisionIds: z6.array(decisionIdSchema).max(MAX_ACTIVE_DECISIONS),
   activeConceptNames: z6.array(labelSchema).max(20),
   relatedFiles: z6.array(codeReferenceSchema).max(30),
   nextActions: z6.array(shortTextSchema).max(20),
@@ -953,7 +980,7 @@ var builderUpdateLiveContextToolInputSchema = z6.strictObject({
   stage: labelSchema,
   currentGoal: nonEmptyTextSchema,
   recentChanges: z6.array(shortTextSchema).max(30),
-  activeDecisionIds: z6.array(decisionIdSchema).max(10),
+  activeDecisionIds: z6.array(decisionIdSchema).max(MAX_ACTIVE_DECISIONS),
   activeConceptNames: z6.array(labelSchema).max(20),
   relatedFiles: z6.array(codeReferenceSchema).max(30),
   nextActions: z6.array(shortTextSchema).max(20),
@@ -1040,10 +1067,22 @@ var decisionRequestSchema = z6.strictObject({
   relatedConceptNames: z6.array(labelSchema).max(12),
   sourceReferences: z6.array(contextualSourceReferenceSchema).max(30),
   independentWorkCanContinue: z6.boolean(),
+  /**
+   * Set when the learner changed an earlier choice in chat: Core reopens the same question as
+   * this Decision and resolves it with the new choice, keeping the earlier one as history.
+   */
+  replacesDecisionId: decisionIdSchema.optional(),
   requestedAt: utcTimestampSchema,
   source: z6.strictObject({ kind: z6.literal("AGENT"), role: z6.literal("BUILDER") }),
   redactionStatus: redactionStatusSchema
 }).superRefine((request, context) => {
+  if (request.replacesDecisionId === request.id) {
+    context.addIssue({
+      code: "custom",
+      path: ["replacesDecisionId"],
+      message: "A Decision cannot replace itself"
+    });
+  }
   const optionIds = new Set(request.options.map((option) => option.id));
   if (optionIds.size !== request.options.length) {
     context.addIssue({
@@ -1060,6 +1099,20 @@ var decisionRequestSchema = z6.strictObject({
     });
   }
 });
+var decisionLinkedMessageSchema = z6.strictObject({
+  conversationId: conversationIdSchema,
+  messageId: messageIdSchema,
+  tab: z6.enum(["BUILDER", "HELPER"]),
+  timing: z6.enum(["BEFORE_REQUEST", "AFTER_REQUEST"])
+});
+var decisionChatSourceSchema = z6.strictObject({
+  mappedBy: z6.literal("BUILDER"),
+  userMessageIds: z6.array(messageIdSchema).min(1).max(5),
+  /** Kiro chat (K10): every learner message Core linked, Builder and Helper tabs, at most 20. */
+  linkedMessages: z6.array(decisionLinkedMessageSchema).max(20).optional(),
+  /** Kiro chat (K10): the Builder's own summary of a custom idea. Agent-authored, not Evidence. */
+  builderSummary: nonEmptyTextSchema.optional()
+});
 var decisionResolutionSchema = z6.strictObject({
   schemaVersion: schemaVersionSchema,
   id: decisionResolutionIdSchema,
@@ -1073,6 +1126,7 @@ var decisionResolutionSchema = z6.strictObject({
   customProposal: nonEmptyTextSchema.optional(),
   rationale: nonEmptyTextSchema.optional(),
   helperUsed: z6.boolean(),
+  chatSource: decisionChatSourceSchema.optional(),
   resolvedAt: utcTimestampSchema,
   source: z6.strictObject({ kind: z6.literal("USER") }),
   redactionStatus: redactionStatusSchema
@@ -1123,6 +1177,29 @@ var builderApplyDecisionToolInputSchema = z6.strictObject({
   sourceReferences: z6.array(contextualSourceReferenceSchema).max(30),
   context: decisionContextDraftSchema.omit({ blockingReason: true })
 });
+var chatDecisionSelectionSchema = z6.discriminatedUnion("kind", [
+  // Options are presented to the learner in request order, numbered from 1.
+  z6.strictObject({ kind: z6.literal("OPTION"), optionNumber: z6.int().min(1).max(6) }),
+  z6.strictObject({ kind: z6.literal("RECOMMENDATION") }),
+  z6.strictObject({ kind: z6.literal("CUSTOM"), proposalQuote: nonEmptyTextSchema })
+]);
+var chatDecisionCitationSchema = z6.strictObject({
+  quote: nonEmptyTextSchema.refine((quote) => quote.replace(/\s/g, "").length >= 2, "A cited quote needs at least two non-space characters"),
+  messageId: messageIdSchema.optional()
+});
+var chatDecisionCitationsSchema = z6.array(chatDecisionCitationSchema).min(1).max(5).refine((citations) => new Set(citations.map((citation) => citation.messageId ?? `quote:${citation.quote}`)).size === citations.length, "Each citation must be distinct");
+var builderResolveDecisionFromChatToolInputSchema = z6.strictObject({
+  __tool_use_purpose: nonEmptyTextSchema.optional(),
+  schemaVersion: schemaVersionSchema,
+  projectId: projectIdSchema,
+  taskId: taskIdSchema,
+  decisionId: decisionIdSchema,
+  correlationId: correlationIdSchema,
+  idempotencyKey: idempotencyKeySchema,
+  selection: chatDecisionSelectionSchema,
+  citedUserMessages: chatDecisionCitationsSchema,
+  rationaleQuote: nonEmptyTextSchema.optional()
+});
 var validationResultSchema = z6.strictObject({
   name: labelSchema,
   status: z6.enum(["PASSED", "FAILED", "NOT_RUN"]),
@@ -1146,8 +1223,13 @@ var taskCompletionReportSchema = z6.strictObject({
   implementedFeatures: z6.array(nonEmptyTextSchema).min(1).max(40),
   acceptanceResults: z6.array(z6.strictObject({
     criterionKey: z6.string().regex(/^[a-z][a-z0-9_-]{0,63}$/),
-    status: z6.enum(["PASSED", "FAILED"]),
-    evidence: z6.array(contextualSourceReferenceSchema).max(20)
+    // CHANGED_BY_DECISION: the learner's own Decision changed this criterion (FR-BLD-007).
+    status: z6.enum(["PASSED", "FAILED", "CHANGED_BY_DECISION"]),
+    evidence: z6.array(contextualSourceReferenceSchema).max(20),
+    decisionId: decisionIdSchema.optional()
+  }).refine((result) => result.status === "CHANGED_BY_DECISION" === (result.decisionId !== void 0), {
+    path: ["decisionId"],
+    message: "Only a criterion changed by a Decision names that Decision"
   })),
   validationResults: z6.array(validationResultSchema).max(40),
   conceptUsage: z6.array(conceptUsageReportSchema).max(30),
@@ -1547,6 +1629,12 @@ var discoveryFeedbackSchema = z7.strictObject({
   }
 });
 
+// packages/contracts/dist/kiro-chat.js
+import { z as z10 } from "zod";
+
+// packages/contracts/dist/next-move.js
+import { z as z9 } from "zod";
+
 // packages/contracts/dist/learning-spec.js
 import { z as z8 } from "zod";
 var learningScopeItemSchema = z8.strictObject({
@@ -1679,55 +1767,401 @@ var learningSpecRevisionSchema = z8.strictObject({
   requireAllScopeCategories(spec, context);
 });
 
+// packages/contracts/dist/next-move.js
+var NEXT_MOVE_COUNT = 3;
+var NEXT_MOVE_MAX_ATTEMPTS = 2;
+var NEXT_MOVE_SOFT_TIMEOUT_MS = 12e4;
+var nextMoveSizeSchema = z9.enum(["SMALL", "MEDIUM"]);
+var moveContent = {
+  title: z9.string().trim().min(1).max(24),
+  summary: z9.string().trim().min(1).max(64),
+  benefit: z9.string().trim().min(1).max(48),
+  size: nextMoveSizeSchema
+};
+var nextMoveProposalSchema = z9.strictObject({
+  ...moveContent,
+  /** Concepts this suggestion would naturally use; kept as provenance, never shown or scored. */
+  concepts: z9.array(labelSchema).max(5)
+});
+var nextMoveSemanticResultSchema = z9.strictObject({
+  moves: z9.array(nextMoveProposalSchema).length(NEXT_MOVE_COUNT)
+});
+var nextMoveSchema = nextMoveProposalSchema.extend({
+  number: z9.int().min(1).max(NEXT_MOVE_COUNT)
+});
+var nextMoveJobStatusSchema = z9.enum(["PENDING", "RUNNING", "SUCCEEDED", "FAILED"]);
+var nextMoveJobSchema = z9.strictObject({
+  schemaVersion: schemaVersionSchema,
+  id: nextMoveJobIdSchema,
+  projectId: projectIdSchema,
+  sourceTaskId: taskIdSchema,
+  correlationId: correlationIdSchema,
+  revision: entityRevisionSchema,
+  status: nextMoveJobStatusSchema,
+  attempt: z9.int().min(0).max(NEXT_MOVE_MAX_ATTEMPTS),
+  maxAttempts: z9.literal(NEXT_MOVE_MAX_ATTEMPTS),
+  timeoutMs: z9.literal(NEXT_MOVE_SOFT_TIMEOUT_MS),
+  runtimeHandle: shortTextSchema.optional(),
+  deadlineAt: utcTimestampSchema.optional(),
+  lastFailure: analysisFailureSchema.optional(),
+  moves: z9.array(nextMoveSchema).length(NEXT_MOVE_COUNT).optional(),
+  /** The Agent that wrote `moves`; present exactly when they are. */
+  author: z9.strictObject({
+    kind: z9.literal("AGENT"),
+    role: z9.literal("DISCOVERY"),
+    promptVersion: z9.string().regex(/^\d+\.\d+\.\d+$/)
+  }).optional(),
+  createdAt: utcTimestampSchema,
+  updatedAt: utcTimestampSchema,
+  startedAt: utcTimestampSchema.optional(),
+  completedAt: utcTimestampSchema.optional(),
+  source: z9.strictObject({ kind: z9.literal("CORE") }),
+  redactionStatus: redactionStatusSchema
+}).superRefine((job, context) => {
+  const issue = (message) => context.addIssue({ code: "custom", message });
+  if (job.status === "RUNNING") {
+    if (job.attempt < 1 || job.startedAt === void 0 || job.deadlineAt === void 0)
+      issue("Running Next Move Job requires an attempt, start time and deadline");
+    if (job.completedAt !== void 0)
+      issue("Running Next Move Job cannot be completed");
+  } else if (job.deadlineAt !== void 0 || job.runtimeHandle !== void 0) {
+    issue("Only a running Next Move Job may retain runtime attempt fields");
+  }
+  const terminal = job.status === "SUCCEEDED" || job.status === "FAILED";
+  if (terminal && (job.attempt < 1 || job.completedAt === void 0))
+    issue("Terminal Next Move Job requires an attempted and completed result");
+  if (job.status === "PENDING" && job.completedAt !== void 0)
+    issue("Pending Next Move Job cannot be completed");
+  if (job.status === "FAILED" && job.lastFailure === void 0)
+    issue("Failed Next Move Job requires failure details");
+  const hasMoves = job.moves !== void 0;
+  if (hasMoves !== (job.status === "SUCCEEDED"))
+    issue("Only a succeeded Next Move Job has suggestions, and it must have them");
+  if (hasMoves !== (job.author !== void 0))
+    issue("Next Move suggestions require their Agent author");
+  if (job.moves?.some((move, index) => move.number !== index + 1))
+    issue("Next Move suggestions are numbered 1 to 3 in order");
+});
+var nextMoveContextSchema = z9.strictObject({
+  schemaVersion: schemaVersionSchema,
+  correlationId: correlationIdSchema,
+  nextMoveJobId: nextMoveJobIdSchema,
+  projectTitle: labelSchema,
+  learningSpec: learningSpecRevisionSchema,
+  /** Finished and earlier Tasks of this project, oldest first, ending with the source Task. */
+  tasks: z9.array(z9.strictObject({
+    sequence: z9.int().positive(),
+    title: labelSchema,
+    goal: z9.string().trim().min(1).max(4e3),
+    implemented: z9.array(z9.string().trim().min(1).max(4e3)).max(40),
+    remaining: z9.array(z9.string().trim().min(1).max(4e3)).max(30),
+    limitations: z9.array(z9.string().trim().min(1).max(4e3)).max(30),
+    /** The Next Move suggestion the learner started this Task from, if any. */
+    fromNextMove: z9.strictObject({ title: z9.string(), summary: z9.string() }).optional()
+  })).min(1).max(20),
+  /** Core's learner-level summary from Concept State; a secondary signal only. */
+  learnerProfile: z9.string().max(2e4).nullable()
+});
+var nextMoveViewStatusSchema = z9.enum(["NONE", "GENERATING", "READY", "FAILED"]);
+var nextMoveViewSchema = z9.strictObject({
+  status: nextMoveViewStatusSchema,
+  nextMoveJobId: nextMoveJobIdSchema.optional(),
+  jobRevision: entityRevisionSchema.optional(),
+  sourceTaskId: taskIdSchema.optional(),
+  moves: z9.array(z9.strictObject({ number: nextMoveSchema.shape.number, ...moveContent })).max(NEXT_MOVE_COUNT),
+  failureCode: analysisFailureSchema.shape.code.optional(),
+  updatedAt: utcTimestampSchema.optional()
+});
+var nextMoveRuntimeMetadata = {
+  schemaVersion: schemaVersionSchema,
+  correlationId: correlationIdSchema,
+  actor: z9.strictObject({ kind: z9.literal("KIRO_ADAPTER") })
+};
+var nextMoveJobTarget = {
+  projectId: projectIdSchema,
+  nextMoveJobId: nextMoveJobIdSchema,
+  expectedJobRevision: entityRevisionSchema
+};
+var nextMoveListPendingQuerySchema = z9.strictObject({
+  ...nextMoveRuntimeMetadata,
+  kind: z9.literal("NEXT_MOVE_LIST_PENDING"),
+  limit: z9.int().min(1).max(100)
+});
+var nextMoveRecoverExpiredCommandSchema = z9.strictObject({
+  ...nextMoveRuntimeMetadata,
+  kind: z9.literal("NEXT_MOVE_RECOVER_EXPIRED"),
+  limit: z9.int().min(1).max(100)
+});
+var nextMoveClaimJobCommandSchema = z9.strictObject({
+  ...nextMoveRuntimeMetadata,
+  kind: z9.literal("NEXT_MOVE_CLAIM_JOB"),
+  ...nextMoveJobTarget,
+  runtimeHandle: shortTextSchema
+});
+var nextMoveGetContextQuerySchema = z9.strictObject({
+  ...nextMoveRuntimeMetadata,
+  kind: z9.literal("NEXT_MOVE_GET_CONTEXT"),
+  ...nextMoveJobTarget
+});
+var nextMoveFailAttemptCommandSchema = z9.strictObject({
+  ...nextMoveRuntimeMetadata,
+  kind: z9.literal("NEXT_MOVE_FAIL_ATTEMPT"),
+  ...nextMoveJobTarget,
+  attempt: z9.int().min(1).max(NEXT_MOVE_MAX_ATTEMPTS),
+  failure: analysisFailureSchema
+});
+var nextMoveSubmitResultCommandSchema = z9.strictObject({
+  ...nextMoveRuntimeMetadata,
+  kind: z9.literal("NEXT_MOVE_SUBMIT_RESULT"),
+  ...nextMoveJobTarget,
+  attempt: z9.int().min(1).max(NEXT_MOVE_MAX_ATTEMPTS),
+  promptVersion: z9.string().regex(/^\d+\.\d+\.\d+$/),
+  result: nextMoveSemanticResultSchema
+});
+var nextMoveRuntimeRequestSchema = z9.discriminatedUnion("kind", [
+  nextMoveListPendingQuerySchema,
+  nextMoveRecoverExpiredCommandSchema,
+  nextMoveClaimJobCommandSchema,
+  nextMoveGetContextQuerySchema,
+  nextMoveFailAttemptCommandSchema,
+  nextMoveSubmitResultCommandSchema
+]);
+
+// packages/contracts/dist/kiro-chat.js
+var toolPurpose = { __tool_use_purpose: nonEmptyTextSchema.optional() };
+var filesSchema = (max) => z10.array(relativePosixPathSchema).max(max);
+var kiroChatProgressKindSchema = z10.enum([
+  "PLAN",
+  "DIRECTION_CHANGE",
+  "ERROR_REPLAN",
+  "TEST_START"
+]);
+var boundedNumberSchema = (max) => z10.preprocess((value) => typeof value === "string" && /^\s*[1-9]\s*$/.test(value) ? Number(value) : value, z10.int().min(1).max(max));
+var kiroChatProgressNoteSchema = z10.strictObject({
+  kind: kiroChatProgressKindSchema,
+  summary: nonEmptyTextSchema,
+  stage: labelSchema.optional(),
+  changes: z10.array(shortTextSchema).max(30).optional(),
+  nextSteps: z10.array(shortTextSchema).max(20).optional(),
+  files: filesSchema(30).optional(),
+  concepts: z10.array(labelSchema).max(20).optional(),
+  /** The Next Move number the learner chose after the Task was finished (SPEC FR-NXT-009). */
+  nextMove: boundedNumberSchema(NEXT_MOVE_COUNT).optional()
+});
+var kiroChatChoiceOptionSchema = z10.strictObject({
+  label: labelSchema,
+  description: nonEmptyTextSchema,
+  tradeoffs: z10.array(shortTextSchema).max(12).optional()
+});
+var kiroChatAskChoiceSchema = z10.strictObject({
+  category: decisionCategorySchema,
+  question: nonEmptyTextSchema,
+  whyNow: nonEmptyTextSchema,
+  options: z10.array(kiroChatChoiceOptionSchema).min(2).max(4),
+  recommended: z10.int().min(1).max(4),
+  recommendationReason: nonEmptyTextSchema,
+  blocksWork: z10.boolean(),
+  blockingReason: nonEmptyTextSchema.optional(),
+  concepts: z10.array(labelSchema).max(12).optional(),
+  files: filesSchema(30).optional()
+}).refine((choice) => choice.recommended <= choice.options.length, {
+  path: ["recommended"],
+  message: "The recommended option number must be one of the options"
+});
+var optionNumberSchema = boundedNumberSchema(6);
+var kiroChatSaveChoiceSchema = z10.strictObject({
+  decisionId: decisionIdSchema.optional(),
+  choice: z10.union([optionNumberSchema, z10.literal("recommended"), z10.literal("custom")]),
+  customSummary: nonEmptyTextSchema.optional()
+}).refine((answer) => answer.choice !== "custom" || answer.customSummary !== void 0, {
+  path: ["customSummary"],
+  message: "A custom choice needs a short summary of the learner's idea"
+});
+var kiroChatFinishTaskSchema = z10.strictObject({
+  implemented: z10.array(nonEmptyTextSchema).min(1).max(40),
+  acceptance: z10.array(z10.strictObject({
+    key: z10.string().regex(/^[a-z][a-z0-9_-]{0,63}$/),
+    passed: z10.boolean(),
+    /** The learner's Decision that changed this criterion; it then does not have to pass. */
+    changedByDecisionId: decisionIdSchema.optional()
+  })).max(40),
+  checks: z10.array(z10.strictObject({
+    name: labelSchema,
+    passed: z10.boolean(),
+    summary: nonEmptyTextSchema
+  })).max(40),
+  decisionsApplied: z10.array(z10.strictObject({ decisionId: decisionIdSchema, how: nonEmptyTextSchema })).max(20).optional(),
+  concepts: z10.array(z10.strictObject({
+    name: labelSchema,
+    why: nonEmptyTextSchema,
+    files: filesSchema(20).optional()
+  })).max(30).optional(),
+  deviations: z10.array(nonEmptyTextSchema).max(20).optional(),
+  remaining: z10.array(nonEmptyTextSchema).max(30).optional(),
+  limitations: z10.array(nonEmptyTextSchema).max(30).optional(),
+  files: filesSchema(50).optional()
+});
+var kiroChatCheckProgressToolInputSchema = z10.strictObject({ ...toolPurpose });
+var kiroChatSaveProgressToolInputSchema = kiroChatProgressNoteSchema.extend(toolPurpose);
+var kiroChatAskChoiceToolInputSchema = z10.strictObject({ ...kiroChatAskChoiceSchema.shape, ...toolPurpose }).refine((choice) => choice.recommended <= choice.options.length, {
+  path: ["recommended"],
+  message: "The recommended option number must be one of the options"
+});
+var kiroChatSaveChoiceToolInputSchema = z10.strictObject({ ...kiroChatSaveChoiceSchema.shape, ...toolPurpose }).refine((answer) => answer.choice !== "custom" || answer.customSummary !== void 0, {
+  path: ["customSummary"],
+  message: "A custom choice needs a short summary of the learner's idea"
+});
+var kiroChatFinishTaskToolInputSchema = kiroChatFinishTaskSchema.extend(toolPurpose);
+var builderChatMetadata = {
+  schemaVersion: schemaVersionSchema,
+  correlationId: correlationIdSchema,
+  actor: z10.strictObject({ kind: z10.literal("AGENT"), role: z10.literal("BUILDER") }),
+  projectId: projectIdSchema,
+  taskId: taskIdSchema
+};
+var builderChatCheckProgressQuerySchema = z10.strictObject({
+  ...builderChatMetadata,
+  kind: z10.literal("BUILDER_CHAT_CHECK_PROGRESS")
+});
+var builderChatSaveProgressCommandSchema = z10.strictObject({
+  ...builderChatMetadata,
+  kind: z10.literal("BUILDER_CHAT_SAVE_PROGRESS"),
+  idempotencyKey: idempotencyKeySchema,
+  note: kiroChatProgressNoteSchema
+});
+var builderChatAskChoiceCommandSchema = z10.strictObject({
+  ...builderChatMetadata,
+  kind: z10.literal("BUILDER_CHAT_ASK_CHOICE"),
+  idempotencyKey: idempotencyKeySchema,
+  choice: kiroChatAskChoiceSchema
+});
+var builderChatSaveChoiceCommandSchema = z10.strictObject({
+  ...builderChatMetadata,
+  kind: z10.literal("BUILDER_CHAT_SAVE_CHOICE"),
+  idempotencyKey: idempotencyKeySchema,
+  answer: kiroChatSaveChoiceSchema
+});
+var builderChatFinishTaskCommandSchema = z10.strictObject({
+  ...builderChatMetadata,
+  kind: z10.literal("BUILDER_CHAT_FINISH_TASK"),
+  idempotencyKey: idempotencyKeySchema,
+  report: kiroChatFinishTaskSchema
+});
+var numberedOptionSchema = z10.strictObject({
+  number: z10.int().min(1).max(6),
+  label: labelSchema
+});
+var builderChatProgressSchema = z10.strictObject({
+  schemaVersion: schemaVersionSchema,
+  correlationId: correlationIdSchema,
+  task: z10.strictObject({ title: labelSchema, status: builderTaskStatusSchema }),
+  acceptanceCriteria: z10.array(z10.strictObject({ key: z10.string(), description: nonEmptyTextSchema })).max(40),
+  openChoices: z10.array(z10.strictObject({
+    decisionId: decisionIdSchema,
+    question: nonEmptyTextSchema,
+    state: z10.enum(["WAITING_FOR_LEARNER", "CHOSEN"]),
+    options: z10.array(numberedOptionSchema).min(2).max(6),
+    recommendedNumber: z10.int().min(1).max(6),
+    chosenNumber: z10.int().min(1).max(6).optional(),
+    chosenCustom: z10.boolean().optional()
+  })).max(10),
+  omittedOpenChoiceCount: z10.int().nonnegative(),
+  lastNote: nonEmptyTextSchema.optional(),
+  /** Present once the Task is finished: suggestions to grow the project, or their state. */
+  nextMove: nextMoveViewSchema.optional()
+});
+var followUpTaskSchema = z10.strictObject({
+  title: labelSchema,
+  acceptanceCriteria: builderChatProgressSchema.shape.acceptanceCriteria
+});
+var builderChatSaveProgressReceiptSchema = z10.strictObject({
+  schemaVersion: schemaVersionSchema,
+  correlationId: correlationIdSchema,
+  outcome: z10.enum(["SAVED", "UNCHANGED"]),
+  contextVersion: entityRevisionSchema,
+  followUpTask: followUpTaskSchema.optional()
+});
+var builderChatAskChoiceReceiptSchema = z10.strictObject({
+  schemaVersion: schemaVersionSchema,
+  correlationId: correlationIdSchema,
+  outcome: z10.enum(["ASKED", "ALREADY_OPEN"]),
+  decisionId: decisionIdSchema,
+  options: z10.array(numberedOptionSchema).min(2).max(6),
+  recommendedNumber: z10.int().min(1).max(6),
+  followUpTask: followUpTaskSchema.optional()
+});
+var builderChatSaveChoiceReceiptSchema = z10.strictObject({
+  schemaVersion: schemaVersionSchema,
+  correlationId: correlationIdSchema,
+  outcome: z10.enum(["SAVED", "CHANGED", "UNCHANGED"]),
+  decisionId: decisionIdSchema,
+  chosen: z10.strictObject({
+    number: z10.int().min(1).max(6).optional(),
+    label: nonEmptyTextSchema,
+    custom: z10.boolean()
+  }),
+  linkedMessageCount: z10.int().min(0).max(20)
+});
+var builderChatFinishTaskReceiptSchema = z10.strictObject({
+  schemaVersion: schemaVersionSchema,
+  correlationId: correlationIdSchema,
+  outcome: z10.enum(["COMPLETED", "ALREADY_COMPLETED"]),
+  taskRevision: entityRevisionSchema,
+  /** Concepts the Agent named that the confirmed Learning Spec does not list; not recorded. */
+  ignoredConcepts: z10.array(labelSchema).max(30),
+  /** Next Move suggestions are generated in the background after this Task (SPEC FR-NXT-008). */
+  nextMove: nextMoveViewSchema.optional()
+});
+
 // packages/contracts/dist/personalization.js
-import { z as z9 } from "zod";
-var personalizationPurposeSchema = z9.enum([
+import { z as z11 } from "zod";
+var personalizationPurposeSchema = z11.enum([
   "DISCOVERY_TIE_BREAK",
   "HELPER_EXPLANATION_START",
   "HELPER_PAST_EXPERIENCE_CONNECTION",
   "HELPER_TASK_USER_EVIDENCE_CONNECTION"
 ]);
-var personalizationBasisSchema = z9.strictObject({
+var personalizationBasisSchema = z11.strictObject({
   conceptId: conceptIdSchema,
   conceptName: labelSchema,
   ledgerRevision: entityRevisionSchema,
   state: conceptStateSchema,
-  evidenceIds: z9.array(evidenceIdSchema).min(1).max(5),
-  episodeIds: z9.array(episodeIdSchema).min(1).max(5),
-  sourceProjectIds: z9.array(projectIdSchema).min(1).max(5),
-  sourceProjectTitles: z9.array(labelSchema).min(1).max(5),
-  openIssueIds: z9.array(misconceptionIssueIdSchema).max(10),
+  evidenceIds: z11.array(evidenceIdSchema).min(1).max(5),
+  episodeIds: z11.array(episodeIdSchema).min(1).max(5),
+  sourceProjectIds: z11.array(projectIdSchema).min(1).max(5),
+  sourceProjectTitles: z11.array(labelSchema).min(1).max(5),
+  openIssueIds: z11.array(misconceptionIssueIdSchema).max(10),
   purpose: personalizationPurposeSchema,
   redactedEvidenceExcerpt: shortTextSchema.optional()
 });
-var personalizationFallbackReasonSchema = z9.enum([
+var personalizationFallbackReasonSchema = z11.enum([
   "NO_LEDGER",
   "NO_RELEVANT_CONCEPT",
   "NO_PRIOR_PROJECT_EVIDENCE"
 ]);
-var personalizationTargetSchema = z9.discriminatedUnion("kind", [
-  z9.strictObject({
-    kind: z9.literal("DISCOVERY_SESSION"),
+var personalizationTargetSchema = z11.discriminatedUnion("kind", [
+  z11.strictObject({
+    kind: z11.literal("DISCOVERY_SESSION"),
     discoverySessionId: discoverySessionIdSchema
   }),
-  z9.strictObject({
-    kind: z9.literal("HELPER_TURN"),
+  z11.strictObject({
+    kind: z11.literal("HELPER_TURN"),
     taskId: taskIdSchema,
     decisionId: decisionIdSchema.optional()
   })
 ]);
-var personalizationTraceSchema = z9.strictObject({
+var personalizationTraceSchema = z11.strictObject({
   schemaVersion: schemaVersionSchema,
   id: personalizationTraceIdSchema,
   projectId: projectIdSchema,
   correlationId: correlationIdSchema,
   target: personalizationTargetSchema,
-  mode: z9.enum(["EVIDENCE_AWARE", "NO_RELEVANT_EVIDENCE"]),
-  basis: z9.array(personalizationBasisSchema).max(5),
+  mode: z11.enum(["EVIDENCE_AWARE", "NO_RELEVANT_EVIDENCE"]),
+  basis: z11.array(personalizationBasisSchema).max(5),
   fallbackReason: personalizationFallbackReasonSchema.optional(),
   createdAt: utcTimestampSchema,
-  source: z9.strictObject({ kind: z9.literal("CORE") }),
-  redactionStatus: z9.literal("VERIFIED_REDACTED")
+  source: z11.strictObject({ kind: z11.literal("CORE") }),
+  redactionStatus: z11.literal("VERIFIED_REDACTED")
 }).superRefine((trace, context) => {
   if (trace.mode === "EVIDENCE_AWARE" && (trace.basis.length === 0 || trace.fallbackReason !== void 0)) {
     context.addIssue({
@@ -1742,9 +2176,9 @@ var personalizationTraceSchema = z9.strictObject({
     });
   }
 });
-var evidenceTraceEvidenceItemSchema = z9.strictObject({
+var evidenceTraceEvidenceItemSchema = z11.strictObject({
   evidenceId: evidenceIdSchema,
-  kind: z9.enum(["USER_UNDERSTANDING", "MISCONCEPTION_SIGNAL", "CONCEPT_OBSERVATION"]),
+  kind: z11.enum(["USER_UNDERSTANDING", "MISCONCEPTION_SIGNAL", "CONCEPT_OBSERVATION"]),
   projectId: projectIdSchema,
   projectTitle: labelSchema,
   taskId: taskIdSchema.optional(),
@@ -1760,7 +2194,7 @@ var evidenceTraceEvidenceItemSchema = z9.strictObject({
   redactedEvidenceExcerpt: nonEmptyTextSchema.optional(),
   rationale: nonEmptyTextSchema.optional()
 });
-var rejectedEvidenceItemSchema = z9.strictObject({
+var rejectedEvidenceItemSchema = z11.strictObject({
   proposalId: evidenceProposalIdSchema,
   evidenceDecisionId: evidenceDecisionIdSchema,
   projectId: projectIdSchema,
@@ -1768,7 +2202,7 @@ var rejectedEvidenceItemSchema = z9.strictObject({
   episodeId: episodeIdSchema,
   episodeType: episodeTypeSchema,
   proposedConceptName: labelSchema,
-  signal: z9.enum([
+  signal: z11.enum([
     "QUESTION",
     "REPHRASE",
     "PREDICTION",
@@ -1777,10 +2211,10 @@ var rejectedEvidenceItemSchema = z9.strictObject({
     "TRANSFER",
     "CONTRADICTION"
   ]),
-  strength: z9.enum(["NONE", "WEAK", "MEDIUM", "STRONG"]),
-  promptDependence: z9.enum(["INDEPENDENT", "LIGHT_HINT", "DIRECTLY_LED"]),
+  strength: z11.enum(["NONE", "WEAK", "MEDIUM", "STRONG"]),
+  promptDependence: z11.enum(["INDEPENDENT", "LIGHT_HINT", "DIRECTLY_LED"]),
   redactedEvidenceExcerpt: nonEmptyTextSchema,
-  reasonCode: z9.enum([
+  reasonCode: z11.enum([
     "VALID_USER_EVIDENCE",
     "INVALID_SCHEMA",
     "AGENT_AUTHORED_SOURCE",
@@ -1795,35 +2229,35 @@ var rejectedEvidenceItemSchema = z9.strictObject({
   explanation: nonEmptyTextSchema,
   decidedAt: utcTimestampSchema
 });
-var conceptEvidenceTraceViewSchema = z9.strictObject({
+var conceptEvidenceTraceViewSchema = z11.strictObject({
   conceptId: conceptIdSchema,
   conceptName: labelSchema,
   description: nonEmptyTextSchema,
   state: conceptStateSchema.nullable(),
   stateRevision: entityRevisionSchema.nullable(),
-  reducerVersion: z9.string().trim().min(1).max(64).nullable(),
+  reducerVersion: z11.string().trim().min(1).max(64).nullable(),
   updatedAt: utcTimestampSchema.nullable(),
-  stateEvidenceIds: z9.array(evidenceIdSchema).max(500),
-  evidence: z9.array(evidenceTraceEvidenceItemSchema).max(100),
-  rejectedEvidence: z9.array(rejectedEvidenceItemSchema).max(100),
-  openIssues: z9.array(misconceptionIssueSchema).max(100)
+  stateEvidenceIds: z11.array(evidenceIdSchema).max(500),
+  evidence: z11.array(evidenceTraceEvidenceItemSchema).max(100),
+  rejectedEvidence: z11.array(rejectedEvidenceItemSchema).max(100),
+  openIssues: z11.array(misconceptionIssueSchema).max(100)
 });
-var evidenceAnalysisStatusItemSchema = z9.strictObject({
+var evidenceAnalysisStatusItemSchema = z11.strictObject({
   analysisJobId: analysisJobIdSchema,
   episodeId: episodeIdSchema,
-  status: z9.enum(["PENDING", "RUNNING", "SUCCEEDED", "FAILED"]),
+  status: z11.enum(["PENDING", "RUNNING", "SUCCEEDED", "FAILED"]),
   revision: entityRevisionSchema,
   resultSummary: analysisResultSummarySchema.optional(),
   lastFailure: analysisFailureSchema.optional(),
   updatedAt: utcTimestampSchema
 });
-var projectEvidenceTraceSchema = z9.strictObject({
+var projectEvidenceTraceSchema = z11.strictObject({
   schemaVersion: schemaVersionSchema,
   correlationId: correlationIdSchema,
   projectId: projectIdSchema,
-  concepts: z9.array(conceptEvidenceTraceViewSchema).max(100),
-  analysis: z9.array(evidenceAnalysisStatusItemSchema).max(100),
-  personalization: z9.array(personalizationTraceSchema).max(100),
+  concepts: z11.array(conceptEvidenceTraceViewSchema).max(100),
+  analysis: z11.array(evidenceAnalysisStatusItemSchema).max(100),
+  personalization: z11.array(personalizationTraceSchema).max(100),
   emptyReason: shortTextSchema.optional(),
   redactionStatus: redactionStatusSchema
 });
@@ -1832,66 +2266,72 @@ var projectEvidenceTraceSchema = z9.strictObject({
 var discoveryQueryMetadata = {
   schemaVersion: schemaVersionSchema,
   correlationId: correlationIdSchema,
-  actor: z10.strictObject({ kind: z10.literal("AGENT"), role: z10.literal("DISCOVERY") })
+  actor: z12.strictObject({ kind: z12.literal("AGENT"), role: z12.literal("DISCOVERY") })
 };
 var builderQueryMetadata = {
   schemaVersion: schemaVersionSchema,
   correlationId: correlationIdSchema,
-  actor: z10.strictObject({ kind: z10.literal("AGENT"), role: z10.literal("BUILDER") })
+  actor: z12.strictObject({ kind: z12.literal("AGENT"), role: z12.literal("BUILDER") })
 };
 var helperQueryMetadata = {
   schemaVersion: schemaVersionSchema,
   correlationId: correlationIdSchema,
-  actor: z10.strictObject({ kind: z10.literal("AGENT"), role: z10.literal("HELPER") })
+  actor: z12.strictObject({ kind: z12.literal("AGENT"), role: z12.literal("HELPER") })
 };
 var analystQueryMetadata = {
   schemaVersion: schemaVersionSchema,
   correlationId: correlationIdSchema,
-  actor: z10.strictObject({ kind: z10.literal("AGENT"), role: z10.literal("EVIDENCE_ANALYST") })
+  actor: z12.strictObject({ kind: z12.literal("AGENT"), role: z12.literal("EVIDENCE_ANALYST") })
 };
-var discoveryGetContextQuerySchema = z10.strictObject({
+var discoveryGetContextQuerySchema = z12.strictObject({
   ...discoveryQueryMetadata,
-  kind: z10.literal("DISCOVERY_GET_CONTEXT"),
+  kind: z12.literal("DISCOVERY_GET_CONTEXT"),
   projectId: projectIdSchema,
   discoverySessionId: discoverySessionIdSchema.optional()
 });
-var builderGetTaskQuerySchema = z10.strictObject({
+var builderGetTaskQuerySchema = z12.strictObject({
   ...builderQueryMetadata,
-  kind: z10.literal("BUILDER_GET_TASK"),
+  kind: z12.literal("BUILDER_GET_TASK"),
   projectId: projectIdSchema,
   taskId: taskIdSchema
 });
-var builderGetDecisionResultQuerySchema = z10.strictObject({
+var builderGetDecisionResultQuerySchema = z12.strictObject({
   ...builderQueryMetadata,
-  kind: z10.literal("BUILDER_GET_DECISION_RESULT"),
+  kind: z12.literal("BUILDER_GET_DECISION_RESULT"),
   projectId: projectIdSchema,
   taskId: taskIdSchema,
   decisionId: decisionIdSchema
 });
-var helperGetContextQuerySchema = z10.strictObject({
+var builderGetBuildStatusQuerySchema = z12.strictObject({
+  ...builderQueryMetadata,
+  kind: z12.literal("BUILDER_GET_BUILD_STATUS"),
+  projectId: projectIdSchema,
+  taskId: taskIdSchema
+});
+var helperGetContextQuerySchema = z12.strictObject({
   ...helperQueryMetadata,
-  kind: z10.literal("HELPER_GET_CONTEXT"),
+  kind: z12.literal("HELPER_GET_CONTEXT"),
   projectId: projectIdSchema,
   taskId: taskIdSchema.optional(),
   decisionId: decisionIdSchema.optional(),
   question: nonEmptyTextSchema,
-  relatedConceptNames: z10.array(labelSchema).max(5),
+  relatedConceptNames: z12.array(labelSchema).max(5),
   observedContextVersion: entityRevisionSchema.optional()
 });
-var analystGetEpisodeContextQuerySchema = z10.strictObject({
+var analystGetEpisodeContextQuerySchema = z12.strictObject({
   ...analystQueryMetadata,
-  kind: z10.literal("ANALYST_GET_EPISODE_CONTEXT"),
+  kind: z12.literal("ANALYST_GET_EPISODE_CONTEXT"),
   projectId: projectIdSchema,
   episodeId: episodeIdSchema,
   expectedEpisodeRevision: entityRevisionSchema
 });
-var discoverySubmitCandidateRoundCommandSchema = z10.strictObject({
+var discoverySubmitCandidateRoundCommandSchema = z12.strictObject({
   ...discoveryQueryMetadata,
-  kind: z10.literal("DISCOVERY_SUBMIT_CANDIDATE_ROUND"),
+  kind: z12.literal("DISCOVERY_SUBMIT_CANDIDATE_ROUND"),
   idempotencyKey: idempotencyKeySchema,
   expectedSessionRevision: expectedRevisionSchema,
   round: candidateRoundSchema,
-  candidates: z10.array(projectCandidateRevisionSchema).max(30)
+  candidates: z12.array(projectCandidateRevisionSchema).max(30)
 }).superRefine((command, context) => {
   if (command.round.correlationId !== command.correlationId) {
     context.addIssue({
@@ -1928,9 +2368,9 @@ var discoverySubmitCandidateRoundCommandSchema = z10.strictObject({
     }
   }
 });
-var discoverySubmitCandidatePreviewsCommandSchema = z10.strictObject({
+var discoverySubmitCandidatePreviewsCommandSchema = z12.strictObject({
   ...discoveryQueryMetadata,
-  kind: z10.literal("DISCOVERY_SUBMIT_CANDIDATE_PREVIEWS"),
+  kind: z12.literal("DISCOVERY_SUBMIT_CANDIDATE_PREVIEWS"),
   idempotencyKey: idempotencyKeySchema,
   expectedSessionRevision: expectedRevisionSchema,
   previewRound: candidatePreviewRoundSchema
@@ -1938,14 +2378,14 @@ var discoverySubmitCandidatePreviewsCommandSchema = z10.strictObject({
   path: ["previewRound", "correlationId"],
   message: "Candidate Preview Round correlation ID must match its command"
 });
-var discoverySubmitCandidateEnrichmentsCommandSchema = z10.strictObject({
+var discoverySubmitCandidateEnrichmentsCommandSchema = z12.strictObject({
   ...discoveryQueryMetadata,
-  kind: z10.literal("DISCOVERY_SUBMIT_CANDIDATE_ENRICHMENTS"),
+  kind: z12.literal("DISCOVERY_SUBMIT_CANDIDATE_ENRICHMENTS"),
   idempotencyKey: idempotencyKeySchema,
   expectedSessionRevision: expectedRevisionSchema,
   previewRoundId: candidatePreviewRoundSchema.shape.id,
   batch: candidateEnrichmentBatchSchema,
-  enrichments: z10.array(candidateEnrichmentSchema).min(1).max(10)
+  enrichments: z12.array(candidateEnrichmentSchema).min(1).max(10)
 }).superRefine((command, context) => {
   if (command.batch !== "SELECTED" && command.enrichments.length !== 5) {
     context.addIssue({
@@ -1955,9 +2395,9 @@ var discoverySubmitCandidateEnrichmentsCommandSchema = z10.strictObject({
     });
   }
 });
-var discoverySubmitLearningSpecCommandSchema = z10.strictObject({
+var discoverySubmitLearningSpecCommandSchema = z12.strictObject({
   ...discoveryQueryMetadata,
-  kind: z10.literal("DISCOVERY_SUBMIT_LEARNING_SPEC"),
+  kind: z12.literal("DISCOVERY_SUBMIT_LEARNING_SPEC"),
   idempotencyKey: idempotencyKeySchema,
   expectedSessionRevision: expectedRevisionSchema,
   expectedSpecRevision: expectedRevisionSchema,
@@ -1985,26 +2425,26 @@ var discoverySubmitLearningSpecCommandSchema = z10.strictObject({
     });
   }
 });
-var builderStartTaskCommandSchema = z10.strictObject({
+var builderStartTaskCommandSchema = z12.strictObject({
   ...builderQueryMetadata,
-  kind: z10.literal("BUILDER_START_TASK"),
+  kind: z12.literal("BUILDER_START_TASK"),
   idempotencyKey: idempotencyKeySchema,
   projectId: projectIdSchema,
   taskId: taskIdSchema,
   expectedTaskRevision: expectedRevisionSchema
 });
-var builderUpdateLiveContextCommandSchema = z10.strictObject({
+var builderUpdateLiveContextCommandSchema = z12.strictObject({
   ...builderQueryMetadata,
-  kind: z10.literal("BUILDER_UPDATE_LIVE_CONTEXT"),
+  kind: z12.literal("BUILDER_UPDATE_LIVE_CONTEXT"),
   idempotencyKey: idempotencyKeySchema,
   context: liveProjectContextSchema
 }).refine((command) => command.context.correlationId === command.correlationId, {
   path: ["context", "correlationId"],
   message: "Live Context correlation ID must match its command"
 });
-var builderRequestDecisionCommandSchema = z10.strictObject({
+var builderRequestDecisionCommandSchema = z12.strictObject({
   ...builderQueryMetadata,
-  kind: z10.literal("BUILDER_REQUEST_DECISION"),
+  kind: z12.literal("BUILDER_REQUEST_DECISION"),
   idempotencyKey: idempotencyKeySchema,
   projectId: projectIdSchema,
   taskId: taskIdSchema,
@@ -2016,9 +2456,9 @@ var builderRequestDecisionCommandSchema = z10.strictObject({
   path: ["context", "blockingReason"],
   message: "A blocking Decision requires a blocking reason"
 });
-var builderApplyDecisionCommandSchema = z10.strictObject({
+var builderApplyDecisionCommandSchema = z12.strictObject({
   ...builderQueryMetadata,
-  kind: z10.literal("BUILDER_APPLY_DECISION"),
+  kind: z12.literal("BUILDER_APPLY_DECISION"),
   idempotencyKey: idempotencyKeySchema,
   projectId: projectIdSchema,
   taskId: taskIdSchema,
@@ -2026,64 +2466,84 @@ var builderApplyDecisionCommandSchema = z10.strictObject({
   expectedTaskRevision: expectedRevisionSchema,
   expectedContextVersion: entityRevisionSchema,
   appliedResult: nonEmptyTextSchema,
-  sourceReferences: z10.array(contextualSourceReferenceSchema).max(30),
+  sourceReferences: z12.array(contextualSourceReferenceSchema).max(30),
   context: decisionContextDraftSchema.omit({ blockingReason: true })
 });
-var builderCompleteTaskCommandSchema = z10.strictObject({
+var builderResolveDecisionFromChatCommandSchema = z12.strictObject({
   ...builderQueryMetadata,
-  kind: z10.literal("BUILDER_COMPLETE_TASK"),
+  kind: z12.literal("BUILDER_RESOLVE_DECISION_FROM_CHAT"),
+  idempotencyKey: idempotencyKeySchema,
+  ...builderResolveDecisionFromChatToolInputSchema.pick({
+    projectId: true,
+    taskId: true,
+    decisionId: true,
+    selection: true,
+    citedUserMessages: true,
+    rationaleQuote: true
+  }).shape
+});
+var builderCompleteTaskCommandSchema = z12.strictObject({
+  ...builderQueryMetadata,
+  kind: z12.literal("BUILDER_COMPLETE_TASK"),
   idempotencyKey: idempotencyKeySchema,
   report: taskCompletionReportSchema
 }).refine((command) => command.report.correlationId === command.correlationId, {
   path: ["report", "correlationId"],
   message: "Completion Report correlation ID must match its command"
 });
-var helperRequestContextRefreshCommandSchema = z10.strictObject({
+var helperRequestContextRefreshCommandSchema = z12.strictObject({
   ...helperQueryMetadata,
-  kind: z10.literal("HELPER_REQUEST_CONTEXT_REFRESH"),
+  kind: z12.literal("HELPER_REQUEST_CONTEXT_REFRESH"),
   idempotencyKey: idempotencyKeySchema,
   projectId: projectIdSchema,
   taskId: taskIdSchema,
   observedContextVersion: entityRevisionSchema.optional(),
   reason: nonEmptyTextSchema
 });
-var analystSubmitEvidenceProposalsCommandSchema = z10.strictObject({
+var analystSubmitEvidenceProposalsCommandSchema = z12.strictObject({
   ...analystQueryMetadata,
-  kind: z10.literal("ANALYST_SUBMIT_EVIDENCE_PROPOSALS"),
+  kind: z12.literal("ANALYST_SUBMIT_EVIDENCE_PROPOSALS"),
   idempotencyKey: idempotencyKeySchema,
   analysisJobId: analysisJobIdSchema,
   expectedJobRevision: entityRevisionSchema,
-  attempt: z10.int().min(1).max(2),
+  attempt: z12.int().min(1).max(2),
   batch: evidenceProposalBatchSchema
 }).refine((command) => command.batch.correlationId === command.correlationId, {
   path: ["batch", "correlationId"],
   message: "Evidence batch correlation ID must match its command"
 });
-var discoveryAgentRequestSchema = z10.discriminatedUnion("kind", [
+var discoveryAgentRequestSchema = z12.discriminatedUnion("kind", [
   discoveryGetContextQuerySchema,
   discoverySubmitCandidatePreviewsCommandSchema,
   discoverySubmitCandidateEnrichmentsCommandSchema,
   discoverySubmitCandidateRoundCommandSchema,
   discoverySubmitLearningSpecCommandSchema
 ]);
-var builderAgentRequestSchema = z10.discriminatedUnion("kind", [
+var builderAgentRequestSchema = z12.discriminatedUnion("kind", [
   builderGetTaskQuerySchema,
   builderGetDecisionResultQuerySchema,
+  builderGetBuildStatusQuerySchema,
   builderStartTaskCommandSchema,
   builderUpdateLiveContextCommandSchema,
   builderRequestDecisionCommandSchema,
   builderApplyDecisionCommandSchema,
-  builderCompleteTaskCommandSchema
+  builderResolveDecisionFromChatCommandSchema,
+  builderCompleteTaskCommandSchema,
+  builderChatCheckProgressQuerySchema,
+  builderChatSaveProgressCommandSchema,
+  builderChatAskChoiceCommandSchema,
+  builderChatSaveChoiceCommandSchema,
+  builderChatFinishTaskCommandSchema
 ]);
-var helperAgentRequestSchema = z10.discriminatedUnion("kind", [
+var helperAgentRequestSchema = z12.discriminatedUnion("kind", [
   helperGetContextQuerySchema,
   helperRequestContextRefreshCommandSchema
 ]);
-var evidenceAnalystRequestSchema = z10.discriminatedUnion("kind", [
+var evidenceAnalystRequestSchema = z12.discriminatedUnion("kind", [
   analystGetEpisodeContextQuerySchema,
   analystSubmitEvidenceProposalsCommandSchema
 ]);
-var agentRequestSchema = z10.discriminatedUnion("kind", [
+var agentRequestSchema = z12.discriminatedUnion("kind", [
   discoveryGetContextQuerySchema,
   discoverySubmitCandidatePreviewsCommandSchema,
   discoverySubmitCandidateEnrichmentsCommandSchema,
@@ -2091,31 +2551,38 @@ var agentRequestSchema = z10.discriminatedUnion("kind", [
   discoverySubmitLearningSpecCommandSchema,
   builderGetTaskQuerySchema,
   builderGetDecisionResultQuerySchema,
+  builderGetBuildStatusQuerySchema,
   builderStartTaskCommandSchema,
   builderUpdateLiveContextCommandSchema,
   builderRequestDecisionCommandSchema,
   builderApplyDecisionCommandSchema,
+  builderResolveDecisionFromChatCommandSchema,
   builderCompleteTaskCommandSchema,
+  builderChatCheckProgressQuerySchema,
+  builderChatSaveProgressCommandSchema,
+  builderChatAskChoiceCommandSchema,
+  builderChatSaveChoiceCommandSchema,
+  builderChatFinishTaskCommandSchema,
   helperGetContextQuerySchema,
   helperRequestContextRefreshCommandSchema,
   analystGetEpisodeContextQuerySchema,
   analystSubmitEvidenceProposalsCommandSchema
 ]);
-var discoveryContextSchema = z10.strictObject({
+var discoveryContextSchema = z12.strictObject({
   schemaVersion: schemaVersionSchema,
   correlationId: correlationIdSchema,
   project: projectSchema,
   session: discoverySessionSchema,
-  rounds: z10.array(candidateRoundSchema).max(100),
-  candidates: z10.array(projectCandidateRevisionSchema).max(1e3),
-  feedback: z10.array(discoveryFeedbackSchema).max(1e3),
+  rounds: z12.array(candidateRoundSchema).max(100),
+  candidates: z12.array(projectCandidateRevisionSchema).max(1e3),
+  feedback: z12.array(discoveryFeedbackSchema).max(1e3),
   learningSpec: learningSpecRevisionSchema.nullable(),
   previewRound: candidatePreviewRoundSchema.nullable().default(null),
-  candidateEnrichments: z10.array(candidateEnrichmentSchema).max(10).default([]),
-  relevantLedgerEntries: z10.array(conceptLedgerEntrySchema).max(20),
+  candidateEnrichments: z12.array(candidateEnrichmentSchema).max(10).default([]),
+  relevantLedgerEntries: z12.array(conceptLedgerEntrySchema).max(20),
   personalization: personalizationTraceSchema
 });
-var builderTaskContextSchema = z10.strictObject({
+var builderTaskContextSchema = z12.strictObject({
   schemaVersion: schemaVersionSchema,
   correlationId: correlationIdSchema,
   project: projectSchema,
@@ -2123,91 +2590,114 @@ var builderTaskContextSchema = z10.strictObject({
   task: builderTaskSchema,
   previousCompletionReport: taskCompletionReportSchema.optional(),
   liveContext: liveProjectContextSchema.nullable(),
-  decisionRequests: z10.array(decisionRequestSchema).max(50),
-  decisionResolutions: z10.array(decisionResolutionSchema).max(50),
-  decisionApplications: z10.array(decisionApplicationSchema).max(50),
-  pendingContextRefreshRequests: z10.array(contextRefreshRequestSchema).max(20)
+  decisionRequests: z12.array(decisionRequestSchema).max(50),
+  decisionResolutions: z12.array(decisionResolutionSchema).max(50),
+  decisionApplications: z12.array(decisionApplicationSchema).max(50),
+  pendingContextRefreshRequests: z12.array(contextRefreshRequestSchema).max(20)
 });
-var helperEpisodeSummarySchema = z10.strictObject({
+var helperEpisodeSummarySchema = z12.strictObject({
   episodeId: episodeIdSchema,
-  type: z10.enum(["BUILD_TASK", "DECISION", "HELPER_CONVERSATION", "FINAL_UPGRADE"]),
+  type: z12.enum(["BUILD_TASK", "DECISION", "HELPER_CONVERSATION", "FINAL_UPGRADE"]),
   endedAt: utcTimestampSchema,
-  conceptNames: z10.array(labelSchema).max(20),
-  redactedUserExcerpts: z10.array(nonEmptyTextSchema).max(5),
-  helperResponseSummaries: z10.array(nonEmptyTextSchema).max(5),
-  contextReferences: z10.array(contextualSourceReferenceSchema).max(10)
+  conceptNames: z12.array(labelSchema).max(20),
+  redactedUserExcerpts: z12.array(nonEmptyTextSchema).max(5),
+  helperResponseSummaries: z12.array(nonEmptyTextSchema).max(5),
+  contextReferences: z12.array(contextualSourceReferenceSchema).max(10)
 });
-var helperSourceExcerptSchema = z10.strictObject({
+var helperSourceExcerptSchema = z12.strictObject({
   reference: codeReferenceSchema,
-  redactedExcerpt: z10.string().trim().min(1).max(8192),
-  truncated: z10.boolean(),
-  redactionStatus: z10.literal("VERIFIED_REDACTED")
+  redactedExcerpt: z12.string().trim().min(1).max(8192),
+  truncated: z12.boolean(),
+  redactionStatus: z12.literal("VERIFIED_REDACTED")
 });
-var helperReferenceDetailSchema = z10.strictObject({
+var helperReferenceDetailSchema = z12.strictObject({
   reference: contextualSourceReferenceSchema,
-  availability: z10.enum(["EXCERPT_INCLUDED", "REFERENCE_ONLY", "UNAVAILABLE"]),
-  reason: z10.string().trim().min(1).max(240).optional()
+  availability: z12.enum(["EXCERPT_INCLUDED", "REFERENCE_ONLY", "UNAVAILABLE"]),
+  reason: z12.string().trim().min(1).max(240).optional()
 });
-var helperContextSchema = z10.strictObject({
+var helperContextSchema = z12.strictObject({
   schemaVersion: schemaVersionSchema,
   correlationId: correlationIdSchema,
   project: projectSchema,
   learningSpec: learningSpecRevisionSchema,
   task: builderTaskSchema,
   liveContext: liveProjectContextSchema.nullable(),
-  activeDecisions: z10.array(decisionRequestSchema).max(10),
+  activeDecisions: z12.array(decisionRequestSchema).max(10),
   focusedDecision: decisionRequestSchema.nullable(),
-  relevantLedgerEntries: z10.array(conceptLedgerEntrySchema).max(5),
+  relevantLedgerEntries: z12.array(conceptLedgerEntrySchema).max(5),
   personalization: personalizationTraceSchema,
-  recentEpisodes: z10.array(helperEpisodeSummarySchema).max(5),
-  contextReferences: z10.array(contextualSourceReferenceSchema).max(30),
-  referenceDetails: z10.array(helperReferenceDetailSchema).max(30),
-  sourceExcerpts: z10.array(helperSourceExcerptSchema).max(3),
-  pendingContextRefreshRequests: z10.array(contextRefreshRequestSchema).max(20),
-  freshness: z10.strictObject({
+  recentEpisodes: z12.array(helperEpisodeSummarySchema).max(5),
+  contextReferences: z12.array(contextualSourceReferenceSchema).max(30),
+  referenceDetails: z12.array(helperReferenceDetailSchema).max(30),
+  sourceExcerpts: z12.array(helperSourceExcerptSchema).max(3),
+  pendingContextRefreshRequests: z12.array(contextRefreshRequestSchema).max(20),
+  /** The Project's current Next Move suggestions, read-only, for comparison questions. */
+  nextMove: nextMoveViewSchema.optional(),
+  freshness: z12.strictObject({
     currentContextVersion: entityRevisionSchema.nullable(),
     observedContextVersion: entityRevisionSchema.nullable(),
-    status: z10.enum(["CURRENT", "STALE", "MISSING"]),
-    stale: z10.boolean(),
-    refreshRequired: z10.boolean()
+    status: z12.enum(["CURRENT", "STALE", "MISSING"]),
+    stale: z12.boolean(),
+    refreshRequired: z12.boolean()
   })
 });
-var episodeContextSchema = z10.strictObject({
+var episodeContextSchema = z12.strictObject({
   schemaVersion: schemaVersionSchema,
   correlationId: correlationIdSchema,
   episode: episodeSchema,
-  events: z10.array(activityEventSchema).min(1).max(500),
-  relevantLedgerEntries: z10.array(conceptLedgerEntrySchema).max(20),
+  events: z12.array(activityEventSchema).min(1).max(500),
+  relevantLedgerEntries: z12.array(conceptLedgerEntrySchema).max(20),
   analysisJob: analysisJobSchema.nullable(),
-  decisionContext: z10.strictObject({
+  decisionContext: z12.strictObject({
     request: decisionRequestSchema,
     resolution: decisionResolutionSchema.nullable()
   }).nullable()
 });
-var decisionResultSchema = z10.strictObject({
+var buildStatusSchema = z12.strictObject({
+  schemaVersion: schemaVersionSchema,
+  correlationId: correlationIdSchema,
+  task: z12.strictObject({
+    id: taskIdSchema,
+    title: labelSchema,
+    status: builderTaskSchema.shape.status,
+    revision: entityRevisionSchema
+  }),
+  contextVersion: z12.int().nonnegative(),
+  openDecisions: z12.array(z12.strictObject({
+    decisionId: decisionIdSchema,
+    question: nonEmptyTextSchema,
+    state: z12.enum(["AWAITING_LEARNER", "RESOLVED_NOT_APPLIED"]),
+    options: z12.array(z12.strictObject({ number: z12.int().min(1).max(6), label: labelSchema })).min(2).max(6),
+    recommendedOptionNumber: z12.int().min(1).max(6),
+    resolvedOptionNumber: z12.int().min(1).max(6).optional(),
+    requestedAt: utcTimestampSchema
+  })).max(10),
+  omittedOpenDecisionCount: z12.int().nonnegative()
+});
+var decisionResultSchema = z12.strictObject({
   schemaVersion: schemaVersionSchema,
   correlationId: correlationIdSchema,
   request: decisionRequestSchema,
   resolution: decisionResolutionSchema.nullable(),
   application: decisionApplicationSchema.nullable()
 });
-var decisionCommandReceiptSchema = z10.strictObject({
+var decisionCommandReceiptSchema = z12.strictObject({
   schemaVersion: schemaVersionSchema,
   correlationId: correlationIdSchema,
-  accepted: z10.literal(true),
+  accepted: z12.literal(true),
   resourceRevision: entityRevisionSchema,
   decisionId: decisionIdSchema
 });
-var commandReceiptSchema = z10.strictObject({
+var commandReceiptSchema = z12.strictObject({
   schemaVersion: schemaVersionSchema,
   correlationId: correlationIdSchema,
-  accepted: z10.literal(true),
+  accepted: z12.literal(true),
   resourceRevision: entityRevisionSchema
 });
 
 // packages/contracts/dist/audit.js
-import { z as z11 } from "zod";
-var auditActionSchema = z11.enum([
+import { z as z13 } from "zod";
+var auditActionSchema = z13.enum([
   "CREATED",
   "UPDATED",
   "SUBMITTED",
@@ -2217,15 +2707,15 @@ var auditActionSchema = z11.enum([
   "APPLIED",
   "REDACTED"
 ]);
-var auditOutcomeSchema = z11.enum(["SUCCEEDED", "REJECTED", "FAILED"]);
-var auditRecordSchema = z11.strictObject({
+var auditOutcomeSchema = z13.enum(["SUCCEEDED", "REJECTED", "FAILED"]);
+var auditRecordSchema = z13.strictObject({
   schemaVersion: schemaVersionSchema,
   id: auditRecordIdSchema,
   correlationId: correlationIdSchema,
   actor: actorSchema,
   action: auditActionSchema,
-  resource: z11.strictObject({
-    type: z11.enum([
+  resource: z13.strictObject({
+    type: z13.enum([
       "PROJECT",
       "DISCOVERY_SESSION",
       "CANDIDATE_PREVIEW_ROUND",
@@ -2238,25 +2728,26 @@ var auditRecordSchema = z11.strictObject({
       "EVENT",
       "EPISODE",
       "ANALYSIS_JOB",
+      "NEXT_MOVE_JOB",
       "EVIDENCE_PROPOSAL",
       "EVIDENCE",
       "CONCEPT_LEDGER",
       "EVALUATION_RUN"
     ]),
     id: stableEntityIdSchema,
-    revision: z11.int().positive().optional()
+    revision: z13.int().positive().optional()
   }),
   outcome: auditOutcomeSchema,
-  reasonCode: z11.string().regex(/^[A-Z][A-Z0-9_]{0,79}$/).optional(),
+  reasonCode: z13.string().regex(/^[A-Z][A-Z0-9_]{0,79}$/).optional(),
   summary: nonEmptyTextSchema,
-  changedFields: z11.array(z11.string().regex(/^[a-z][A-Za-z0-9.]{0,119}$/)).max(100),
+  changedFields: z13.array(z13.string().regex(/^[a-z][A-Za-z0-9.]{0,119}$/)).max(100),
   occurredAt: utcTimestampSchema,
   redactionStatus: redactionStatusSchema
 });
 
 // packages/contracts/dist/evaluation.js
-import { z as z12 } from "zod";
-var contractDomainSchema = z12.enum([
+import { z as z14 } from "zod";
+var contractDomainSchema = z14.enum([
   "DISCOVERY",
   "LEARNING_SPEC",
   "BUILD",
@@ -2268,7 +2759,7 @@ var contractDomainSchema = z12.enum([
   "AUDIT",
   "EVALUATION"
 ]);
-var evaluationDimensionSchema = z12.enum([
+var evaluationDimensionSchema = z14.enum([
   "DISCOVERY_DIVERSITY",
   "CONCEPT_NECESSITY",
   "SPEC_SCOPE",
@@ -2278,22 +2769,22 @@ var evaluationDimensionSchema = z12.enum([
   "REDACTION",
   "CONTRACT_INTEGRITY"
 ]);
-var evaluationReviewModeSchema = z12.enum(["AUTOMATED", "HUMAN"]);
-var evaluationCriterionStatusSchema = z12.enum(["PASSED", "FAILED", "NEEDS_REVIEW", "ERROR"]);
-var criterionKeySchema = z12.string().regex(/^[a-z][a-z0-9_-]{0,63}$/);
-var evaluationCriterionSchema = z12.strictObject({
+var evaluationReviewModeSchema = z14.enum(["AUTOMATED", "HUMAN"]);
+var evaluationCriterionStatusSchema = z14.enum(["PASSED", "FAILED", "NEEDS_REVIEW", "ERROR"]);
+var criterionKeySchema = z14.string().regex(/^[a-z][a-z0-9_-]{0,63}$/);
+var evaluationCriterionSchema = z14.strictObject({
   key: criterionKeySchema,
   dimension: evaluationDimensionSchema,
   reviewMode: evaluationReviewModeSchema,
   description: nonEmptyTextSchema,
   successDefinition: nonEmptyTextSchema
 });
-var evaluationFixtureSchema = z12.strictObject({
+var evaluationFixtureSchema = z14.strictObject({
   schemaVersion: schemaVersionSchema,
   id: fixtureIdSchema,
   name: labelSchema,
   description: nonEmptyTextSchema,
-  kind: z12.enum([
+  kind: z14.enum([
     "GOLDEN_PATH",
     "UNSEEN_DISCOVERY",
     "FALSE_MASTERY",
@@ -2307,12 +2798,12 @@ var evaluationFixtureSchema = z12.strictObject({
   inputPath: relativePosixPathSchema,
   calibrationSubjectPath: relativePosixPathSchema.optional(),
   calibrationReviewPath: relativePosixPathSchema.optional(),
-  expectedContractDomains: z12.array(contractDomainSchema).min(1).max(20),
-  criteria: z12.array(evaluationCriterionSchema).min(1).max(50),
-  scenarioTags: z12.array(labelSchema).max(20),
+  expectedContractDomains: z14.array(contractDomainSchema).min(1).max(20),
+  criteria: z14.array(evaluationCriterionSchema).min(1).max(50),
+  scenarioTags: z14.array(labelSchema).max(20),
   fixtureVersion: semanticVersionSchema,
-  containsPersonalData: z12.literal(false),
-  redactionStatus: z12.literal("VERIFIED_REDACTED")
+  containsPersonalData: z14.literal(false),
+  redactionStatus: z14.literal("VERIFIED_REDACTED")
 }).superRefine((fixture, context) => {
   const keys = new Set(fixture.criteria.map((criterion) => criterion.key));
   if (keys.size !== fixture.criteria.length) {
@@ -2338,20 +2829,20 @@ var evaluationFixtureSchema = z12.strictObject({
     });
   }
 });
-var evaluationMetricSchema = z12.strictObject({
+var evaluationMetricSchema = z14.strictObject({
   name: labelSchema,
-  value: z12.number().finite(),
-  unit: z12.enum(["COUNT", "RATIO", "MILLISECONDS", "TOKENS"]),
+  value: z14.number().finite(),
+  unit: z14.enum(["COUNT", "RATIO", "MILLISECONDS", "TOKENS"]),
   interpretation: nonEmptyTextSchema
 });
-var evaluationCriterionResultSchema = z12.strictObject({
+var evaluationCriterionResultSchema = z14.strictObject({
   criterionKey: criterionKeySchema,
   dimension: evaluationDimensionSchema,
   reviewMode: evaluationReviewModeSchema,
   status: evaluationCriterionStatusSchema,
   explanation: nonEmptyTextSchema,
-  evidenceReferences: z12.array(nonEmptyTextSchema).max(30),
-  metrics: z12.array(evaluationMetricSchema).max(30)
+  evidenceReferences: z14.array(nonEmptyTextSchema).max(30),
+  metrics: z14.array(evaluationMetricSchema).max(30)
 });
 function expectedCaseStatus(results) {
   if (results.some((result) => result.status === "ERROR"))
@@ -2362,13 +2853,13 @@ function expectedCaseStatus(results) {
     return "NEEDS_REVIEW";
   return "PASSED";
 }
-var evaluationCaseResultSchema = z12.strictObject({
+var evaluationCaseResultSchema = z14.strictObject({
   fixtureId: fixtureIdSchema,
   fixtureVersion: semanticVersionSchema,
   status: evaluationCriterionStatusSchema,
-  criterionResults: z12.array(evaluationCriterionResultSchema).min(1).max(50),
-  metrics: z12.array(evaluationMetricSchema).max(100),
-  notes: z12.array(nonEmptyTextSchema).max(50)
+  criterionResults: z14.array(evaluationCriterionResultSchema).min(1).max(50),
+  metrics: z14.array(evaluationMetricSchema).max(100),
+  notes: z14.array(nonEmptyTextSchema).max(50)
 }).superRefine((result, context) => {
   const keys = new Set(result.criterionResults.map((criterion) => criterion.criterionKey));
   if (keys.size !== result.criterionResults.length) {
@@ -2386,19 +2877,19 @@ var evaluationCaseResultSchema = z12.strictObject({
     });
   }
 });
-var evaluationRunSchema = z12.strictObject({
+var evaluationRunSchema = z14.strictObject({
   schemaVersion: schemaVersionSchema,
   id: evaluationRunIdSchema,
   correlationId: correlationIdSchema,
   revision: entityRevisionSchema,
   evaluatorVersion: semanticVersionSchema,
   systemUnderTestVersion: semanticVersionSchema,
-  fixtureIds: z12.array(fixtureIdSchema).min(1).max(500),
-  status: z12.enum(["PENDING", "RUNNING", "NEEDS_REVIEW", "COMPLETED", "FAILED"]),
+  fixtureIds: z14.array(fixtureIdSchema).min(1).max(500),
+  status: z14.enum(["PENDING", "RUNNING", "NEEDS_REVIEW", "COMPLETED", "FAILED"]),
   startedAt: utcTimestampSchema,
   completedAt: utcTimestampSchema.optional(),
-  results: z12.array(evaluationCaseResultSchema).max(500),
-  redactionStatus: z12.literal("VERIFIED_REDACTED")
+  results: z14.array(evaluationCaseResultSchema).max(500),
+  redactionStatus: z14.literal("VERIFIED_REDACTED")
 }).superRefine((run, context) => {
   const fixtureIds = new Set(run.fixtureIds);
   if (fixtureIds.size !== run.fixtureIds.length) {
@@ -2469,17 +2960,17 @@ var evaluationRunSchema = z12.strictObject({
     });
   }
 });
-var baselineResultSchema = z12.strictObject({
+var baselineResultSchema = z14.strictObject({
   schemaVersion: schemaVersionSchema,
   id: baselineResultIdSchema,
   evaluationRunId: evaluationRunIdSchema,
   correlationId: correlationIdSchema,
-  kind: z12.enum(["CALIBRATION", "GENERIC_KIRO", "SIMPLE_MEMORY", "ABLATION"]),
+  kind: z14.enum(["CALIBRATION", "GENERIC_KIRO", "SIMPLE_MEMORY", "ABLATION"]),
   baselineName: labelSchema,
   baselineVersion: semanticVersionSchema,
-  results: z12.array(evaluationCaseResultSchema).min(1).max(500),
+  results: z14.array(evaluationCaseResultSchema).min(1).max(500),
   recordedAt: utcTimestampSchema,
-  redactionStatus: z12.literal("VERIFIED_REDACTED")
+  redactionStatus: z14.literal("VERIFIED_REDACTED")
 }).superRefine((baseline, context) => {
   const fixtureIds = new Set(baseline.results.map((result) => result.fixtureId));
   if (fixtureIds.size !== baseline.results.length) {
@@ -2492,33 +2983,36 @@ var baselineResultSchema = z12.strictObject({
 });
 
 // packages/contracts/dist/generated-result.js
-import { z as z13 } from "zod";
-var generatedResultUrlPathSchema = z13.string().trim().min(1).max(240).refine((value) => value.startsWith("/") && !value.startsWith("//") && !value.includes("\\") && !value.includes("?") && !value.includes("#") && !value.split("/").includes(".."), "Generated web result path must be a local absolute URL path");
-var generatedResultManifestSchema = z13.strictObject({
+import { z as z15 } from "zod";
+var generatedResultUrlPathSchema = z15.string().trim().min(1).max(240).refine((value) => value.startsWith("/") && !value.startsWith("//") && !value.includes("\\") && !value.includes("?") && !value.includes("#") && !value.split("/").includes(".."), "Generated web result path must be a local absolute URL path");
+var generatedResultManifestSchema = z15.strictObject({
   schemaVersion: schemaVersionSchema,
-  kind: z13.literal("WEB"),
+  kind: z15.literal("WEB"),
   entry: relativePosixPathSchema.refine((value) => /\.(?:cjs|mjs|js)$/.test(value), "Generated web result entry must be compiled JavaScript"),
   healthPath: generatedResultUrlPathSchema,
   openPath: generatedResultUrlPathSchema.default("/")
 });
 
+// packages/contracts/dist/local-runtime.js
+import { z as z18 } from "zod";
+
 // packages/contracts/dist/ui-contracts.js
-import { z as z14 } from "zod";
+import { z as z16 } from "zod";
 var uiRequestMetadata = {
   schemaVersion: schemaVersionSchema,
   correlationId: correlationIdSchema,
-  actor: z14.strictObject({ kind: z14.literal("UI") })
+  actor: z16.strictObject({ kind: z16.literal("UI") })
 };
-var uiStartDiscoveryCommandSchema = z14.strictObject({
+var uiStartDiscoveryCommandSchema = z16.strictObject({
   ...uiRequestMetadata,
-  kind: z14.literal("UI_START_DISCOVERY"),
+  kind: z16.literal("UI_START_DISCOVERY"),
   idempotencyKey: idempotencyKeySchema,
   projectId: projectIdSchema,
   input: discoveryInputSchema
 });
-var uiRecordDiscoveryFeedbackCommandSchema = z14.strictObject({
+var uiRecordDiscoveryFeedbackCommandSchema = z16.strictObject({
   ...uiRequestMetadata,
-  kind: z14.literal("UI_RECORD_DISCOVERY_FEEDBACK"),
+  kind: z16.literal("UI_RECORD_DISCOVERY_FEEDBACK"),
   idempotencyKey: idempotencyKeySchema,
   expectedSessionRevision: entityRevisionSchema,
   feedback: discoveryFeedbackSchema
@@ -2526,25 +3020,25 @@ var uiRecordDiscoveryFeedbackCommandSchema = z14.strictObject({
   path: ["feedback", "correlationId"],
   message: "Discovery Feedback correlation ID must match its command"
 });
-var uiConfirmLearningSpecCommandSchema = z14.strictObject({
+var uiConfirmLearningSpecCommandSchema = z16.strictObject({
   ...uiRequestMetadata,
-  kind: z14.literal("UI_CONFIRM_LEARNING_SPEC"),
+  kind: z16.literal("UI_CONFIRM_LEARNING_SPEC"),
   idempotencyKey: idempotencyKeySchema,
   projectId: projectIdSchema,
   learningSpecId: learningSpecIdSchema,
   expectedSpecRevision: entityRevisionSchema
 });
-var uiPrepareBuilderTaskCommandSchema = z14.strictObject({
+var uiPrepareBuilderTaskCommandSchema = z16.strictObject({
   ...uiRequestMetadata,
-  kind: z14.literal("UI_PREPARE_BUILDER_TASK"),
+  kind: z16.literal("UI_PREPARE_BUILDER_TASK"),
   idempotencyKey: idempotencyKeySchema,
   projectId: projectIdSchema,
   learningSpecId: learningSpecIdSchema,
   expectedSpecRevision: entityRevisionSchema
 });
-var uiPrepareFinalUpgradeTaskCommandSchema = z14.strictObject({
+var uiPrepareFinalUpgradeTaskCommandSchema = z16.strictObject({
   ...uiRequestMetadata,
-  kind: z14.literal("UI_PREPARE_FINAL_UPGRADE_TASK"),
+  kind: z16.literal("UI_PREPARE_FINAL_UPGRADE_TASK"),
   idempotencyKey: idempotencyKeySchema,
   projectId: projectIdSchema,
   sourceTaskId: taskIdSchema,
@@ -2552,18 +3046,18 @@ var uiPrepareFinalUpgradeTaskCommandSchema = z14.strictObject({
   personalizationTraceId: personalizationTraceIdSchema,
   userGoal: nonEmptyTextSchema
 });
-var uiPrepareFollowUpTaskCommandSchema = z14.strictObject({
+var uiPrepareFollowUpTaskCommandSchema = z16.strictObject({
   ...uiRequestMetadata,
-  kind: z14.literal("UI_PREPARE_FOLLOW_UP_TASK"),
+  kind: z16.literal("UI_PREPARE_FOLLOW_UP_TASK"),
   idempotencyKey: idempotencyKeySchema,
   projectId: projectIdSchema,
   sourceTaskId: taskIdSchema,
   expectedSourceTaskRevision: entityRevisionSchema,
   userGoal: nonEmptyTextSchema
 });
-var uiUpdateLearningSpecCommandSchema = z14.strictObject({
+var uiUpdateLearningSpecCommandSchema = z16.strictObject({
   ...uiRequestMetadata,
-  kind: z14.literal("UI_UPDATE_LEARNING_SPEC"),
+  kind: z16.literal("UI_UPDATE_LEARNING_SPEC"),
   idempotencyKey: idempotencyKeySchema,
   projectId: projectIdSchema,
   learningSpecId: learningSpecIdSchema,
@@ -2571,60 +3065,60 @@ var uiUpdateLearningSpecCommandSchema = z14.strictObject({
   expectedSpecRevision: entityRevisionSchema,
   draft: learningSpecDraftContentSchema
 });
-var uiReturnToDiscoveryCommandSchema = z14.strictObject({
+var uiReturnToDiscoveryCommandSchema = z16.strictObject({
   ...uiRequestMetadata,
-  kind: z14.literal("UI_RETURN_TO_DISCOVERY"),
+  kind: z16.literal("UI_RETURN_TO_DISCOVERY"),
   idempotencyKey: idempotencyKeySchema,
   projectId: projectIdSchema,
   discoverySessionId: discoverySessionIdSchema,
   expectedSessionRevision: entityRevisionSchema,
-  expectedSpecRevision: z14.int().nonnegative(),
+  expectedSpecRevision: z16.int().nonnegative(),
   input: discoveryInputSchema.optional()
 });
-var uiResolveDecisionCommandSchema = z14.strictObject({
+var uiResolveDecisionCommandSchema = z16.strictObject({
   ...uiRequestMetadata,
-  kind: z14.literal("UI_RESOLVE_DECISION"),
+  kind: z16.literal("UI_RESOLVE_DECISION"),
   idempotencyKey: idempotencyKeySchema,
   resolution: decisionResolutionSchema
 }).refine((command) => command.resolution.correlationId === command.correlationId, {
   path: ["resolution", "correlationId"],
   message: "Decision Resolution correlation ID must match its command"
 });
-var uiOpenHelperQuerySchema = z14.strictObject({
+var uiOpenHelperQuerySchema = z16.strictObject({
   ...uiRequestMetadata,
-  kind: z14.literal("UI_OPEN_HELPER"),
+  kind: z16.literal("UI_OPEN_HELPER"),
   projectId: projectIdSchema,
   taskId: taskIdSchema.optional(),
   decisionId: decisionIdSchema.optional(),
   question: nonEmptyTextSchema.optional()
 });
-var uiPrepareBuilderSessionQuerySchema = z14.strictObject({
+var uiPrepareBuilderSessionQuerySchema = z16.strictObject({
   ...uiRequestMetadata,
-  kind: z14.literal("UI_PREPARE_BUILDER_SESSION"),
-  purpose: z14.enum(["AGENT_SESSION", "WORKSPACE_VIEW"]).optional(),
+  kind: z16.literal("UI_PREPARE_BUILDER_SESSION"),
+  purpose: z16.enum(["AGENT_SESSION", "WORKSPACE_VIEW"]).optional(),
   projectId: projectIdSchema,
   taskId: taskIdSchema
 });
-var uiListProjectsQuerySchema = z14.strictObject({
+var uiListProjectsQuerySchema = z16.strictObject({
   ...uiRequestMetadata,
-  kind: z14.literal("UI_LIST_PROJECTS"),
-  limit: z14.int().min(1).max(100)
+  kind: z16.literal("UI_LIST_PROJECTS"),
+  limit: z16.int().min(1).max(100)
 });
-var uiRestoreProjectSessionQuerySchema = z14.strictObject({
+var uiRestoreProjectSessionQuerySchema = z16.strictObject({
   ...uiRequestMetadata,
-  kind: z14.literal("UI_RESTORE_PROJECT_SESSION"),
+  kind: z16.literal("UI_RESTORE_PROJECT_SESSION"),
   projectId: projectIdSchema,
-  helperConversationLimit: z14.int().min(1).max(20)
+  helperConversationLimit: z16.int().min(1).max(20)
 });
-var uiPrepareDiscoveryAgentContextQuerySchema = z14.strictObject({
+var uiPrepareDiscoveryAgentContextQuerySchema = z16.strictObject({
   ...uiRequestMetadata,
-  kind: z14.literal("UI_PREPARE_DISCOVERY_AGENT_CONTEXT"),
+  kind: z16.literal("UI_PREPARE_DISCOVERY_AGENT_CONTEXT"),
   projectId: projectIdSchema,
-  helperConversationLimit: z14.int().min(1).max(20)
+  helperConversationLimit: z16.int().min(1).max(20)
 });
-var uiRecordHelperExchangeCommandSchema = z14.strictObject({
+var uiRecordHelperExchangeCommandSchema = z16.strictObject({
   ...uiRequestMetadata,
-  kind: z14.literal("UI_RECORD_HELPER_EXCHANGE"),
+  kind: z16.literal("UI_RECORD_HELPER_EXCHANGE"),
   idempotencyKey: idempotencyKeySchema,
   projectId: projectIdSchema,
   taskId: taskIdSchema.optional(),
@@ -2632,33 +3126,69 @@ var uiRecordHelperExchangeCommandSchema = z14.strictObject({
   conversationId: conversationIdSchema.optional(),
   userMessage: nonEmptyTextSchema,
   helperResponseSummary: shortTextSchema,
-  origin: z14.enum(["FREE_TEXT", "QUICK_ACTION"]).default("FREE_TEXT"),
-  closeConversation: z14.boolean()
+  origin: z16.enum(["FREE_TEXT", "QUICK_ACTION"]).default("FREE_TEXT"),
+  closeConversation: z16.boolean()
 });
-var uiRetryAnalysisCommandSchema = z14.strictObject({
+var uiRecordChatMessageCommandSchema = z16.strictObject({
   ...uiRequestMetadata,
-  kind: z14.literal("UI_RETRY_ANALYSIS"),
+  kind: z16.literal("UI_RECORD_CHAT_MESSAGE"),
+  idempotencyKey: idempotencyKeySchema,
+  projectId: projectIdSchema,
+  taskId: taskIdSchema.optional(),
+  conversationId: conversationIdSchema,
+  message: nonEmptyTextSchema
+});
+var uiRecordBuilderChatTurnCommandSchema = z16.strictObject({
+  ...uiRequestMetadata,
+  kind: z16.literal("UI_RECORD_BUILDER_CHAT_TURN"),
+  idempotencyKey: idempotencyKeySchema,
+  projectId: projectIdSchema,
+  taskId: taskIdSchema.optional(),
+  conversationId: conversationIdSchema,
+  reply: nonEmptyTextSchema
+});
+var uiRetryAnalysisCommandSchema = z16.strictObject({
+  ...uiRequestMetadata,
+  kind: z16.literal("UI_RETRY_ANALYSIS"),
   idempotencyKey: idempotencyKeySchema,
   projectId: projectIdSchema,
   analysisJobId: analysisJobIdSchema,
   expectedJobRevision: entityRevisionSchema
 });
-var uiReadAnalysisJobsQuerySchema = z14.strictObject({
+var uiReadAnalysisJobsQuerySchema = z16.strictObject({
   ...uiRequestMetadata,
-  kind: z14.literal("UI_READ_ANALYSIS_JOBS"),
+  kind: z16.literal("UI_READ_ANALYSIS_JOBS"),
   projectId: projectIdSchema,
   status: analysisJobStatusSchema.optional(),
-  limit: z14.int().min(1).max(100)
+  limit: z16.int().min(1).max(100)
 });
-var uiReadEvidenceTraceQuerySchema = z14.strictObject({
+var uiReadNextMoveQuerySchema = z16.strictObject({
   ...uiRequestMetadata,
-  kind: z14.literal("UI_READ_EVIDENCE_TRACE"),
+  kind: z16.literal("UI_READ_NEXT_MOVE"),
+  projectId: projectIdSchema
+});
+var uiRetryNextMoveCommandSchema = z16.strictObject({
+  ...uiRequestMetadata,
+  kind: z16.literal("UI_RETRY_NEXT_MOVE"),
+  idempotencyKey: idempotencyKeySchema,
+  projectId: projectIdSchema,
+  nextMoveJobId: nextMoveJobIdSchema,
+  expectedJobRevision: entityRevisionSchema
+});
+var uiReadEvidenceTraceQuerySchema = z16.strictObject({
+  ...uiRequestMetadata,
+  kind: z16.literal("UI_READ_EVIDENCE_TRACE"),
   projectId: projectIdSchema,
   conceptId: conceptIdSchema.optional()
 });
-var uiLaunchResultCommandSchema = z14.strictObject({
+var uiReadLearnerProfileQuerySchema = z16.strictObject({
   ...uiRequestMetadata,
-  kind: z14.literal("UI_LAUNCH_RESULT"),
+  kind: z16.literal("UI_READ_LEARNER_PROFILE"),
+  maxConcepts: z16.int().min(1).max(100).optional()
+});
+var uiLaunchResultCommandSchema = z16.strictObject({
+  ...uiRequestMetadata,
+  kind: z16.literal("UI_LAUNCH_RESULT"),
   idempotencyKey: idempotencyKeySchema,
   projectId: projectIdSchema
 });
@@ -2668,48 +3198,70 @@ var generatedResultDescriptorBase = {
   projectId: projectIdSchema,
   workspacePath: relativePosixPathSchema
 };
-var generatedResultDescriptorSchema = z14.discriminatedUnion("status", [
-  z14.strictObject({
+var generatedResultDescriptorSchema = z16.discriminatedUnion("status", [
+  z16.strictObject({
     ...generatedResultDescriptorBase,
-    status: z14.literal("READY")
+    status: z16.literal("READY")
   }),
-  z14.strictObject({
+  z16.strictObject({
     ...generatedResultDescriptorBase,
-    status: z14.literal("RUNNING"),
-    url: z14.url().refine((value) => {
+    status: z16.literal("RUNNING"),
+    url: z16.url().refine((value) => {
       const match = value.match(/^http:\/\/127\.0\.0\.1:([1-9]\d{0,4})(?:\/[^?#]*)?$/);
       if (match?.[1] === void 0)
         return false;
       return Number(match[1]) <= 65535;
     }, "Generated result URL must use loopback HTTP"),
-    reused: z14.boolean()
+    reused: z16.boolean()
   })
 ]);
-var builderSessionBindingDescriptorSchema = z14.strictObject({
+var builderSessionBindingDescriptorSchema = z16.strictObject({
   schemaVersion: schemaVersionSchema,
   correlationId: correlationIdSchema,
   projectId: projectIdSchema,
   taskId: taskIdSchema,
-  workspaceDirectory: z14.string().min(1).max(4096).refine((value) => (value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value)) && !/[\0\r\n]/.test(value), "Expected an absolute local POSIX or Windows drive path"),
-  status: z14.literal("READY")
+  workspaceDirectory: z16.string().min(1).max(4096).refine((value) => (value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value)) && !/[\0\r\n]/.test(value), "Expected an absolute local POSIX or Windows drive path"),
+  status: z16.literal("READY")
 });
-var preparedBuilderTaskDescriptorSchema = z14.strictObject({
+var preparedBuilderTaskDescriptorSchema = z16.strictObject({
   schemaVersion: schemaVersionSchema,
   correlationId: correlationIdSchema,
   projectId: projectIdSchema,
   workspacePath: relativePosixPathSchema,
   task: builderTaskSchema,
-  status: z14.literal("READY")
+  status: z16.literal("READY")
 });
-var helperExchangeReceiptSchema = z14.strictObject({
+var helperExchangeReceiptSchema = z16.strictObject({
   schemaVersion: schemaVersionSchema,
   correlationId: correlationIdSchema,
   conversationId: conversationIdSchema,
   episodeId: episodeIdSchema,
   episodeRevision: entityRevisionSchema,
-  status: z14.enum(["OPEN", "PENDING_ANALYSIS"])
+  status: z16.enum(["OPEN", "PENDING_ANALYSIS"])
 });
-var uiRequestSchema = z14.discriminatedUnion("kind", [
+var chatMessageReceiptSchema = z16.strictObject({
+  schemaVersion: schemaVersionSchema,
+  correlationId: correlationIdSchema,
+  conversationId: conversationIdSchema,
+  messageId: messageIdSchema,
+  eventId: eventIdSchema,
+  episode: z16.strictObject({
+    id: episodeIdSchema,
+    revision: entityRevisionSchema,
+    type: z16.enum(["BUILD_TASK", "FINAL_UPGRADE", "DECISION"]),
+    decisionId: decisionIdSchema.optional()
+  }).optional()
+});
+var learnerProfileViewSchema = z16.strictObject({
+  schemaVersion: schemaVersionSchema,
+  correlationId: correlationIdSchema,
+  profileVersion: z16.string().regex(/^\d+\.\d+\.\d+$/),
+  conceptIds: z16.array(conceptIdSchema).max(100),
+  omittedCount: z16.int().nonnegative(),
+  text: z16.string().min(1).max(2e4),
+  digest: z16.string().regex(/^[0-9a-f]{64}$/)
+});
+var uiRequestSchema = z16.discriminatedUnion("kind", [
   uiStartDiscoveryCommandSchema,
   uiRecordDiscoveryFeedbackCommandSchema,
   uiUpdateLearningSpecCommandSchema,
@@ -2725,16 +3277,21 @@ var uiRequestSchema = z14.discriminatedUnion("kind", [
   uiOpenHelperQuerySchema,
   uiPrepareBuilderSessionQuerySchema,
   uiRecordHelperExchangeCommandSchema,
+  uiRecordChatMessageCommandSchema,
+  uiRecordBuilderChatTurnCommandSchema,
   uiRetryAnalysisCommandSchema,
   uiReadAnalysisJobsQuerySchema,
+  uiReadNextMoveQuerySchema,
+  uiRetryNextMoveCommandSchema,
   uiReadEvidenceTraceQuerySchema,
+  uiReadLearnerProfileQuerySchema,
   uiLaunchResultCommandSchema
 ]);
 
 // packages/contracts/dist/ui-session.js
-import { z as z15 } from "zod";
-var crewAppSurfaceSchema = z15.enum(["DISCOVERY", "SPEC", "BUILD"]);
-var helperConversationSummarySchema = z15.strictObject({
+import { z as z17 } from "zod";
+var crewAppSurfaceSchema = z17.enum(["DISCOVERY", "SPEC", "BUILD"]);
+var helperConversationSummarySchema = z17.strictObject({
   conversationId: conversationIdSchema,
   episodeId: episodeIdSchema,
   /** Helper turn correlation; matches the PersonalizationTrace written for that turn. */
@@ -2744,28 +3301,28 @@ var helperConversationSummarySchema = z15.strictObject({
   status: episodeStatusSchema,
   startedAt: utcTimestampSchema,
   endedAt: utcTimestampSchema.optional(),
-  redactedUserExcerpts: z15.array(nonEmptyTextSchema).max(5),
-  helperResponseSummaries: z15.array(nonEmptyTextSchema).max(5)
+  redactedUserExcerpts: z17.array(nonEmptyTextSchema).max(5),
+  helperResponseSummaries: z17.array(nonEmptyTextSchema).max(5)
 });
-var decisionSessionItemSchema = z15.strictObject({
+var decisionSessionItemSchema = z17.strictObject({
   request: decisionRequestSchema,
   resolution: decisionResolutionSchema.nullable(),
   application: decisionApplicationSchema.nullable()
 });
-var projectHistoryItemSchema = z15.strictObject({
+var projectHistoryItemSchema = z17.strictObject({
   project: projectSchema,
   suggestedSurface: crewAppSurfaceSchema,
   activeTask: builderTaskSchema.nullable(),
-  pendingDecisionCount: z15.int().nonnegative().max(100),
-  currentContextVersion: z15.int().positive().nullable(),
-  helperConversationCount: z15.int().nonnegative()
+  pendingDecisionCount: z17.int().nonnegative().max(100),
+  currentContextVersion: z17.int().positive().nullable(),
+  helperConversationCount: z17.int().nonnegative()
 });
-var projectHistorySchema = z15.strictObject({
+var projectHistorySchema = z17.strictObject({
   schemaVersion: schemaVersionSchema,
   correlationId: correlationIdSchema,
-  projects: z15.array(projectHistoryItemSchema).max(100)
+  projects: z17.array(projectHistoryItemSchema).max(100)
 });
-var projectSessionSnapshotSchema = z15.strictObject({
+var projectSessionSnapshotSchema = z17.strictObject({
   schemaVersion: schemaVersionSchema,
   correlationId: correlationIdSchema,
   project: projectSchema,
@@ -2777,131 +3334,87 @@ var projectSessionSnapshotSchema = z15.strictObject({
   activeTask: builderTaskSchema.nullable(),
   currentTask: builderTaskSchema.nullable(),
   liveContext: liveProjectContextSchema.nullable(),
-  pendingDecisions: z15.array(decisionRequestSchema).max(100),
-  decisions: z15.array(decisionSessionItemSchema).max(100).default([]),
+  pendingDecisions: z17.array(decisionRequestSchema).max(100),
+  decisions: z17.array(decisionSessionItemSchema).max(100).default([]),
   completionReport: taskCompletionReportSchema.nullable().default(null),
-  helperConversations: z15.array(helperConversationSummarySchema).max(20)
-});
-
-// packages/contracts/dist/validation.js
-import { z as z16 } from "zod";
-var contractValidationIssueSchema = z16.strictObject({
-  path: z16.array(z16.union([z16.string(), z16.int().nonnegative()])),
-  code: z16.string().min(1),
-  message: z16.string().min(1)
-});
-var contractErrorSchema = z16.strictObject({
-  schemaVersion: schemaVersionSchema,
-  kind: z16.literal("CONTRACT_ERROR"),
-  category: z16.enum(["VALIDATION", "PERMISSION"]),
-  code: z16.enum([
-    "INVALID_PAYLOAD",
-    "UNSUPPORTED_SCHEMA_VERSION",
-    "UNEXPECTED_FIELD",
-    "AGENT_PERMISSION_MISMATCH"
-  ]),
-  message: z16.string().min(1),
-  correlationId: correlationIdSchema.optional(),
-  retryable: z16.literal(false),
-  issues: z16.array(contractValidationIssueSchema).min(1)
-});
-var operationErrorCategorySchema = z16.enum([
-  "VALIDATION",
-  "PERMISSION",
-  "STALE_CONTEXT",
-  "EXTERNAL",
-  "ANALYSIS",
-  "STORAGE",
-  "GENERATED_PROJECT"
-]);
-var operationErrorSchema = z16.strictObject({
-  schemaVersion: schemaVersionSchema,
-  kind: z16.literal("OPERATION_ERROR"),
-  category: operationErrorCategorySchema,
-  code: z16.string().regex(/^[A-Z][A-Z0-9_]{0,79}$/),
-  disposition: z16.enum(["RETRYABLE", "USER_ACTION_REQUIRED", "PERMANENT"]),
-  message: z16.string().min(1).max(1e3),
-  correlationId: correlationIdSchema,
-  issues: z16.array(contractValidationIssueSchema).max(100),
-  redactionStatus: redactionStatusSchema
+  helperConversations: z17.array(helperConversationSummarySchema).max(20)
 });
 
 // packages/contracts/dist/local-runtime.js
-import { z as z17 } from "zod";
 var LOCAL_PROTOCOL_VERSION = 1;
-var localRunIdSchema = z17.string().regex(/^run_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+var localRunIdSchema = z18.string().regex(/^run_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
 var metadata = {
   projectId: projectIdSchema,
   idempotencyKey: idempotencyKeySchema
 };
-var localRunRequestSchema = z17.discriminatedUnion("kind", [
-  z17.strictObject({
+var localRunRequestSchema = z18.discriminatedUnion("kind", [
+  z18.strictObject({
     ...metadata,
-    kind: z17.literal("DISCOVERY"),
+    kind: z18.literal("DISCOVERY"),
     discoverySessionId: discoverySessionIdSchema,
     expectedSessionRevision: expectedRevisionSchema,
-    phase: z17.enum(["PREVIEW", "ENRICH_ALL", "ENRICH_SELECTED", "ROUND", "MERGE", "SPEC"]),
-    candidateIds: z17.array(candidateIdSchema).max(10).default([]),
+    phase: z18.enum(["PREVIEW", "ENRICH_ALL", "ENRICH_SELECTED", "ROUND", "MERGE", "SPEC"]),
+    candidateIds: z18.array(candidateIdSchema).max(10).default([]),
     message: nonEmptyTextSchema.optional(),
     expectedSpecRevision: expectedRevisionSchema.optional(),
-    enrichAfterPreview: z17.boolean().default(true)
+    enrichAfterPreview: z18.boolean().default(true)
   }),
-  z17.strictObject({
+  z18.strictObject({
     ...metadata,
-    kind: z17.literal("BUILDER"),
+    kind: z18.literal("BUILDER"),
     taskId: taskIdSchema,
     expectedTaskRevision: expectedRevisionSchema,
     // An explicit frontend start/resume may add no new instruction. The
     // confirmed Task and durable Decision state still bind the Builder run.
-    message: z17.string().trim().max(4e3)
+    message: z18.string().trim().max(4e3)
   }),
-  z17.strictObject({
+  z18.strictObject({
     ...metadata,
-    kind: z17.literal("HELPER"),
+    kind: z18.literal("HELPER"),
     taskId: taskIdSchema,
     decisionId: decisionIdSchema.optional(),
     message: nonEmptyTextSchema,
-    origin: z17.enum(["FREE_TEXT", "QUICK_ACTION"]).default("FREE_TEXT")
+    origin: z18.enum(["FREE_TEXT", "QUICK_ACTION"]).default("FREE_TEXT")
   })
 ]);
-var localRunSchema = z17.strictObject({
-  protocolVersion: z17.literal(LOCAL_PROTOCOL_VERSION),
-  backendInstanceId: z17.string().uuid(),
+var localRunSchema = z18.strictObject({
+  protocolVersion: z18.literal(LOCAL_PROTOCOL_VERSION),
+  backendInstanceId: z18.string().uuid(),
   id: localRunIdSchema,
   projectId: projectIdSchema,
-  kind: z17.enum(["DISCOVERY", "BUILDER", "HELPER"]),
-  phase: z17.string().max(40),
-  status: z17.enum(["ACCEPTED", "RUNNING", "SUCCEEDED", "FAILED", "CANCELLED"]),
-  outcome: z17.enum(["PENDING", "DURABLE_RESULT", "TURN_ENDED", "HELPER_RECORDED", "NONE"]),
+  kind: z18.enum(["DISCOVERY", "BUILDER", "HELPER"]),
+  phase: z18.string().max(40),
+  status: z18.enum(["ACCEPTED", "RUNNING", "SUCCEEDED", "FAILED", "CANCELLED"]),
+  outcome: z18.enum(["PENDING", "DURABLE_RESULT", "TURN_ENDED", "HELPER_RECORDED", "NONE"]),
   createdAt: utcTimestampSchema,
   updatedAt: utcTimestampSchema,
-  errorCode: z17.string().regex(/^[A-Z0-9_]{1,100}$/).nullable(),
-  lastSequence: z17.int().nonnegative(),
-  retainedFromSequence: z17.int().nonnegative()
+  errorCode: z18.string().regex(/^[A-Z0-9_]{1,100}$/).nullable(),
+  lastSequence: z18.int().nonnegative(),
+  retainedFromSequence: z18.int().nonnegative()
 });
-var localRunEventSchema = z17.strictObject({
+var localRunEventSchema = z18.strictObject({
   runId: localRunIdSchema,
   projectId: projectIdSchema,
-  sequence: z17.int().positive(),
-  kind: z17.enum(["STATE", "TEXT", "TOOL", "PERMISSION_DENIED"]),
-  text: z17.string().max(65536).optional(),
-  update: z17.record(z17.string(), z17.unknown()).optional(),
+  sequence: z18.int().positive(),
+  kind: z18.enum(["STATE", "TEXT", "TOOL", "PERMISSION_DENIED"]),
+  text: z18.string().max(65536).optional(),
+  update: z18.record(z18.string(), z18.unknown()).optional(),
   run: localRunSchema.optional(),
-  transient: z17.literal(true),
-  redactionStatus: z17.literal("VERIFIED_REDACTED")
+  transient: z18.literal(true),
+  redactionStatus: z18.literal("VERIFIED_REDACTED")
 });
-var localConnectionSchema = z17.strictObject({
-  protocolVersion: z17.literal(LOCAL_PROTOCOL_VERSION),
-  backendInstanceId: z17.string().uuid(),
-  baseUrl: z17.string().regex(/^http:\/\/127\.0\.0\.1:[1-9][0-9]{0,4}$/),
-  token: z17.string().regex(/^[0-9a-f]{64}$/)
+var localConnectionSchema = z18.strictObject({
+  protocolVersion: z18.literal(LOCAL_PROTOCOL_VERSION),
+  backendInstanceId: z18.string().uuid(),
+  baseUrl: z18.string().regex(/^http:\/\/127\.0\.0\.1:[1-9][0-9]{0,4}$/),
+  token: z18.string().regex(/^[0-9a-f]{64}$/)
 });
-var localApplicationEnvelopeSchema = z17.strictObject({
-  protocolVersion: z17.literal(LOCAL_PROTOCOL_VERSION),
+var localApplicationEnvelopeSchema = z18.strictObject({
+  protocolVersion: z18.literal(LOCAL_PROTOCOL_VERSION),
   request: uiRequestSchema
 });
-var localRunEnvelopeSchema = z17.strictObject({
-  protocolVersion: z17.literal(LOCAL_PROTOCOL_VERSION),
+var localRunEnvelopeSchema = z18.strictObject({
+  protocolVersion: z18.literal(LOCAL_PROTOCOL_VERSION),
   request: localRunRequestSchema
 });
 var localResponseSchemas = {
@@ -2920,15 +3433,63 @@ var localResponseSchemas = {
   UI_OPEN_HELPER: helperContextSchema,
   UI_PREPARE_BUILDER_SESSION: builderSessionBindingDescriptorSchema,
   UI_RECORD_HELPER_EXCHANGE: helperExchangeReceiptSchema,
+  UI_RECORD_CHAT_MESSAGE: chatMessageReceiptSchema,
+  UI_RECORD_BUILDER_CHAT_TURN: chatMessageReceiptSchema,
   UI_RETRY_ANALYSIS: analysisJobSchema,
   UI_READ_ANALYSIS_JOBS: analysisJobSchema.array(),
+  UI_READ_NEXT_MOVE: nextMoveViewSchema,
+  UI_RETRY_NEXT_MOVE: nextMoveViewSchema,
   UI_READ_EVIDENCE_TRACE: projectEvidenceTraceSchema,
+  UI_READ_LEARNER_PROFILE: learnerProfileViewSchema,
   UI_LAUNCH_RESULT: generatedResultDescriptorSchema
 };
-var localUiMetadataSchema = z17.strictObject({
-  schemaVersion: z17.literal(1),
+var localUiMetadataSchema = z18.strictObject({
+  schemaVersion: z18.literal(1),
   correlationId: correlationIdSchema,
-  actor: z17.strictObject({ kind: z17.literal("UI") })
+  actor: z18.strictObject({ kind: z18.literal("UI") })
+});
+
+// packages/contracts/dist/validation.js
+import { z as z19 } from "zod";
+var contractValidationIssueSchema = z19.strictObject({
+  path: z19.array(z19.union([z19.string(), z19.int().nonnegative()])),
+  code: z19.string().min(1),
+  message: z19.string().min(1)
+});
+var contractErrorSchema = z19.strictObject({
+  schemaVersion: schemaVersionSchema,
+  kind: z19.literal("CONTRACT_ERROR"),
+  category: z19.enum(["VALIDATION", "PERMISSION"]),
+  code: z19.enum([
+    "INVALID_PAYLOAD",
+    "UNSUPPORTED_SCHEMA_VERSION",
+    "UNEXPECTED_FIELD",
+    "AGENT_PERMISSION_MISMATCH"
+  ]),
+  message: z19.string().min(1),
+  correlationId: correlationIdSchema.optional(),
+  retryable: z19.literal(false),
+  issues: z19.array(contractValidationIssueSchema).min(1)
+});
+var operationErrorCategorySchema = z19.enum([
+  "VALIDATION",
+  "PERMISSION",
+  "STALE_CONTEXT",
+  "EXTERNAL",
+  "ANALYSIS",
+  "STORAGE",
+  "GENERATED_PROJECT"
+]);
+var operationErrorSchema = z19.strictObject({
+  schemaVersion: schemaVersionSchema,
+  kind: z19.literal("OPERATION_ERROR"),
+  category: operationErrorCategorySchema,
+  code: z19.string().regex(/^[A-Z][A-Z0-9_]{0,79}$/),
+  disposition: z19.enum(["RETRYABLE", "USER_ACTION_REQUIRED", "PERMANENT"]),
+  message: z19.string().min(1).max(1e3),
+  correlationId: correlationIdSchema,
+  issues: z19.array(contractValidationIssueSchema).max(100),
+  redactionStatus: redactionStatusSchema
 });
 
 // packages/frontend-client/dist/index.js
