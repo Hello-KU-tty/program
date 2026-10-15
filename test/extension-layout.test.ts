@@ -14,7 +14,7 @@ vi.mock("vscode", () => ({
   },
 }));
 
-import { offerLayoutRepair, revealAgentPanel } from "../src/extension";
+import { offerLayoutRepair, restoreLayout, revealAgentPanel } from "../src/extension";
 
 const memento = (seed: Record<string, unknown> = {}) => {
   const values = new Map(Object.entries(seed));
@@ -48,6 +48,24 @@ describe("panel layout (K17)", () => {
     executed.length = 0;
     await offerLayoutRepair({ globalState: declined as never });
     expect(asked).toHaveLength(2);
+    expect(executed).toEqual([]);
+  });
+
+  it("names the palette command in the one-time offer", async () => {
+    await offerLayoutRepair({ globalState: memento({ "vibeHelper.commandApproval": "PREAPPROVED" }) as never });
+    expect(asked[0]).toContain("Vibe Helper: Restore Kiro Layout");
+  });
+
+  it("resets the layout from the palette command every time, only after the learner agrees", async () => {
+    answer = "되돌리기";
+    await restoreLayout();
+    await restoreLayout();
+    expect(asked).toHaveLength(2);
+    expect(executed).toEqual(["workbench.action.resetViewLocations", "workbench.action.resetViewLocations"]);
+
+    answer = undefined;
+    executed.length = 0;
+    await restoreLayout();
     expect(executed).toEqual([]);
   });
 
