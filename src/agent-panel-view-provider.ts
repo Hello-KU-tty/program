@@ -251,10 +251,14 @@ export function wireWebviewMessaging(
   let unsubscribeStatus: (() => void) | undefined;
   let unsubscribeRotation: (() => void) | undefined;
   const experimental = options.managedHost ? false : isNativeFlowSupported().experimental;
+  // Set while the flow ports are stand-ins because Core could not be prepared.
+  let portsStandIn = false;
+  let rebuildingPorts = false;
   const refreshPorts = async () => {
     const result = options.managedHost ? await createManagedFlowPorts(options.managedHost)
       : await createFlowPortsAsync({ connectionFile: options.connectionFile });
     if (disposed) return;
+    portsStandIn = result.standIn === true;
     flowController.applyPortResult(result, experimental);
     await flowController.loadHistory();
   };
@@ -266,6 +270,13 @@ export function wireWebviewMessaging(
         if (disposed) return;
         flowController.setFlowSupport({ mode: status.phase === "CORE_CONNECTED" && status.native === "WORKER_READY" ? "live" : "unavailable",
           experimental: false, reason: status.nativeErrorCode ?? status.errorCode ?? status.phase });
+        // Core was down when the panel opened (for example right after sleep)
+        // and the host's own check has reconnected it since. Without this the
+        // panel keeps the stand-in ports and every Discovery call fails.
+        if (status.phase === "CORE_CONNECTED" && portsStandIn && !rebuildingPorts) {
+          rebuildingPorts = true;
+          void refreshPorts().catch(() => {}).finally(() => { rebuildingPorts = false; });
+        }
       });
       unsubscribeRotation = host.onDidRotate(() => {
         // Restore durable History only. Never restart a command after rotation.
