@@ -46,6 +46,7 @@ export function activate(context: vscode.ExtensionContext): { backend: Promise<F
     for (const item of history.projects) for (const run of await host.client.listRuns(item.project.id))
       if (run.kind === "DISCOVERY" && ["ACCEPTED", "RUNNING"].includes(run.status)) await host.client.cancelRun(run.id);
   }));
+  context.subscriptions.push(vscode.commands.registerCommand("vibeHelper.restoreLayout", () => restoreLayout()));
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(AGENT_PANEL_VIEW_ID, provider),
   );
@@ -91,7 +92,21 @@ export async function offerLayoutRepair(
   if (!upgraded) return;
   const repair = "원래 배치로 되돌리기";
   const choice = await vscode.window.showInformationMessage(
-    "이전 Vibe Helper가 터미널과 출력 창을 Kiro 채팅 자리로 옮겨서, 긴 명령이 돌 때 채팅이 가려졌을 수 있어요. Kiro 화면 배치를 처음 상태로 되돌릴까요?",
+    "이전 Vibe Helper가 터미널과 출력 창을 Kiro 채팅 자리로 옮겨서, 긴 명령이 돌 때 채팅이 가려졌을 수 있어요. Kiro 화면 배치를 처음 상태로 되돌릴까요? 나중에 명령 팔레트의 ‘Vibe Helper: Restore Kiro Layout’으로도 할 수 있어요.",
+    repair,
+  );
+  if (choice === repair) await vscode.commands.executeCommand("workbench.action.resetViewLocations");
+}
+
+/**
+ * The same reset on demand, for a learner who missed or dismissed the one-time
+ * offer and still finds the terminal in the Kiro chat area (Windows 0.2.10
+ * check, 2026-10-15). Asks first: the reset also undoes their own view moves.
+ */
+export async function restoreLayout(): Promise<void> {
+  const repair = "되돌리기";
+  const choice = await vscode.window.showInformationMessage(
+    "터미널·출력 창 같은 Kiro 화면 배치를 처음 상태로 되돌릴까요? 직접 옮긴 창 위치도 함께 처음으로 돌아가요.",
     repair,
   );
   if (choice === repair) await vscode.commands.executeCommand("workbench.action.resetViewLocations");

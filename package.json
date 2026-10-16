@@ -48,6 +48,10 @@
       {
         "command": "vibeHelper.stopDiscovery",
         "title": "Vibe Helper: Stop Active Discovery"
+      },
+      {
+        "command": "vibeHelper.restoreLayout",
+        "title": "Vibe Helper: Restore Kiro Layout"
       }
     ]
   },

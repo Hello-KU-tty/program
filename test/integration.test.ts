@@ -106,8 +106,12 @@ describe("extension activation contributes the Agent_Panel (Req 1.1 wiring)", ()
     expect(register.mock.calls[0][0]).toBe(AGENT_PANEL_VIEW_ID);
 
     // The registration disposable is tracked for cleanup (Req 1.1 lifecycle).
-    expect(subscriptions).toHaveLength(3);
+    expect(subscriptions).toHaveLength(4);
     expect(typeof subscriptions[0].dispose).toBe("function");
+    const registerCommand = vscode.commands.registerCommand as ReturnType<typeof vi.fn>;
+    expect(registerCommand.mock.calls.map(call => call[0])).toEqual([
+      "vibeHelper.retryCore", "vibeHelper.stopDiscovery", "vibeHelper.restoreLayout",
+    ]);
 
     // deactivate is a no-op (disposables handle cleanup) and must not throw.
     expect(() => deactivate()).not.toThrow();
