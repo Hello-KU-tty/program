@@ -101,6 +101,11 @@ export interface CreateFlowPortsResult {
    * live was selected.
    */
   reason?: string;
+  /**
+   * True when the managed host could not prepare Core and `ports` are
+   * stand-ins that fail every call. Build the ports again once Core connects.
+   */
+  standIn?: boolean;
 }
 
 /**
@@ -195,6 +200,6 @@ export async function createManagedFlowPorts(hostPromise: Promise<import("../../
       reason: status.nativeErrorCode ?? undefined };
   } catch (error) {
     const code = error instanceof Error && /^[A-Z][A-Z0-9_]{0,99}$/.test(error.message) ? error.message : "CORE_PREPARE_FAILED";
-    return { ports: unavailableFlowPorts(code), mode: "unavailable", reason: code };
+    return { ports: unavailableFlowPorts(code), mode: "unavailable", reason: code, standIn: true };
   }
 }
