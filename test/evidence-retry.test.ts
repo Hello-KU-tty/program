@@ -39,7 +39,7 @@ describe("explicit evidence retry refresh", () => {
     await h.dispatcher.handle(action);
     expect(h.client.executeKinds).toEqual(["UI_RETRY_ANALYSIS", "UI_READ_EVIDENCE_TRACE"]);
     expect(h.posted).toEqual([{ kind: "agent/evidence", view: {
-      concepts: [], analysis: [], userUnderstandingTotal: 0, emptyReason: "NO_EVIDENCE",
+      concepts: [], analysis: [], userUnderstandingTotal: 0, emptyReason: "NO_EVIDENCE", sources: {},
     } }]);
   });
 

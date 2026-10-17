@@ -15,7 +15,13 @@
  * already contains only display-safe scalars (stage / role / raw diagnostic
  * code).
  */
-import type { NativeWorkerStatusView, ProjectSessionSnapshot } from "../../../vendor/frontend-client";
+import type { EvidenceTraceView, NativeWorkerStatusView, ProjectSessionSnapshot } from "../../../vendor/frontend-client";
+
+/**
+ * K23: the learning record. Concept states are the learner's, across Projects, so a quote from
+ * another Project names it: `sources` maps such an Evidence id to its Project title.
+ */
+export type LearningRecordView = EvidenceTraceView & { readonly sources?: Readonly<Record<string, string>> };
 
 /** Use the selected product name when the initial task only repeats the goal. */
 export function builderTaskLabel(snapshot: ProjectSessionSnapshot): string | null {

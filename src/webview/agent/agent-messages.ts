@@ -29,10 +29,10 @@ import type {
   AgentViewModel,
   BuilderTurnViewModel,
   HelperViewModel,
+  LearningRecordView,
   NoticeViewModel,
 } from "../../core/agent/agent-view-model";
 import type {
-  EvidenceTraceView,
   FinalUpgradeCandidate,
   NativeWorkerStatusView,
 } from "../../../vendor/frontend-client";
@@ -153,7 +153,7 @@ export type AgentHostMessage =
   | { readonly kind: "agent/patch/builder"; readonly builder: BuilderTurnViewModel }
   | { readonly kind: "agent/patch/helper"; readonly helper: HelperViewModel }
   | { readonly kind: "agent/patch/worker"; readonly worker: NativeWorkerStatusView | null }
-  | { readonly kind: "agent/evidence"; readonly view: EvidenceTraceView }
+  | { readonly kind: "agent/evidence"; readonly view: LearningRecordView }
   | { readonly kind: "agent/finalUpgrade"; readonly candidates: readonly FinalUpgradeCandidate[] }
   | { readonly kind: "agent/notice"; readonly notice: NoticeViewModel };
 

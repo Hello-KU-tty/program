@@ -43,6 +43,7 @@ import {
   type BuilderTurnViewModel,
   type HostChatViewModel,
   type DecisionViewModel,
+  type LearningRecordView,
   type HelperConversationViewModel,
   type HelperViewModel,
   type NativeQuestionViewModel,
@@ -1052,7 +1053,7 @@ export class AgentSurfaceView {
    * - An `ANALYSIS_FAILED` analysis gets a retry affordance calling
    *   {@link AgentRenderCallbacks.onRetryAnalysis} (Req 10.5).
    */
-  renderEvidence(view: EvidenceTraceView): void {
+  renderEvidence(view: LearningRecordView): void {
     this.evidenceRegion.textContent = "";
 
     // K23: no counts and no scores. Concepts the learner spoke about come first,
@@ -1080,7 +1081,7 @@ export class AgentSurfaceView {
 
     const conceptsList = this.el("div", "agent-evidence-concepts");
     for (const concept of concepts) {
-      conceptsList.appendChild(this.buildEvidenceConcept(concept, spoken));
+      conceptsList.appendChild(this.buildEvidenceConcept(concept, spoken, view.sources ?? {}));
     }
     this.evidenceRegion.appendChild(conceptsList);
 
@@ -2067,6 +2068,7 @@ export class AgentSurfaceView {
   private buildEvidenceConcept(
     concept: EvidenceTraceView["concepts"][number],
     sayNone = true,
+    sources: Readonly<Record<string, string>> = {},
   ): HTMLElement {
     const block = this.el("div", "agent-evidence-concept");
     block.dataset.displayState = concept.displayState;
@@ -2093,10 +2095,13 @@ export class AgentSurfaceView {
       const words = this.el("q", "agent-evidence-quote-text");
       words.textContent = accepted.excerpt ?? "";
       quote.appendChild(words);
+      // What kind of words, and which other Project they came from.
       const kind = accepted.signal ? EVIDENCE_SIGNAL_LABELS[accepted.signal] : undefined;
-      if (kind) {
+      const from = sources[accepted.id];
+      const label = [from, kind].filter(Boolean).join(" · ");
+      if (label) {
         const source = this.el("span", "agent-evidence-quote-kind");
-        source.textContent = kind;
+        source.textContent = label;
         quote.appendChild(source);
       }
       block.appendChild(quote);

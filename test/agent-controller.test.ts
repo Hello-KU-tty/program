@@ -1049,6 +1049,21 @@ describe("AgentSurfaceController — Kiro-native host runs the Builder in Kiro c
     expect(copied).toEqual(["시작해 줘"]);
   });
 
+  it("names the other Project of a quoted learner word in the record, never this one's (K23)", async () => {
+    const evidence = (evidenceId: string, projectId: string, projectTitle: string) => ({
+      evidenceId, kind: "USER_UNDERSTANDING", projectId, projectTitle, episodeId: "episode_1", acceptedAt: "2026-10-17T00:00:00.000Z",
+      supportsState: "EXPLAINED", signal: "JUSTIFIED_DECISION", redactedEvidenceExcerpt: "내 말",
+    });
+    const trace = { schemaVersion: 1, correlationId: "corr", projectId: PROJECT_ID, personalization: [], analysis: [], concepts: [{
+      conceptId: "concept_1", conceptName: "관계형 데이터베이스 설계", state: "EXPLAINED", openIssues: [], rejectedEvidence: [],
+      evidence: [evidence("evidence_here", PROJECT_ID, "이번 Project"), evidence("evidence_old", "project_old", "편의점 상품 입출고 API")],
+    }] };
+    const h = buildHarness({ client: { executeResultByKind: { UI_READ_EVIDENCE_TRACE: { resolve: trace } } } });
+    const view = await h.controller.readEvidence();
+    expect(view?.sources).toEqual({ evidence_old: "편의점 상품 입출고 API" });
+    expect(view?.concepts[0].accepted.map(item => item.id)).toEqual(["evidence_here", "evidence_old"]);
+  });
+
   it("requires a bound Project and is inert on other hosts", async () => {
     const calls: string[] = [];
     const unbound = buildHarness({ seedProjectId: false, openInKiro: async projectId => { calls.push(projectId); return opened("REGISTERED"); } });

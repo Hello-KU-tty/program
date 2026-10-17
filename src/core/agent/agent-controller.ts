@@ -65,6 +65,7 @@ import {
   type HelperViewModel,
   initialAgentViewModel,
   type KiroWindowState,
+  type LearningRecordView,
   type NativeQuestionViewModel,
   nextMoveChatText,
   type NextMoveViewModel,
@@ -1558,7 +1559,7 @@ export class AgentSurfaceController {
    * success returns `summarizeEvidenceTrace(projectId, res.value)`; on a port
    * error surfaces a notice and returns `null`.
    */
-  async readEvidence(conceptId?: string): Promise<EvidenceTraceView | null> {
+  async readEvidence(conceptId?: string): Promise<LearningRecordView | null> {
     if (this.disposed) return null;
     const binding = this.bindingVersion;
     const projectId =
@@ -1586,8 +1587,14 @@ export class AgentSurfaceController {
     // Agent invocation. Do not combine old-project evidence with a new view.
     await this.reprojectFromSnapshot(projectId);
     if (!this.isCurrentBinding(binding)) return null;
-    // The response is the raw ProjectEvidenceTrace; project it honestly.
-    return summarizeEvidenceTrace(projectId, res.value);
+    // The response is the raw ProjectEvidenceTrace; project it honestly. Quotes from
+    // another Project keep that Project's title (K23).
+    const raw = res.value as ProjectEvidenceTrace;
+    const sources: Record<string, string> = {};
+    for (const concept of raw.concepts ?? [])
+      for (const item of concept.evidence ?? [])
+        if (item.projectId !== projectId && typeof item.projectTitle === "string") sources[item.evidenceId] = item.projectTitle;
+    return { ...summarizeEvidenceTrace(projectId, raw), sources };
   }
 
   /**
@@ -1628,7 +1635,7 @@ export class AgentSurfaceController {
   async retryAnalysis(
     analysisJobId: string,
     expectedJobRevision: number,
-  ): Promise<EvidenceTraceView | null> {
+  ): Promise<LearningRecordView | null> {
     if (this.disposed) return null;
     const binding = this.bindingVersion;
     const projectId =

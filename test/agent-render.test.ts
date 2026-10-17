@@ -517,6 +517,11 @@ describe("honest learning record (task 9.2, Req 10.2/10.4, K23)", () => {
       expect(byClass(root, "agent-evidence-concept-none").map(e => e.textContent)).toEqual(["아직 내 말로 남긴 기록은 없어요."]);
       expect(byClass(root, "agent-evidence-empty")).toHaveLength(0);
       expect(text(root)).not.toMatch(/\d+건|근거 \d/);
+      // A quote from another Project names it; this Project's quotes need no name.
+      view.renderEvidence({ ...evidenceView({ concepts: [concept({ id: "c1", name: "관계형 데이터베이스 설계",
+        displayState: "USER_EVIDENCE_EXPLAINED", userUnderstandingCount: 1, accepted: [accepted({ id: "e_old" })] })] }),
+        sources: { e_old: "편의점 상품 입출고 API" } });
+      expect(byClass(root, "agent-evidence-quote-kind").map(e => e.textContent)).toEqual(["편의점 상품 입출고 API · 고른 이유"]);
     } finally { restore(); }
   });
 
