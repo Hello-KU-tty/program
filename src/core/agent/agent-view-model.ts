@@ -57,6 +57,30 @@ export interface AgentViewModel {
 export interface HostChatViewModel {
   /** An open-in-Kiro request is in flight (host dialogs may be showing). */
   readonly opening: boolean;
+  /**
+   * K23: whether Kiro chat in THIS window reaches the Project. `READY`: the open folder is
+   * a connected, trusted Project folder; `UNTRUSTED`: connected but not trusted yet;
+   * `RELOAD`: trusted after the window opened, so it needs one reload; `NOT_BOUND`: the
+   * folder is not a Project folder. Absent when the host cannot tell (older host).
+   */
+  readonly window?: KiroWindowState;
+  /** K23: the last "Kiro 채팅에서 열기" here opened the Project in a new window. */
+  readonly openedNewWindow?: boolean;
+}
+
+/** K23: what Kiro chat in this window can reach (see {@link HostChatViewModel.window}). */
+export type KiroWindowState = "READY" | "UNTRUSTED" | "RELOAD" | "NOT_BOUND";
+
+/** K23: the panel's suggested first chat message; only ever copied, never sent. */
+export const CHAT_START_TEXT = "시작해 줘";
+
+/**
+ * K23: the chat message that picks one Next Move suggestion; only ever copied, never sent.
+ * "다음 한 걸음" names the panel card, so the Builder reads it as a Next Move number, not a
+ * Decision option (Steering "Next moves").
+ */
+export function nextMoveChatText(move: { readonly number: number }): string {
+  return `다음 한 걸음 ${move.number}번 해 보자`;
 }
 
 /** Next Move card state. `NONE` hides the card (no finished latest Task). */
@@ -90,6 +114,8 @@ export interface BuilderTurnViewModel {
     | "START_ERROR";
   readonly taskId: string | null;
   readonly taskTitle: string | null;
+  /** K23: the current Task's 1-based order in its Project (follow-ups are 2, 3, …). */
+  readonly taskSequence?: number | null;
   /** A durable PENDING task exists; an explicit empty-message start is allowed. */
   readonly readyToStart?: boolean;
   /** Durable revision used to fill the existing upgrade form (never a path). */

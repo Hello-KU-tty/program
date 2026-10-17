@@ -342,6 +342,11 @@ export function bootstrap(
     onRetryNextMove: () => {
       client.postAgent({ kind: "nextMove/retry" });
     },
+    onCopyChatText: (request) => {
+      client.postAgent(request.what === "START"
+        ? { kind: "chat/copy", what: "START" }
+        : { kind: "chat/copy", what: "NEXT_MOVE", number: request.number });
+    },
   };
 
   const agentView = new AgentSurfaceView(agentContainer, agentCallbacks);

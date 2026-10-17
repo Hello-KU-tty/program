@@ -50,6 +50,7 @@ function noopCallbacks(): AgentRenderCallbacks {
     onListFinalUpgrade: () => {},
     onPrepareFinalUpgrade: () => {},
     onRetryNextMove: () => {},
+    onCopyChatText: () => {},
   };
 }
 
@@ -204,30 +205,35 @@ describe("generated workspace and result actions", () => {
     } finally { restore(); }
   });
 
-  it("on a Kiro-native host offers only 'Kiro 채팅에서 열기' for the task, never a panel Builder start", () => {
+  it("on a Kiro-native host connects through the '지금 할 일' card, never a panel Builder start (K23)", () => {
     let opens = 0; let starts = 0;
     const { root, view, restore } = mount({ ...noopCallbacks(), onOpenInKiro: () => opens++, onBuilderStart: () => starts++ });
     try {
       const kiro = { ...vmWithBuilder({ taskId: "task_synthetic", readyToStart: true }), hostChat: { opening: false } };
       view.render(kiro);
-      const open = byClass(root, "agent-kiro-open")[0];
+      const open = byClass(root, "agent-now-action")[0];
       expect(open.hidden).toBe(false); expect(open.disabled).toBe(false);
       expect(open.textContent).toBe("Kiro 채팅에서 열기");
-      for (const name of ["agent-builder-send", "agent-composer-input", "agent-workspace-open", "agent-builder-stop", "agent-builder-resume"])
+      expect(byClass(root, "agent-now-lead")[0].textContent).toBe("이 Project를 Kiro 채팅에 연결해요.");
+      expect(byClass(root, "agent-now-note")[0].hidden).toBe(false);
+      expect(byClass(root, "agent-now-note")[0].textContent).toContain("10~30초");
+      expect(byClass(root, "agent-composer")[0].hidden).toBe(true);
+      for (const name of ["agent-workspace-open", "agent-builder-stop", "agent-builder-resume", "agent-result-launch", "agent-builder-next", "agent-builder-phase"])
         expect(byClass(root, name)[0].hidden).toBe(true);
-      expect(byClass(root, "agent-builder-next")[0].textContent).toContain("Kiro 채팅에서 열기");
       open.click();
       expect(opens).toBe(1); expect(starts).toBe(0);
       view.render({ ...kiro, hostChat: { opening: true } });
       expect(open.disabled).toBe(true);
+      expect(open.textContent).toBe("연결하는 중…");
       open.click();
       expect(opens).toBe(1);
       // No Task yet: nothing to connect.
       view.render({ ...initialAgentViewModel(), hostChat: { opening: false } });
       expect(open.hidden).toBe(true);
-      // Other hosts keep the panel Builder and never show the Kiro button.
+      // Other hosts keep the panel Builder and never show the card.
       view.render(vmWithBuilder({ taskId: "task_synthetic", readyToStart: true }));
-      expect(open.hidden).toBe(true);
+      expect(byClass(root, "agent-now")[0].hidden).toBe(true);
+      expect(byClass(root, "agent-composer")[0].hidden).toBe(false);
       expect(byClass(root, "agent-builder-send")[0].hidden).toBe(false);
     } finally { restore(); }
   });
@@ -447,7 +453,7 @@ describe("no absolute path appears in rendered tool rows (task 9.2, Req 2.9)", (
   });
 });
 
-describe("honest evidence display (task 9.2, Req 10.2/10.4)", () => {
+describe("honest learning record (task 9.2, Req 10.2/10.4, K23)", () => {
   function evidenceView(overrides: Partial<EvidenceTraceView> = {}): EvidenceTraceView {
     return {
       concepts: [],
@@ -457,88 +463,98 @@ describe("honest evidence display (task 9.2, Req 10.2/10.4)", () => {
       ...overrides,
     };
   }
+  type Concept = EvidenceTraceView["concepts"][number];
+  type Accepted = Concept["accepted"][number];
+  const accepted = (overrides: Partial<Accepted>): Accepted => ({
+    id: "e1", kind: "USER_UNDERSTANDING", signal: "JUSTIFIED_DECISION", strength: "MEDIUM", promptDependence: "INDEPENDENT",
+    supportsState: "EXPLAINED", episodeId: "ep-1", excerpt: "지금 몇 개 남았는지 바로 보는 게 편할 것 같아", rationale: null, ...overrides,
+  });
+  const concept = (overrides: Partial<Concept>): Concept => ({
+    id: "c1", name: "상태 관리", state: null, displayState: "OBSERVED_ONLY", userUnderstandingCount: 0, openIssueCount: 0,
+    accepted: [], rejected: [], ...overrides,
+  });
+  const text = (root: FakeElement) => root.queryAll(() => true).map(e => e.textContent).join("\n");
 
   it("OBSERVED_ONLY / zero understanding is never shown as understanding (Req 10.2)", () => {
     const { root, view, restore } = mount();
-    view.renderEvidence(
-      evidenceView({
+    try {
+      view.renderEvidence(evidenceView({ concepts: [concept({
+        // An observation quotes code the Agent wrote, never the learner.
+        accepted: [accepted({ id: "o1", kind: "OBSERVED", signal: null, supportsState: "OBSERVED", excerpt: "db.transaction(() => ...)" })],
+      })] }));
+      const states = byClass(root, "agent-evidence-concept-state");
+      expect(states.map(e => e.textContent)).toEqual(["코드에 쓰였어요"]);
+      // Nothing quoted anywhere: the record says so once, not per concept.
+      expect(byClass(root, "agent-evidence-concept-none")).toHaveLength(0);
+      expect(byClass(root, "agent-evidence-quote")).toHaveLength(0);
+      expect(text(root)).not.toContain("db.transaction");
+      expect(byClass(root, "agent-evidence-empty")[0].textContent).toContain("고른 이유를 내 말로");
+      // A user state without accepted understanding still makes no claim.
+      view.renderEvidence(evidenceView({ concepts: [concept({ displayState: "USER_EVIDENCE_EXPLAINED", userUnderstandingCount: 0 })] }));
+      expect(byClass(root, "agent-evidence-concept-state")[0].textContent).toBe("아직 기록 없음");
+    } finally { restore(); }
+  });
+
+  it("quotes only the learner's own words per concept, with no counts, spoken concepts first", () => {
+    const { root, view, restore } = mount();
+    try {
+      view.renderEvidence(evidenceView({
+        userUnderstandingTotal: 2,
         concepts: [
-          {
-            id: "c1",
-            name: "상태 관리",
-            state: null,
-            displayState: "OBSERVED_ONLY",
-            userUnderstandingCount: 0,
-            openIssueCount: 0,
-            accepted: [],
-            rejected: [],
-          },
+          concept({ id: "c0", name: "트랜잭션과 동시성" }),
+          concept({ id: "c1", name: "관계형 데이터베이스 설계", displayState: "USER_EVIDENCE_EXPLAINED", userUnderstandingCount: 1,
+            accepted: [accepted({}), accepted({ id: "e2", signal: "REPHRASE", excerpt: "<b>이력은</b> 쌓기만 해" })], openIssueCount: 1 }),
         ],
-      }),
-    );
-
-    const states = byClass(root, "agent-evidence-concept-state");
-    expect(states).toHaveLength(1);
-    // Honest: observed only, explicitly not marked as understood.
-    expect(states[0].textContent).toBe("관찰만 되었어요 (이해했다고 표시하지 않음)");
-    expect(states[0].textContent).not.toContain("사용자 이해 근거");
-    restore();
+      }));
+      const names = byClass(root, "agent-evidence-concept-name").map(e => e.textContent);
+      expect(names).toEqual(["관계형 데이터베이스 설계", "트랜잭션과 동시성"]);
+      expect(byClass(root, "agent-evidence-concept-state")[0].textContent).toBe("설명할 수 있어요");
+      expect(byClass(root, "agent-evidence-quote-text").map(e => e.textContent))
+        .toEqual(["지금 몇 개 남았는지 바로 보는 게 편할 것 같아", "<b>이력은</b> 쌓기만 해"]);
+      expect(byClass(root, "agent-evidence-quote-kind").map(e => e.textContent)).toEqual(["고른 이유", "내 말로 설명"]);
+      expect(root.queryAll(e => e.tagName === "B")).toHaveLength(0);
+      expect(byClass(root, "agent-evidence-concept-issues")[0].textContent).toContain("다시 짚어 볼 부분");
+      expect(byClass(root, "agent-evidence-concept-none").map(e => e.textContent)).toEqual(["아직 내 말로 남긴 기록은 없어요."]);
+      expect(byClass(root, "agent-evidence-empty")).toHaveLength(0);
+      expect(text(root)).not.toMatch(/\d+건|근거 \d/);
+    } finally { restore(); }
   });
 
-  it("ANALYZED with acceptedCount 0 says so plainly and keeps the Analyst memo folded (Req 10.4)", () => {
+  it("never shows the Analyst memo or Core's empty reason, and says only that analysis is pending (Req 10.4)", () => {
     const { root, view, restore } = mount();
-    view.renderEvidence(
-      evidenceView({
+    try {
+      view.renderEvidence(evidenceView({
+        emptyReason: "인정된 근거 없음: Episode에서 USER_DECISION reference가 없다",
         analysis: [
-          {
-            jobId: "job-1",
-            episodeId: "ep-1",
-            status: "SUCCEEDED",
-            displayState: "ANALYZED",
-            acceptedCount: 0,
-            noEvidenceReason: "인정된 근거 없음: Episode에서 USER_DECISION reference가 없고 BUILDER_CHAT_TURN 요약뿐이다",
-            failureCode: null,
-          },
+          { jobId: "job-1", episodeId: "ep-1", status: "SUCCEEDED", displayState: "ANALYZED", acceptedCount: 0,
+            noEvidenceReason: "인정된 근거 없음: Episode에서 USER_DECISION reference가 없고 BUILDER_CHAT_TURN 요약뿐이다", failureCode: null },
+          { jobId: "job-2", episodeId: "ep-2", status: "RUNNING", displayState: "ANALYZING", acceptedCount: null, noEvidenceReason: null, failureCode: null },
         ],
-      }),
-    );
-
-    const statuses = byClass(root, "agent-evidence-analysis-status");
-    expect(statuses).toHaveLength(1);
-    expect(statuses[0].textContent).toBe(
-      "이번 대화에서는 이해 근거로 인정된 내용이 없어요. 고른 이유나 내 생각을 내 말로 적으면 근거로 남아요.",
-    );
-    // Must not present a "근거 N건이 인정되었어요" success claim, nor internal terms.
-    expect(statuses[0].textContent).not.toContain("인정되었어요");
-    expect(statuses[0].textContent).not.toMatch(/Episode|USER_DECISION|BUILDER_CHAT_TURN/);
-    // The Analyst memo is still reachable, folded.
-    const memo = byClass(root, "agent-evidence-analysis-memo");
-    expect(memo).toHaveLength(1);
-    expect(byClass(root, "agent-evidence-analysis-memo-summary")[0].textContent).toBe("자세한 분석 메모");
-    expect(byClass(root, "agent-evidence-analysis-memo-text")[0].textContent).toContain("USER_DECISION");
-    restore();
+      }));
+      expect(text(root)).not.toMatch(/Episode|USER_DECISION|BUILDER_CHAT_TURN|인정되었어요/);
+      expect(byClass(root, "agent-evidence-analysis-memo")).toHaveLength(0);
+      expect(byClass(root, "agent-evidence-analysis-job")).toHaveLength(0);
+      const status = byClass(root, "agent-evidence-status")[0];
+      expect(status.hidden).toBe(false);
+      expect(status.textContent).toContain("정리하고 있어요");
+      expect(byClass(root, "agent-evidence-empty")[0].textContent).toContain("아직 기록이 없어요");
+    } finally { restore(); }
   });
 
-  it("ANALYZED with acceptedCount 0 and no memo shows only the plain sentence", () => {
-    const { root, view, restore } = mount();
-    view.renderEvidence(
-      evidenceView({
-        analysis: [
-          {
-            jobId: "job-1",
-            episodeId: "ep-1",
-            status: "SUCCEEDED",
-            displayState: "ANALYZED",
-            acceptedCount: 0,
-            noEvidenceReason: null,
-            failureCode: null,
-          },
-        ],
-      }),
-    );
-    expect(byClass(root, "agent-evidence-analysis-status")[0].textContent).toContain("이해 근거로 인정된 내용이 없어요");
-    expect(byClass(root, "agent-evidence-analysis-memo")).toHaveLength(0);
-    restore();
+  it("offers one retry per failed analysis, keeping the code out of the sentence", () => {
+    const retries: string[] = [];
+    const { root, view, restore } = mount({ ...noopCallbacks(), onRetryAnalysis: (jobId) => retries.push(jobId) });
+    try {
+      view.renderEvidence(evidenceView({ analysis: [
+        { jobId: "job-9", episodeId: "ep-9", status: "FAILED", displayState: "ANALYSIS_FAILED", acceptedCount: null, noEvidenceReason: null, failureCode: "ANALYST_TIMEOUT" },
+      ] }));
+      expect(byClass(root, "agent-evidence-analysis-status")[0].textContent).toBe("정리하지 못한 대화가 있어요.");
+      expect(byClass(root, "agent-evidence-status")[0].hidden).toBe(true);
+      const retry = byClass(root, "agent-evidence-retry")[0];
+      expect(retry.textContent).toBe("다시 정리하기");
+      retry.click();
+      expect(retries).toEqual(["job-9"]);
+    } finally { restore(); }
   });
 });
 
@@ -729,7 +745,8 @@ describe("Kiro-native Next Move card", () => {
 
   it("shows generating, then three suggestions without any start button, and replaces the final upgrade", () => {
     let lists = 0;
-    const { root, view, restore } = mount({ ...noopCallbacks(), onListFinalUpgrade: () => lists++ });
+    const copies: unknown[] = [];
+    const { root, view, restore } = mount({ ...noopCallbacks(), onListFinalUpgrade: () => lists++, onCopyChatText: (r) => copies.push(r) });
     try {
       const section = () => byClass(root, "agent-next-move")[0];
       view.render(kiro({ status: "NONE", moves: [], retrying: false }, "IDLE"));
@@ -756,9 +773,18 @@ describe("Kiro-native Next Move card", () => {
       expect(byClass(root, "agent-next-move-size").map((n) => n.textContent)).toEqual(["작음", "작음", "보통"]);
       expect(byClass(root, "agent-next-move-status")[0].hidden).toBe(true);
       expect(byClass(root, "agent-next-move-note")[0].hidden).toBe(false);
-      expect(byClass(root, "agent-next-move-note")[0].textContent).toContain("Kiro 채팅에 번호");
+      expect(byClass(root, "agent-next-move-note")[0].textContent).toContain("지금 안 해도 돼요");
       expect(byClass(root, "agent-next-move-retry")[0].hidden).toBe(true);
       for (const item of items) expect(byClass(item, "agent-next-move-number")).toHaveLength(1);
+      // K23: each suggestion shows what to send in Kiro chat with a copy button; nothing starts it here.
+      expect(byClass(byClass(root, "agent-next-move-list")[0], "agent-send-text").map((n) => n.textContent))
+        .toEqual(["다음 한 걸음 1번 해 보자", "다음 한 걸음 2번 해 보자", "다음 한 걸음 3번 해 보자"]);
+      for (const item of items)
+        expect(item.queryAll((e) => e.tagName === "BUTTON").map((b) => b.className)).toEqual(["agent-copy"]);
+      const copy = byClass(items[1], "agent-copy")[0];
+      copy.click();
+      expect(copies).toEqual([{ what: "NEXT_MOVE", number: 2 }]);
+      expect(copy.textContent).toBe("복사했어요");
       // Same suggestions on the next hydrate keep the same nodes.
       view.render(kiro({ status: "READY", moves, retrying: false }));
       expect(byClass(root, "agent-next-move-item")[0]).toBe(items[0]);
@@ -891,11 +917,13 @@ describe("Kiro-native Builder tab (K17)", () => {
       expect(rows.map((row) => row.dataset.decisionId)).toEqual(["decision_waiting", "decision_chosen"]);
       expect(rows.map((row) => row.dataset.state)).toEqual(["waiting", "chosen"]);
       expect(byClass(root, "agent-decision-compact-state").map((el) => el.textContent))
-        .toEqual(["Kiro 채팅에서 답을 기다려요", "하이브리드"]);
+        .toEqual(["답을 기다려요", "하이브리드"]);
       expect(byClass(root, "agent-decision-choose")).toHaveLength(0);
-      expect(byClass(root, "agent-builder-next")[0].textContent).toBe("Kiro 채팅이 답을 기다려요: 잠금 방식은?");
-      expect(byClass(root, "agent-builder-next")[0].dataset.waiting).toBe("true");
-      expect(root.queryAll((e) => e.textContent === "이번 작업의 결정")).toHaveLength(1);
+      // K23: the card names the question Kiro chat waits on.
+      expect(byClass(root, "agent-now")[0].dataset.state).toBe("WAITING");
+      expect(byClass(root, "agent-now-lead")[0].textContent).toBe("Kiro 채팅이 답을 기다려요.");
+      expect(byClass(root, "agent-now-question")[0].textContent).toBe("잠금 방식은?");
+      expect(root.queryAll((e) => e.textContent === "이번 작업에서 고른 것")).toHaveLength(1);
     } finally {
       restore();
     }
@@ -922,5 +950,153 @@ describe("Kiro-native Builder tab (K17)", () => {
     } finally {
       restore();
     }
+  });
+});
+
+describe("Kiro-native '지금 할 일', steps and tabs (K23)", () => {
+  type HostChat = NonNullable<AgentViewModel["hostChat"]>;
+  const kiro = (builderOverrides: Partial<BuilderTurnViewModel>, hostChat: Partial<HostChat> = {}, extra: Partial<AgentViewModel> = {}): AgentViewModel => ({
+    ...vmWithBuilder({ phase: "IDLE", taskId: "task_synthetic", taskTitle: "편의점 상품 입출고 API", taskSequence: 1, ...builderOverrides }),
+    hostChat: { opening: false, ...hostChat },
+    ...extra,
+  });
+  const card = (root: FakeElement) => ({
+    state: byClass(root, "agent-now")[0].dataset.state,
+    lead: byClass(root, "agent-now-lead")[0].textContent,
+    detail: byClass(root, "agent-now-detail")[0].hidden ? null : byClass(root, "agent-now-detail")[0].textContent,
+    send: byClass(root, "agent-now")[0].queryAll((e) => e.className === "agent-send")[0].hidden ? null
+      : byClass(byClass(root, "agent-now")[0], "agent-send-text")[0].textContent,
+    action: byClass(root, "agent-now-action")[0].hidden ? null : byClass(root, "agent-now-action")[0].textContent,
+    note: !byClass(root, "agent-now-note")[0].hidden,
+  });
+
+  it("asks for the first message only once this window's chat reaches the Project, and copies it on request", () => {
+    const copies: unknown[] = [];
+    const { root, view, restore } = mount({ ...noopCallbacks(), onCopyChatText: (r) => copies.push(r) });
+    try {
+      view.render(kiro({ readyToStart: true }, { window: "READY" }));
+      expect(card(root)).toEqual({ state: "SEND_START", lead: "오른쪽 Kiro 채팅에 이렇게 보내 보세요.",
+        detail: "짧게 ‘ㄱㄱ’만 보내도 시작해요.", send: "시작해 줘", action: null, note: false });
+      expect(byClass(root, "agent-now-task-title")[0].textContent).toBe("편의점 상품 입출고 API");
+      byClass(byClass(root, "agent-now")[0], "agent-copy")[0].click();
+      expect(copies).toEqual([{ what: "START" }]);
+      // A connected session without Vibe Helper hooks: open a new one first. The notice itself stays off.
+      view.render(kiro({ readyToStart: true }, { window: "READY" },
+        { notice: { kind: "info", code: "KIRO_CHAT_REGISTERED", message: "이 폴더를 Project로 연결했어요." } }));
+      expect(card(root).detail).toContain("+ 로 새 세션을 연 뒤");
+      expect(byClass(root, "agent-notice")[0].hidden).toBe(true);
+      // Errors still show.
+      view.render(kiro({ readyToStart: true }, { window: "READY" }, { notice: { kind: "error", code: "KIRO_BIND_FAILED", message: "연결하지 못했어요" } }));
+      expect(byClass(root, "agent-notice")[0].hidden).toBe(false);
+    } finally { restore(); }
+  });
+
+  it("says what the window needs before chat can start: a new window, trust, or a reload", () => {
+    const { root, view, restore } = mount();
+    try {
+      view.render(kiro({ readyToStart: true }, { window: "NOT_BOUND", openedNewWindow: true }));
+      expect(card(root)).toMatchObject({ state: "NEW_WINDOW", action: null, send: null });
+      expect(card(root).detail).toContain("10~30초");
+      view.render(kiro({ readyToStart: true }, { window: "UNTRUSTED" }));
+      expect(card(root)).toMatchObject({ state: "UNTRUSTED", action: null, lead: "이 폴더를 신뢰하면 Kiro 채팅에 연결돼요." });
+      view.render(kiro({ readyToStart: true }, { window: "RELOAD" }));
+      expect(card(root)).toMatchObject({ state: "RELOAD", action: null });
+      expect(card(root).detail).toContain("‘다시 로드’");
+      // An older host cannot tell: connect, with the waiting time said first.
+      view.render(kiro({ readyToStart: true }));
+      expect(card(root)).toMatchObject({ state: "CONNECT", action: "Kiro 채팅에서 열기", note: true });
+    } finally { restore(); }
+  });
+
+  it("never offers to reconnect a window whose chat already reaches the Project", () => {
+    const { root, view, restore } = mount();
+    try {
+      view.render(kiro({}, { window: "READY" }));
+      expect(card(root)).toMatchObject({ state: "BUILDING", action: null, send: null });
+      view.render(kiro({}, { window: "NOT_BOUND" }));
+      expect(card(root)).toMatchObject({ state: "ELSEWHERE", action: "Kiro 채팅에서 열기", note: true });
+    } finally { restore(); }
+  });
+
+  it("asks for a number and the learner's own reason, never offering a reason to copy", () => {
+    const { root, view, restore } = mount();
+    try {
+      const waiting = { ...pendingDecision(), taskId: "task_synthetic", question: "입출고 기록을 어떻게 저장할까요?" };
+      view.render(kiro({ phase: "DECISION_REQUIRED" }, { window: "READY" }, { decisions: [waiting] }));
+      expect(card(root)).toMatchObject({ state: "WAITING", send: null, action: null });
+      expect(byClass(root, "agent-now-question")[0].textContent).toBe("입출고 기록을 어떻게 저장할까요?");
+      expect(card(root).detail).toContain("내 말로");
+      // The only copy in the card is the start line, hidden here.
+      expect(byClass(byClass(root, "agent-now")[0], "agent-copy")).toHaveLength(1);
+    } finally { restore(); }
+  });
+
+  it("points to the result in chat when done, with no launch button that Core would refuse", () => {
+    const { root, view, restore } = mount();
+    try {
+      view.render(kiro({ phase: "TASK_COMPLETED" }, { window: "READY" }));
+      expect(card(root)).toMatchObject({ state: "DONE", lead: "다 만들었어요. 결과를 확인해 보세요.", action: null });
+      expect(card(root).detail).toContain("완료 메시지");
+      expect(byClass(root, "agent-result-launch")[0].hidden).toBe(true);
+    } finally { restore(); }
+  });
+
+  it("marks the current step and folds the steps once the first Task is done, keeping the learner's choice", () => {
+    const { root, view, restore } = mount();
+    try {
+      const steps = byClass(root, "agent-steps")[0] as FakeElement & { open: boolean };
+      const marks = () => byClass(root, "agent-step").map((e) => e.dataset.step);
+      view.render(kiro({ readyToStart: true }, { window: "READY" }));
+      expect(steps.hidden).toBe(false);
+      expect(steps.open).toBe(true);
+      expect(marks()).toEqual(["done", "now", "next", "next"]);
+      expect(byClass(root, "agent-steps-now")[0].textContent).toBe("지금: 채팅에 ‘시작해 줘’ 보내기");
+      view.render(kiro({ phase: "DECISION_REQUIRED" }, { window: "READY" }));
+      expect(marks()).toEqual(["done", "done", "now", "next"]);
+      view.render(kiro({ phase: "TASK_COMPLETED" }, { window: "READY" }));
+      expect(steps.open).toBe(false);
+      expect(marks()).toEqual(["done", "done", "done", "now"]);
+      // The learner opens it again: it stays open for this Task.
+      steps.open = true;
+      steps.dispatchEvent("toggle");
+      view.render(kiro({ phase: "TASK_COMPLETED" }, { window: "READY" }));
+      expect(steps.open).toBe(true);
+      // A follow-up Task starts folded.
+      view.render(kiro({ taskId: "task_follow_up", taskSequence: 2 }, { window: "READY" }));
+      expect(steps.open).toBe(false);
+      // No steps without a Task, or on other hosts.
+      view.render({ ...initialAgentViewModel(), hostChat: { opening: false } });
+      expect(steps.hidden).toBe(true);
+      view.render(vmWithBuilder({ taskId: "task_synthetic" }));
+      expect(steps.hidden).toBe(true);
+    } finally { restore(); }
+  });
+
+  it("shows two tabs, 진행 and 학습 기록, and loads the record when its tab opens", () => {
+    let reads = 0;
+    const { root, view, restore } = mount({ ...noopCallbacks(), onReadEvidence: () => reads++ });
+    try {
+      const tabs = byClass(root, "agent-tab");
+      // Even if the Helper tab was open on another host, Kiro-native hides it.
+      tabs[1].click();
+      view.render(kiro({}, { window: "READY" }));
+      expect(tabs.filter((t) => !t.hidden).map((t) => byClass(t, "agent-tab-label")[0].textContent)).toEqual(["진행", "학습 기록"]);
+      expect(byClass(root, "agent-surface")[0].dataset.tab).toBe("builder");
+      expect(byClass(root, "agent-chat-hint")[0].hidden).toBe(false);
+      expect(reads).toBe(0);
+      tabs[2].click();
+      expect(reads).toBe(1);
+      tabs[2].click();
+      expect(reads).toBe(1);
+      // New learning records while the tab is open reload it once.
+      view.render(kiro({}, { window: "READY" }, { taskEvidence: [{ evidenceId: "e1", conceptName: "c", state: "EXPLAINED", excerpt: "x" }] }));
+      expect(reads).toBe(2);
+      view.render(kiro({}, { window: "READY" }, { taskEvidence: [{ evidenceId: "e1", conceptName: "c", state: "EXPLAINED", excerpt: "x" }] }));
+      expect(reads).toBe(2);
+      // Other hosts keep three tabs.
+      view.render(vmWithBuilder({ taskId: "task_synthetic" }));
+      expect(tabs.filter((t) => !t.hidden)).toHaveLength(3);
+      expect(byClass(tabs[0], "agent-tab-label")[0].textContent).toBe("빌더");
+    } finally { restore(); }
   });
 });
