@@ -1782,11 +1782,22 @@ export class AgentSurfaceView {
     const status = this.el("div", "agent-evidence-analysis-status");
 
     if (job.displayState === "ANALYZED" && job.acceptedCount === 0) {
-      // No success indication — surface why nothing was accepted (Req 10.4).
-      status.textContent = job.noEvidenceReason
-        ? `인정된 근거 없음: ${job.noEvidenceReason}`
-        : "인정된 근거가 없어요.";
+      // No success indication (Req 10.4). The reason is the Analyst's own memo
+      // and quotes internal terms (Episode, USER_DECISION, BUILDER_CHAT_TURN),
+      // so the learner reads a plain sentence and the memo stays one click away
+      // (Windows 0.2.12 check, 2026-10-17).
+      status.textContent = "이번 대화에서는 이해 근거로 인정된 내용이 없어요. 고른 이유나 내 생각을 내 말로 적으면 근거로 남아요.";
       block.appendChild(status);
+      if (job.noEvidenceReason) {
+        const memo = this.el("details", "agent-evidence-analysis-memo");
+        const summary = this.el("summary", "agent-evidence-analysis-memo-summary");
+        summary.textContent = "자세한 분석 메모";
+        const reason = this.el("p", "agent-evidence-analysis-memo-text");
+        reason.textContent = job.noEvidenceReason;
+        memo.appendChild(summary);
+        memo.appendChild(reason);
+        block.appendChild(memo);
+      }
     } else if (job.displayState === "ANALYZED") {
       status.textContent =
         job.acceptedCount !== null
