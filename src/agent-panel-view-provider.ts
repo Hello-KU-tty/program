@@ -319,6 +319,11 @@ export function wireWebviewMessaging(
         // Kiro-native host (finals): the Builder runs in the learner's Kiro chat.
         ...(typeof host.openProjectInKiro === "function"
           ? { openInKiro: (projectId: string) => host.openProjectInKiro(projectId) } : {}),
+        // K23: an older host cannot tell; the panel then keeps its generic guidance.
+        ...(typeof host.kiroWindow === "function" ? { kiroWindow: (projectId: string) => host.kiroWindow!(projectId) } : {}),
+        writeClipboard: async (text) => {
+          await vscode.env.clipboard.writeText(text);
+        },
       });
       agentDispatcher = new AgentDispatcher(agentController, (m) =>
         webview.postMessage(m),
@@ -484,7 +489,7 @@ export function buildWebviewHtml(
     http-equiv="Content-Security-Policy"
     content="default-src 'none'; img-src ${cspSource} https: data:; style-src ${cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Builder &amp; Helper Agent Panel</title>
+  <title>Vibe Helper</title>
   <style>
     :root {
       /* 8px-based spacing scale */
@@ -1935,6 +1940,8 @@ export function buildWebviewHtml(
       flex-direction: column;
       gap: var(--sp-3);
       padding: var(--sp-2) var(--sp-3) var(--sp-4);
+      /* K23: wrap Korean between words; a long token still breaks (overflow-wrap). */
+      word-break: keep-all;
     }
     .agent-surface [hidden] { display: none !important; }
 
@@ -1988,15 +1995,21 @@ export function buildWebviewHtml(
     /* Kiro-native (K17): building and choosing happen in Kiro chat, so the panel
        shows the state first, then this Task's learning records and Next Move,
        then the compact list of choices. */
+    /* K23: what to do now, the next step after a finished Task, how a Task goes,
+       this Task's choices and learning records, then where questions go. */
     .agent-surface[data-host="kiro"] .agent-builder { order: 2; }
-    .agent-surface[data-host="kiro"] .agent-task-evidence { order: 3; }
-    .agent-surface[data-host="kiro"] .agent-next-move { order: 4; }
+    .agent-surface[data-host="kiro"] .agent-next-move { order: 3; }
+    .agent-surface[data-host="kiro"] .agent-steps { order: 4; }
     .agent-surface[data-host="kiro"] .agent-decisions { order: 5; }
+    .agent-surface[data-host="kiro"] .agent-task-evidence { order: 6; }
+    .agent-surface[data-host="kiro"] .agent-chat-hint { order: 7; }
 
     .agent-surface:not([data-tab="builder"]) .agent-builder,
     .agent-surface:not([data-tab="builder"]) .agent-final-upgrade,
     .agent-surface:not([data-tab="builder"]) .agent-next-move,
     .agent-surface:not([data-tab="builder"]) .agent-task-evidence,
+    .agent-surface:not([data-tab="builder"]) .agent-steps,
+    .agent-surface:not([data-tab="builder"]) .agent-chat-hint,
     .agent-surface:not([data-tab="helper"]) .agent-helper,
     .agent-surface:not([data-tab="record"]) .agent-evidence,
     .agent-surface[data-tab="record"] .agent-decisions,
@@ -2058,6 +2071,13 @@ export function buildWebviewHtml(
     .agent-builder {
       --accent: var(--vscode-charts-blue, #4f8cff);
       border-top: 3px solid var(--accent);
+    }
+    /* K23: Kiro-native takes Kiro's own accent (its primary button colour). */
+    .agent-surface[data-host="kiro"] .agent-builder,
+    .agent-surface[data-host="kiro"] .agent-steps,
+    .agent-surface[data-host="kiro"] .agent-next-move {
+      --accent: var(--vscode-button-background, var(--vscode-charts-purple, #a78bfa));
+      --accent-contrast: var(--vscode-button-foreground, #ffffff);
     }
     .agent-helper {
       --accent: var(--vscode-charts-purple, #a78bfa);
@@ -2554,9 +2574,6 @@ export function buildWebviewHtml(
       color: var(--vscode-descriptionForeground);
     }
     .agent-evidence-retry { align-self: flex-start; }
-    .agent-evidence-analysis-memo { font-size: 0.8em; color: var(--vscode-descriptionForeground); }
-    .agent-evidence-analysis-memo-summary { cursor: pointer; }
-    .agent-evidence-analysis-memo-text { margin: var(--sp-1) 0 0; overflow-wrap: anywhere; }
     .agent-final-upgrade-list {
       display: flex;
       flex-direction: column;
@@ -2564,13 +2581,343 @@ export function buildWebviewHtml(
     }
     .agent-final-upgrade-list:empty { display: none; }
 
-    /* ---- Kiro-native Builder tab (K17) ---- */
-    .agent-builder-next[data-waiting="true"] {
+    /* ---- Learning record tab (K23): the learner's own words per concept ---- */
+    .agent-evidence { --accent: var(--vscode-charts-green, #3fb950); }
+    .agent-evidence-intro,
+    .agent-evidence-status,
+    .agent-evidence-foot,
+    .agent-evidence .agent-evidence-empty {
+      margin: 0;
+      font-size: 0.85em;
+      line-height: 1.45;
+      color: var(--vscode-descriptionForeground);
+    }
+    .agent-evidence-status:not([hidden]) { animation: bhap-pulse 1.4s ease-in-out infinite; }
+    @media (prefers-reduced-motion: reduce) {
+      .agent-evidence-status:not([hidden]) { animation: none; }
+    }
+    .agent-evidence-foot {
+      font-size: 0.8em;
+      padding-top: var(--sp-1);
+      border-top: 1px solid var(--vscode-panel-border, color-mix(in srgb, var(--vscode-foreground) 12%, transparent));
+    }
+    .agent-evidence-concept-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: var(--sp-1) var(--sp-2);
+    }
+    .agent-evidence .agent-evidence-concept {
+      gap: var(--sp-1);
+      border: none;
+      border-radius: 0;
+      padding: var(--sp-3) 0 0;
+      border-top: 1px solid color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
+    }
+    .agent-evidence .agent-evidence-concept-state {
+      font-size: 0.78em;
       font-weight: 600;
+      white-space: nowrap;
+      border-radius: var(--radius-pill);
+      padding: 1px var(--sp-2);
+      color: var(--vscode-descriptionForeground);
+      background: color-mix(in srgb, var(--vscode-foreground) 8%, transparent);
+    }
+    .agent-evidence-concept[data-display-state^="USER_EVIDENCE_"] .agent-evidence-concept-state {
+      color: var(--accent);
+      background: color-mix(in srgb, var(--accent) 16%, transparent);
+    }
+    .agent-evidence-quote {
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      border-left: 3px solid var(--accent);
+      padding: 2px 0 2px var(--sp-2);
+    }
+    .agent-evidence-quote-text {
+      font-size: 0.92em;
+      line-height: 1.45;
+      overflow-wrap: anywhere;
+    }
+    .agent-evidence-code {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-1);
+      padding-top: var(--sp-3);
+      border-top: 1px solid color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
+    }
+    .agent-evidence-code-label {
+      margin: 0;
+      font-weight: 600;
+    }
+    .agent-evidence-code-note { margin: 0; font-size: 0.8em; color: var(--vscode-descriptionForeground); }
+    .agent-evidence-chips {
+      list-style: none;
+      margin: var(--sp-1) 0 0;
+      padding: 0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--sp-1);
+    }
+    .agent-evidence-chip {
+      font-size: 0.82em;
+      border-radius: var(--radius-pill);
+      padding: 1px var(--sp-2);
       color: var(--vscode-foreground);
+      background: color-mix(in srgb, var(--vscode-foreground) 8%, transparent);
+      overflow-wrap: anywhere;
+    }
+    .agent-evidence-quote-kind,
+    .agent-evidence-concept-none,
+    .agent-evidence-concept-issues {
+      margin: 0;
+      font-size: 0.8em;
+      color: var(--vscode-descriptionForeground);
+    }
+
+    /* ---- Kiro-native "지금 할 일" (K23) ---- */
+    .agent-now {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-2);
+    }
+    .agent-now-task {
+      display: flex;
+      align-items: baseline;
+      gap: var(--sp-2);
+      font-size: 0.82em;
+      color: var(--vscode-descriptionForeground);
+      min-width: 0;
+    }
+    .agent-now-task-label {
+      flex: none;
+      font-weight: 600;
+    }
+    .agent-now-task-title {
+      min-width: 0;
+      color: var(--vscode-foreground);
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow-wrap: anywhere;
+    }
+    .agent-now-label {
+      margin: var(--sp-1) 0 0;
+      font-size: 0.72em;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      color: var(--accent);
+    }
+    .agent-now-lead {
+      margin: 0;
+      font-size: 1.05em;
+      font-weight: 700;
+      line-height: 1.4;
+      overflow-wrap: anywhere;
+    }
+    .agent-now-question {
+      margin: 0;
+      font-weight: 600;
+      line-height: 1.45;
+      overflow-wrap: anywhere;
       border-left: 3px solid var(--vscode-charts-orange, #f5a524);
+      background: color-mix(in srgb, var(--vscode-charts-orange, #f5a524) 10%, transparent);
+      border-radius: 0 var(--radius-md) var(--radius-md) 0;
+      padding: var(--sp-2) var(--sp-3);
+    }
+    .agent-now-detail,
+    .agent-now-note {
+      margin: 0;
+      font-size: 0.88em;
+      line-height: 1.5;
+      color: var(--vscode-descriptionForeground);
+      overflow-wrap: anywhere;
+    }
+    .agent-now-note {
+      font-size: 0.82em;
+      border-left: 2px solid color-mix(in srgb, var(--vscode-descriptionForeground) 55%, transparent);
       padding-left: var(--sp-2);
     }
+    .agent-surface .agent-now-action {
+      align-self: flex-start;
+      border: none;
+      border-radius: var(--radius-md);
+      padding: var(--sp-2) var(--sp-4);
+      font-weight: 600;
+      color: var(--accent-contrast);
+      background: var(--accent);
+      cursor: pointer;
+    }
+    .agent-surface .agent-now-action:hover:not(:disabled) {
+      background: var(--vscode-button-hoverBackground, var(--accent));
+    }
+    .agent-surface .agent-now-action:disabled { opacity: 0.6; cursor: default; }
+    .agent-surface .agent-now-action:focus-visible {
+      outline: 2px solid var(--vscode-focusBorder, var(--accent));
+      outline-offset: 2px;
+    }
+
+    /* Words to send in Kiro chat, with a copy button (K23). */
+    .agent-send {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-2);
+      min-width: 0;
+      border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+      border-radius: var(--radius-md);
+      background: var(--vscode-input-background, color-mix(in srgb, var(--vscode-foreground) 6%, transparent));
+      padding: var(--sp-1) var(--sp-1) var(--sp-1) var(--sp-3);
+    }
+    .agent-send-text {
+      flex: 1;
+      min-width: 0;
+      font-weight: 600;
+      font-size: 0.95em;
+      line-height: 1.4;
+      color: var(--vscode-input-foreground, var(--vscode-foreground));
+      overflow-wrap: anywhere;
+      user-select: all;
+    }
+    .agent-surface .agent-copy {
+      flex: none;
+      border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
+      border-radius: var(--radius-sm);
+      padding: 2px var(--sp-2);
+      font-size: 0.85em;
+      font-weight: 600;
+      color: var(--accent);
+      background: transparent;
+      cursor: pointer;
+    }
+    .agent-surface .agent-copy:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+    .agent-surface .agent-copy[data-copied="true"] {
+      color: var(--vscode-testing-iconPassed, #3fb950);
+      border-color: color-mix(in srgb, var(--vscode-testing-iconPassed, #3fb950) 50%, transparent);
+    }
+    .agent-surface .agent-copy:focus-visible {
+      outline: 2px solid var(--vscode-focusBorder, var(--accent));
+      outline-offset: 1px;
+    }
+    .agent-next-move .agent-send {
+      margin-top: var(--sp-1);
+      border-color: color-mix(in srgb, var(--accent) 28%, transparent);
+    }
+    .agent-next-move .agent-send-text { font-weight: 500; }
+    /* Kiro's theme draws no panel borders; keep each suggestion visibly apart. */
+    .agent-surface[data-host="kiro"] .agent-next-move-item,
+    .agent-surface[data-host="kiro"] .agent-decision-compact:not([data-state="waiting"]) {
+      border-color: color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
+    }
+    .agent-next-move-lead {
+      margin: calc(-1 * var(--sp-1)) 0 0;
+      font-size: 0.88em;
+      color: var(--vscode-descriptionForeground);
+    }
+
+    /* How a Task goes (K23): the order of one Task, not a learning measure. */
+    .agent-steps {
+      border: 1px solid var(--vscode-panel-border, color-mix(in srgb, var(--vscode-foreground) 14%, transparent));
+      border-radius: var(--radius-lg);
+      background: color-mix(in srgb, var(--vscode-foreground) 4%, var(--vscode-editor-background));
+      padding: var(--sp-2) var(--sp-3);
+    }
+    .agent-steps-summary {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 2px var(--sp-2);
+      cursor: pointer;
+      font-size: 0.9em;
+      font-weight: 600;
+      list-style: none;
+    }
+    .agent-steps-summary::-webkit-details-marker { display: none; }
+    .agent-steps-summary::before {
+      content: "▸";
+      display: inline-block;
+      width: 0.9em;
+      color: var(--vscode-descriptionForeground);
+      transition: transform var(--transition);
+    }
+    .agent-steps[open] > .agent-steps-summary::before { transform: rotate(90deg); }
+    .agent-steps-now {
+      font-weight: 400;
+      font-size: 0.92em;
+      color: var(--vscode-descriptionForeground);
+      overflow-wrap: anywhere;
+    }
+    .agent-steps[open] .agent-steps-now { display: none; }
+    .agent-steps-list {
+      list-style: none;
+      margin: var(--sp-2) 0 var(--sp-1);
+      padding: 0;
+      counter-reset: agent-step;
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-2);
+    }
+    .agent-step {
+      counter-increment: agent-step;
+      display: flex;
+      align-items: center;
+      gap: var(--sp-2);
+      font-size: 0.9em;
+      line-height: 1.35;
+      color: var(--vscode-descriptionForeground);
+    }
+    .agent-step::before {
+      content: counter(agent-step);
+      flex: none;
+      width: 1.35rem;
+      height: 1.35rem;
+      border-radius: var(--radius-pill);
+      font-size: 0.78em;
+      font-weight: 700;
+      line-height: 1.35rem;
+      text-align: center;
+      border: 1px solid color-mix(in srgb, var(--vscode-foreground) 24%, transparent);
+    }
+    .agent-step[data-step="done"] { opacity: 0.7; }
+    .agent-step[data-step="now"] {
+      color: var(--vscode-foreground);
+      font-weight: 700;
+    }
+    .agent-step[data-step="now"]::before {
+      color: var(--accent-contrast);
+      background: var(--accent);
+      border-color: var(--accent);
+    }
+    .agent-step[data-step="now"]::after {
+      content: "지금";
+      font-size: 0.75em;
+      font-weight: 700;
+      color: var(--accent);
+      background: color-mix(in srgb, var(--accent) 16%, transparent);
+      border-radius: var(--radius-pill);
+      padding: 0 6px;
+    }
+
+    /* Where questions go in Kiro-native (K23). */
+    .agent-chat-hint {
+      margin: 0;
+      padding: 0 var(--sp-1);
+      font-size: 0.82em;
+      line-height: 1.5;
+      color: var(--vscode-descriptionForeground);
+    }
+    .agent-chat-hint-command {
+      font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+      font-size: 0.95em;
+      color: var(--vscode-textPreformat-foreground, var(--vscode-foreground));
+      background: var(--vscode-textCodeBlock-background, color-mix(in srgb, var(--vscode-foreground) 10%, transparent));
+      border-radius: 4px;
+      padding: 0 4px;
+    }
+
+    /* ---- Kiro-native Builder tab (K17) ---- */
     .agent-task-evidence { --accent: var(--vscode-charts-green, #3fb950); }
     .agent-task-evidence[hidden] { display: none; }
     .agent-task-evidence-list {

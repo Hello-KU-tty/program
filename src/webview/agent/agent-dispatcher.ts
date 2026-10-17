@@ -198,6 +198,12 @@ export class AgentDispatcher {
         await this.controller.retryNextMove();
         return;
       }
+      case "chat/copy": {
+        await this.controller.copyChatText(
+          action.what === "START" ? { what: "START" } : { what: "NEXT_MOVE", number: action.number },
+        );
+        return;
+      }
       default: {
         // Exhaustiveness guard: a new AgentAction kind surfaces here at compile
         // time so the dispatcher stays in sync with the protocol.

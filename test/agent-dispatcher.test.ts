@@ -132,6 +132,10 @@ class StubController {
   async retryNextMove(): Promise<void> {
     this.record("retryNextMove");
   }
+
+  async copyChatText(request: unknown): Promise<void> {
+    this.record("copyChatText", request);
+  }
 }
 
 /**
@@ -339,6 +343,15 @@ describe("AgentDispatcher — each valid action reaches its controller method (R
   it("nextMove/retry -> retryNextMove()", async () => {
     await dispatcher.handle({ kind: "nextMove/retry", nextMoveJobId: "forged" });
     expect(controller.calls).toEqual([{ method: "retryNextMove", args: [] }]);
+  });
+
+  it("chat/copy -> copyChatText({ what, number }) without any webview text (K23)", async () => {
+    await dispatcher.handle({ kind: "chat/copy", what: "NEXT_MOVE", number: 3, text: "forged" });
+    await dispatcher.handle({ kind: "chat/copy", what: "START" });
+    expect(controller.calls).toEqual([
+      { method: "copyChatText", args: [{ what: "NEXT_MOVE", number: 3 }] },
+      { method: "copyChatText", args: [{ what: "START" }] },
+    ]);
   });
 
   it("finalUpgrade/prepare -> prepareFinalUpgrade({ ... })", async () => {

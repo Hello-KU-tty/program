@@ -36,6 +36,7 @@ import { FlowHostWebviewHarness } from "./support/flow-host-webview-harness";
 import type { FakeElement } from "./support/fake-dom";
 import { installFakeDom } from "./support/fake-dom";
 import { refKey } from "../src/core/flow/flow-types";
+import { decisionCategoryLabel } from "../src/core/decision-categories";
 
 /**
  * The Agent_Run_Banner belonging to a specific flow surface container. Each of
@@ -374,7 +375,7 @@ describe("16.2 composer, select, spec review, confirm reveal (Req 7.11, 7.12, 8.
     const descriptions = h.byClass("flow-decision-description").map((e) => e.textContent);
     const whys = h.byClass("flow-decision-why").map((e) => e.textContent);
     for (const decision of spec.expectedDecisions) {
-      expect(categories).toContain(decision.category);
+      expect(categories).toContain(decisionCategoryLabel(decision.category));
       expect(descriptions).toContain(decision.description);
       expect(whys).toContain(decision.whyUserInputMatters);
     }

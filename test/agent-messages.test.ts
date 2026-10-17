@@ -582,6 +582,26 @@ describe("parseAgentAction - nextMove/retry (Kiro-native Next Move)", () => {
   });
 });
 
+describe("parseAgentAction - chat/copy (K23)", () => {
+  it("accepts only what to copy, never the text itself", () => {
+    expect(parseAgentAction({ kind: "chat/copy", what: "START", text: "rm -rf /" })).toEqual<AgentAction>({ kind: "chat/copy", what: "START" });
+    expect(parseAgentAction({ kind: "chat/copy", what: "NEXT_MOVE", number: 2, text: "x" }))
+      .toEqual<AgentAction>({ kind: "chat/copy", what: "NEXT_MOVE", number: 2 });
+  });
+
+  it("rejects unknown kinds of copy and bad numbers", () => {
+    for (const raw of [
+      { kind: "chat/copy" },
+      { kind: "chat/copy", what: "REASON" },
+      { kind: "chat/copy", what: "NEXT_MOVE" },
+      { kind: "chat/copy", what: "NEXT_MOVE", number: 0 },
+      { kind: "chat/copy", what: "NEXT_MOVE", number: 1.5 },
+      { kind: "chat/copy", what: "NEXT_MOVE", number: "2" },
+      { kind: "chat/copy", what: "NEXT_MOVE", number: 10 },
+    ]) expect(parseAgentAction(raw)).toBeNull();
+  });
+});
+
 describe("parseAgentAction - finalUpgrade/prepare (task 1.3)", () => {
   it("accepts a well-formed payload verbatim", () => {
     expect(

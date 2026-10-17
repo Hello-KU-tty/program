@@ -291,6 +291,8 @@ function buildHarness(options: {
   worker?: FakeNativeWorker;
   seedProjectId?: boolean;
   openInKiro?: AgentControllerDeps["openInKiro"];
+  kiroWindow?: AgentControllerDeps["kiroWindow"];
+  writeClipboard?: AgentControllerDeps["writeClipboard"];
   clock?: FakeClock;
 } = {}) {
   const client = new FakeCoreClient(options.client ?? {});
@@ -325,6 +327,8 @@ function buildHarness(options: {
       openedUrls.push(u);
     },
     ...(options.openInKiro ? { openInKiro: options.openInKiro } : {}),
+    ...(options.kiroWindow ? { kiroWindow: options.kiroWindow } : {}),
+    ...(options.writeClipboard ? { writeClipboard: options.writeClipboard } : {}),
     ...(options.clock ? { clock: options.clock } : {}),
   });
 
@@ -967,10 +971,11 @@ describe("AgentSurfaceController — Kiro-native host runs the Builder in Kiro c
     const second = h.controller.openInKiro();
     await Promise.resolve();
     expect(calls).toEqual([PROJECT_ID]);
-    expect(h.controller.getViewModel().hostChat).toEqual({ opening: true });
+    expect(h.controller.getViewModel().hostChat).toEqual({ opening: true, openedNewWindow: false });
     release(opened("GENERATED"));
     await Promise.all([first, second]);
-    expect(h.controller.getViewModel().hostChat).toEqual({ opening: false });
+    // K23: the panel remembers that the Project went on in a new window.
+    expect(h.controller.getViewModel().hostChat).toEqual({ opening: false, openedNewWindow: true });
     expect(h.controller.getViewModel().notice).toMatchObject({ kind: "info", code: "KIRO_CHAT_GENERATED" });
     expect(h.controller.getViewModel().notice?.message).toContain("새 창");
   });
@@ -990,7 +995,7 @@ describe("AgentSurfaceController — Kiro-native host runs the Builder in Kiro c
     const h = buildHarness({ openInKiro: async () => opened("CANCELLED") });
     await h.controller.openInKiro();
     expect(h.controller.getViewModel().notice).toBeNull();
-    expect(h.controller.getViewModel().hostChat).toEqual({ opening: false });
+    expect(h.controller.getViewModel().hostChat).toEqual({ opening: false, openedNewWindow: false });
   });
 
   it("maps host refusals to fixed guidance and never echoes free text", async () => {
@@ -1003,7 +1008,63 @@ describe("AgentSurfaceController — Kiro-native host runs the Builder in Kiro c
     await odd.controller.openInKiro();
     expect(odd.controller.getViewModel().notice?.code).toBe("UNKNOWN");
     expect(JSON.stringify(odd.controller.getViewModel())).not.toContain("learner");
-    expect(odd.controller.getViewModel().hostChat).toEqual({ opening: false });
+    expect(odd.controller.getViewModel().hostChat).toEqual({ opening: false, openedNewWindow: false });
+  });
+
+  it("reads whether Kiro chat in this window reaches the Project, quietly and only on Kiro hosts (K23)", async () => {
+    const states: unknown[] = ["NOT_BOUND"];
+    const asked: string[] = [];
+    const h = buildHarness({
+      openInKiro: async () => opened("REGISTERED"),
+      kiroWindow: async projectId => { asked.push(projectId); return states.shift() as never; },
+    });
+    await h.controller.openInKiro();
+    await vi.waitFor(() => expect(h.controller.getViewModel().hostChat?.window).toBe("NOT_BOUND"));
+    // Asked for this panel's Project: a window connected to another Project is not its folder.
+    expect(asked).toEqual([PROJECT_ID]);
+    // An unknown value or a failing host keeps the last state.
+    states.push("SOMETHING_ELSE");
+    await h.controller.openInKiro();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(h.controller.getViewModel().hostChat?.window).toBe("NOT_BOUND");
+    const failing = buildHarness({ openInKiro: async () => opened("REGISTERED"), kiroWindow: async () => { throw new Error("x"); } });
+    await failing.controller.openInKiro();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(failing.controller.getViewModel().hostChat?.window).toBeUndefined();
+  });
+
+  it("copies only host-built chat lines, never sends them, and says so when the clipboard fails (K23)", async () => {
+    const copied: string[] = [];
+    const h = buildHarness({ openInKiro: async () => opened("REGISTERED"), writeClipboard: async text => { copied.push(text); } });
+    await h.controller.copyChatText({ what: "START" });
+    // No Next Move is shown yet: nothing to copy for a number.
+    await h.controller.copyChatText({ what: "NEXT_MOVE", number: 2 });
+    expect(copied).toEqual(["시작해 줘"]);
+    expect(h.client.executeKinds).toEqual([]);
+    expect(h.startBuilderCount()).toBe(0);
+
+    const broken = buildHarness({ openInKiro: async () => opened("REGISTERED"), writeClipboard: async () => { throw new Error("denied"); } });
+    await broken.controller.copyChatText({ what: "START" });
+    expect(broken.controller.getViewModel().notice).toMatchObject({ kind: "error", code: "CLIPBOARD_WRITE_FAILED" });
+
+    const panel = buildHarness({ writeClipboard: async text => { copied.push(text); } });
+    await panel.controller.copyChatText({ what: "START" });
+    expect(copied).toEqual(["시작해 줘"]);
+  });
+
+  it("names the other Project of a quoted learner word in the record, never this one's (K23)", async () => {
+    const evidence = (evidenceId: string, projectId: string, projectTitle: string) => ({
+      evidenceId, kind: "USER_UNDERSTANDING", projectId, projectTitle, episodeId: "episode_1", acceptedAt: "2026-10-17T00:00:00.000Z",
+      supportsState: "EXPLAINED", signal: "JUSTIFIED_DECISION", redactedEvidenceExcerpt: "내 말",
+    });
+    const trace = { schemaVersion: 1, correlationId: "corr", projectId: PROJECT_ID, personalization: [], analysis: [], concepts: [{
+      conceptId: "concept_1", conceptName: "관계형 데이터베이스 설계", state: "EXPLAINED", openIssues: [], rejectedEvidence: [],
+      evidence: [evidence("evidence_here", PROJECT_ID, "이번 Project"), evidence("evidence_old", "project_old", "편의점 상품 입출고 API")],
+    }] };
+    const h = buildHarness({ client: { executeResultByKind: { UI_READ_EVIDENCE_TRACE: { resolve: trace } } } });
+    const view = await h.controller.readEvidence();
+    expect(view?.sources).toEqual({ evidence_old: "편의점 상품 입출고 API" });
+    expect(view?.concepts[0].accepted.map(item => item.id)).toEqual(["evidence_here", "evidence_old"]);
   });
 
   it("requires a bound Project and is inert on other hosts", async () => {
@@ -1030,9 +1091,9 @@ describe("AgentSurfaceController — Kiro-native Next Move card", () => {
     status, nextMoveJobId: JOB_ID, jobRevision: status === "FAILED" ? 4 : 2, sourceTaskId: TASK_ID,
     moves: status === "READY" ? moves : [], ...extra,
   });
-  const kiroHarness = () => {
+  const kiroHarness = (extra: Pick<Parameters<typeof buildHarness>[0] & object, "writeClipboard" | "kiroWindow"> = {}) => {
     const clock = new FakeClock();
-    const h = buildHarness({ clock, openInKiro: async () => ({ projectId: PROJECT_ID, taskId: TASK_ID, openedNewWindow: false, folder: "REGISTERED" }) });
+    const h = buildHarness({ ...extra, clock, openInKiro: async () => ({ projectId: PROJECT_ID, taskId: TASK_ID, openedNewWindow: false, folder: "REGISTERED" }) });
     const reads = () => h.client.executeKinds.filter((kind) => kind === "UI_READ_NEXT_MOVE").length;
     const script = (view: unknown) => { h.client.executeResultByKind.UI_READ_NEXT_MOVE = { resolve: view }; };
     // Advance only once the next refresh is armed (it is armed after a read settles).
@@ -1081,6 +1142,21 @@ describe("AgentSurfaceController — Kiro-native Next Move card", () => {
     // Only reads: the Next Move card and this Task's learning records.
     expect(new Set(h.client.executeKinds.filter((kind) => kind !== "UI_READ_NEXT_MOVE")))
       .toEqual(new Set(["UI_READ_EVIDENCE_TRACE"]));
+  });
+
+  it("copies the line that picks a shown suggestion by its number and reads the window each refresh (K23)", async () => {
+    const copied: string[] = [];
+    let windowReads = 0;
+    const h = kiroHarness({ writeClipboard: async text => { copied.push(text); }, kiroWindow: async () => { windowReads += 1; return "READY"; } });
+    h.script(job("READY"));
+    await h.controller.refreshProject();
+    await h.tick(0);
+    await vi.waitFor(() => expect(h.controller.getViewModel().nextMove?.status).toBe("READY"));
+    await vi.waitFor(() => expect(h.controller.getViewModel().hostChat?.window).toBe("READY"));
+    expect(windowReads).toBeGreaterThan(0);
+    await h.controller.copyChatText({ what: "NEXT_MOVE", number: 2 });
+    await h.controller.copyChatText({ what: "NEXT_MOVE", number: 7 });
+    expect(copied).toEqual(["다음 한 걸음 2번 해 보자"]);
   });
 
   it("shows a finished Task as finished even when a replaced choice was never applied (K17)", async () => {

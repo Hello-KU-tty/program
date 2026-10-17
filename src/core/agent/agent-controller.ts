@@ -59,11 +59,15 @@ import {
   type AgentViewModel,
   builderTaskLabel,
   type BuilderTurnViewModel,
+  CHAT_START_TEXT,
   type DecisionViewModel,
   type HelperConversationViewModel,
   type HelperViewModel,
   initialAgentViewModel,
+  type KiroWindowState,
+  type LearningRecordView,
   type NativeQuestionViewModel,
+  nextMoveChatText,
   type NextMoveViewModel,
   type NoticeViewModel,
   type TaskEvidenceViewModel,
@@ -97,6 +101,10 @@ export interface AgentControllerDeps {
    * the panel never starts a Builder run and offers this instead.
    */
   readonly openInKiro?: (projectId: string) => ReturnType<FrontendHost["openProjectInKiro"]>;
+  /** K23, Kiro-native host only: what Kiro chat in this window reaches for a Project (`host.kiroWindow`). */
+  readonly kiroWindow?: (projectId: string) => Promise<KiroWindowState>;
+  /** K23: host-side clipboard write for the panel's copy buttons. Injected spy in tests. */
+  readonly writeClipboard?: (text: string) => Promise<void> | Thenable<void>;
   /** Timer source for the Kiro-native Next Move refresh. Defaults to {@link SystemClock}. */
   readonly clock?: Clock;
 }
@@ -108,12 +116,13 @@ export interface AgentControllerDeps {
  */
 export const NEXT_MOVE_REFRESH_MS = { GENERATING: 1_500, IDLE: 4_000 } as const;
 const NEXT_MOVE_STATUSES: ReadonlySet<string> = new Set(["NONE", "GENERATING", "READY", "FAILED"]);
+const KIRO_WINDOW_STATES: ReadonlySet<string> = new Set<KiroWindowState>(["READY", "UNTRUSTED", "RELOAD", "NOT_BOUND"]);
 
 /** Notices after connecting a Project to Kiro chat; CANCELLED stays silent. */
 const OPEN_IN_KIRO_NOTICES = {
   REGISTERED: "이 폴더를 Project로 연결했어요. Kiro 채팅에서 새 세션(+)을 열어 만들기를 시작하세요. 궁금한 건 채팅에서 /vibe-helper 로 물어볼 수 있어요.",
   REGISTERED_FRESH: "이 폴더를 Project로 연결하고 Kiro 채팅에 새 세션을 열었어요. 거기서 만들기를 시작하세요. 궁금한 건 /vibe-helper 로 물어볼 수 있어요.",
-  GENERATED: "Project 폴더를 새 창으로 열었어요. 그 창에서 폴더를 신뢰하면 Kiro 채팅에 새 세션이 열려요. 거기서 만들기를 시작하세요.",
+  GENERATED: "Project 폴더를 새 창으로 열었어요. 그 창에서 폴더를 신뢰하면 패널이 다시 뜨기까지 보통 10~30초 걸리고, Kiro 채팅에 새 세션이 열려요. 거기서 만들기를 시작하세요.",
   // Kiro read this window before the folder was trusted (on Windows, every newly opened folder),
   // so its hooks and MCP stay off until a reload; the host already offers the reload and opens a
   // new chat session after it (K17).
@@ -1229,8 +1238,9 @@ export class AgentSurfaceController {
     const flight = this.connectToKiro(this.deps.openInKiro).finally(() => {
       if (this.kiroFlight === flight) this.kiroFlight = null;
       if (!this.disposed && this.vm.hostChat) {
-        this.vm = { ...this.vm, hostChat: { opening: false } };
+        this.vm = { ...this.vm, hostChat: { ...this.vm.hostChat, opening: false } };
         this.deps.onChange();
+        void this.refreshKiroWindow();
       }
     });
     this.kiroFlight = flight;
@@ -1244,11 +1254,13 @@ export class AgentSurfaceController {
       return;
     }
     const binding = this.bindingVersion;
-    this.vm = { ...this.vm, notice: null, hostChat: { opening: true } };
+    this.vm = { ...this.vm, notice: null, hostChat: { ...this.vm.hostChat, opening: true, openedNewWindow: false } };
     this.deps.onChange();
     try {
       const opened = await open(projectId);
       if (!this.isCurrentBinding(binding) || opened.folder === "CANCELLED") return;
+      if (opened.openedNewWindow && this.vm.hostChat)
+        this.vm = { ...this.vm, hostChat: { ...this.vm.hostChat, openedNewWindow: true } };
       const outcome = opened.folder === "REGISTERED" && opened.reloadRequired === true
         ? "RELOAD_REQUIRED"
         : opened.folder === "REGISTERED" && opened.freshSession === true ? "REGISTERED_FRESH" : opened.folder;
@@ -1297,6 +1309,7 @@ export class AgentSurfaceController {
    */
   private async refreshKiroChat(projectId: string): Promise<void> {
     await this.reprojectFromSnapshot(projectId, true, true);
+    await this.refreshKiroWindow();
     const now = this.clock.now();
     if (this.taskEvidenceReadAt !== null && now - this.taskEvidenceReadAt < TASK_EVIDENCE_REFRESH_MS) return;
     this.taskEvidenceReadAt = now;
@@ -1318,6 +1331,47 @@ export class AgentSurfaceController {
     if (JSON.stringify(taskEvidence) === JSON.stringify(this.vm.taskEvidence ?? [])) return;
     this.vm = { ...this.vm, taskEvidence };
     this.deps.onChange();
+  }
+
+  /**
+   * K23: re-read whether Kiro chat in this window reaches the Project, so the panel can say
+   * what to do next (connect, trust, reload, or send the first message). Quiet: a failed read
+   * keeps the last state.
+   */
+  private async refreshKiroWindow(): Promise<void> {
+    const read = this.deps.kiroWindow;
+    const projectId = this.lastProjectId;
+    if (!read || this.disposed || !this.vm.hostChat || !projectId) return;
+    const binding = this.bindingVersion;
+    let window: unknown;
+    try {
+      window = await read(projectId);
+    } catch {
+      return;
+    }
+    if (!this.isCurrentBinding(binding) || !this.vm.hostChat || !KIRO_WINDOW_STATES.has(window as string) ||
+      this.vm.hostChat.window === window) return;
+    this.vm = { ...this.vm, hostChat: { ...this.vm.hostChat, window: window as KiroWindowState } };
+    this.deps.onChange();
+  }
+
+  /**
+   * K23: put a chat message the learner may send on the clipboard. The text comes from this
+   * host's own view model (the start line, or a Next Move it shows), never from the webview,
+   * and the panel never sends it: the learner pastes and sends it in Kiro chat.
+   */
+  async copyChatText(request: { readonly what: "START" } | { readonly what: "NEXT_MOVE"; readonly number: number }): Promise<void> {
+    const write = this.deps.writeClipboard;
+    if (!write || this.disposed || !this.vm.hostChat) return;
+    const move = request.what === "NEXT_MOVE" && this.vm.nextMove?.status === "READY"
+      ? this.vm.nextMove.moves.find(item => item.number === request.number) : undefined;
+    const text = request.what === "START" ? CHAT_START_TEXT : move ? nextMoveChatText(move) : null;
+    if (text === null) return;
+    try {
+      await write(text);
+    } catch {
+      this.notice("error", "CLIPBOARD_WRITE_FAILED", "복사하지 못했어요. 같은 문구를 Kiro 채팅에 직접 적어 보내 주세요.");
+    }
   }
 
   private async applyNextMove(projectId: string, view: NextMoveView): Promise<void> {
@@ -1506,7 +1560,7 @@ export class AgentSurfaceController {
    * success returns `summarizeEvidenceTrace(projectId, res.value)`; on a port
    * error surfaces a notice and returns `null`.
    */
-  async readEvidence(conceptId?: string): Promise<EvidenceTraceView | null> {
+  async readEvidence(conceptId?: string): Promise<LearningRecordView | null> {
     if (this.disposed) return null;
     const binding = this.bindingVersion;
     const projectId =
@@ -1534,8 +1588,14 @@ export class AgentSurfaceController {
     // Agent invocation. Do not combine old-project evidence with a new view.
     await this.reprojectFromSnapshot(projectId);
     if (!this.isCurrentBinding(binding)) return null;
-    // The response is the raw ProjectEvidenceTrace; project it honestly.
-    return summarizeEvidenceTrace(projectId, res.value);
+    // The response is the raw ProjectEvidenceTrace; project it honestly. Quotes from
+    // another Project keep that Project's title (K23).
+    const raw = res.value as ProjectEvidenceTrace;
+    const sources: Record<string, string> = {};
+    for (const concept of raw.concepts ?? [])
+      for (const item of concept.evidence ?? [])
+        if (item.projectId !== projectId && typeof item.projectTitle === "string") sources[item.evidenceId] = item.projectTitle;
+    return { ...summarizeEvidenceTrace(projectId, raw), sources };
   }
 
   /**
@@ -1576,7 +1636,7 @@ export class AgentSurfaceController {
   async retryAnalysis(
     analysisJobId: string,
     expectedJobRevision: number,
-  ): Promise<EvidenceTraceView | null> {
+  ): Promise<LearningRecordView | null> {
     if (this.disposed) return null;
     const binding = this.bindingVersion;
     const projectId =
@@ -1786,7 +1846,7 @@ export class AgentSurfaceController {
     const previousBuilder = taskId !== this.vm.builder.taskId && !this.activeRunId
       ? initialAgentViewModel().builder : this.vm.builder;
     let builder = { ...previousBuilder, taskId, taskTitle, taskRevision: currentTask?.revision ?? null,
-      readyToStart: currentTask?.status === "PENDING" };
+      taskSequence: currentTask?.sequence ?? null, readyToStart: currentTask?.status === "PENDING" };
     if (restoreIdleBuilder && !this.activeRunId && !this.builderFlight) {
       // A replaced choice (changed or undone in Kiro chat, K17) is history, never applied.
       const unapplied = decisions.some(d => d.taskId === taskId && !d.applied && !d.replaced) ||

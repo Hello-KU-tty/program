@@ -36,18 +36,21 @@
  * Requirements: 2.7, 2.8, 2.9, 4.5, 7.1, 8.1, 9.1, 10.2, 10.3, 10.4, 11.1, 12.1.
  */
 
-import type {
-  AgentViewModel,
-  BuilderTurnViewModel,
-  HostChatViewModel,
-  DecisionViewModel,
-  HelperConversationViewModel,
-  HelperViewModel,
-  NativeQuestionViewModel,
-  NextMoveViewModel,
-  NoticeViewModel,
-  TaskEvidenceViewModel,
-  ToolRowViewModel,
+import {
+  CHAT_START_TEXT,
+  nextMoveChatText,
+  type AgentViewModel,
+  type BuilderTurnViewModel,
+  type HostChatViewModel,
+  type DecisionViewModel,
+  type LearningRecordView,
+  type HelperConversationViewModel,
+  type HelperViewModel,
+  type NativeQuestionViewModel,
+  type NextMoveViewModel,
+  type NoticeViewModel,
+  type TaskEvidenceViewModel,
+  type ToolRowViewModel,
 } from "../../core/agent/agent-view-model";
 import type {
   DecisionSelection,
@@ -59,6 +62,7 @@ import type {
 } from "../../../vendor/frontend-client";
 import { errorGuidance, workerStatusGuidance, isPermissionDenial } from "../../core/runtime-errors";
 import { renderChatMessage } from "./chat-message";
+import { decisionCategoryLabel } from "../../core/decision-categories";
 
 /**
  * Callbacks the agent render layer invokes when the learner interacts with a
@@ -113,6 +117,11 @@ export interface AgentRenderCallbacks {
   }): void;
   /** Kiro-native: generate Next Move suggestions again after a failure (`nextMove/retry`). */
   onRetryNextMove(): void;
+  /**
+   * Kiro-native (K23): copy the suggested first chat message or the line that picks a Next
+   * Move (`chat/copy`). The host builds the text; nothing is sent to Kiro chat.
+   */
+  onCopyChatText(request: { readonly what: "START" } | { readonly what: "NEXT_MOVE"; readonly number: number }): void;
 }
 
 /** Korean labels for the Builder turn display phase. */
@@ -140,19 +149,6 @@ const HELPER_PHASE_LABELS: Readonly<Record<HelperViewModel["phase"], string>> = 
 };
 
 /** Korean labels for a tool row status. */
-/** Learner-facing names for Core decision categories; unknown values pass through. */
-const DECISION_CATEGORY_LABELS: Readonly<Record<string, string>> = {
-  PRODUCT_BEHAVIOR: "제품 동작",
-  DATA_MODEL: "데이터 구조",
-  API_CONTRACT: "API 설계",
-  AUTHENTICATION: "로그인·인증",
-  AUTHORIZATION: "권한",
-  SECURITY_PRIVACY: "보안·개인정보",
-  RETENTION_DELETION: "보관·삭제",
-  COST_DEPLOYMENT: "비용·배포",
-  ARCHITECTURE: "구조 설계",
-  LEARNING_CONCEPT: "학습 개념",
-};
 
 /** Plain-language worker stages; the raw code stays in the tooltip for support. */
 const WORKER_STAGE_LABELS: Readonly<Record<string, string>> = {
@@ -174,8 +170,118 @@ const WORKER_ROLE_LABELS: Readonly<Record<string, string>> = {
   DISCOVERY: "탐색", BUILDER: "빌더", HELPER: "도우미", EVIDENCE_ANALYST: "분석",
 };
 
-/** The agent surface tabs. */
+/** The agent surface tabs. A Kiro-native host shows only `builder` (진행) and `record` (K23). */
 export type AgentTab = "builder" | "helper" | "record";
+
+/**
+ * K23, Kiro-native: what the learner should do now. One sentence and at most one action each;
+ * building and choosing happen in Kiro chat, so most actions are words to send there.
+ */
+type NowState =
+  | "NO_TASK"
+  | "OPENING"
+  | "CONNECT"
+  | "NEW_WINDOW"
+  | "UNTRUSTED"
+  | "RELOAD"
+  | "ELSEWHERE"
+  | "SEND_START"
+  | "WAITING"
+  | "BUILDING"
+  | "DONE"
+  | "FAILED";
+
+/** Waiting time after a new window opens: Kiro starts its extension host before this panel loads. */
+const NEW_WINDOW_WAIT = "새 창이 열리면 ‘신뢰’를 눌러 주세요. 패널이 다시 뜨기까지 보통 10~30초 걸려요.";
+
+const NOW_TEXT: Readonly<Record<NowState, { readonly lead: string; readonly detail?: string }>> = {
+  NO_TASK: { lead: "계획을 확정하면 여기에서 만들기를 이어 가요." },
+  OPENING: { lead: "Kiro 채팅에 연결하고 있어요…", detail: "확인 창이 뜨면 골라 주세요." },
+  CONNECT: { lead: "이 Project를 Kiro 채팅에 연결해요." },
+  NEW_WINDOW: {
+    lead: "새 창에서 이어서 만들어요.",
+    detail: "새 창에서 ‘신뢰’를 누르면 패널이 다시 뜨기까지 보통 10~30초 걸려요. 그다음은 새 창의 패널이 알려 줘요.",
+  },
+  UNTRUSTED: {
+    lead: "이 폴더를 신뢰하면 Kiro 채팅에 연결돼요.",
+    detail: "오른쪽 아래 알림의 ‘신뢰 설정 열기’에서 이 폴더를 신뢰해 주세요.",
+  },
+  RELOAD: {
+    lead: "창을 한 번 다시 로드하면 연결돼요.",
+    detail: "오른쪽 아래 알림의 ‘다시 로드’를 눌러 주세요. 다시 로드하면 Kiro 채팅에 새 세션이 열려요.",
+  },
+  ELSEWHERE: {
+    lead: "이 창은 이 Project의 폴더가 아니에요.",
+    detail: "‘Kiro 채팅에서 열기’를 누르면 Project 폴더에서 이어서 만들 수 있어요.",
+  },
+  SEND_START: { lead: "오른쪽 Kiro 채팅에 이렇게 보내 보세요.", detail: "짧게 ‘ㄱㄱ’만 보내도 시작해요." },
+  WAITING: {
+    lead: "Kiro 채팅이 답을 기다려요.",
+    detail: "채팅에 번호와 고른 이유를 함께 적어 주세요. 이유를 내 말로 쓰면 학습 기록에 남아요.",
+  },
+  BUILDING: {
+    lead: "Kiro 채팅에서 만들고 있어요.",
+    detail: "번호로 묻는 선택이 오면 채팅에 답해 주세요. 막히거나 궁금한 것도 채팅에 그대로 물어보면 돼요.",
+  },
+  DONE: {
+    lead: "다 만들었어요. 결과를 확인해 보세요.",
+    detail: "실행 방법과 열어 볼 주소는 Kiro 채팅의 완료 메시지에 있어요.",
+  },
+  FAILED: { lead: "문제가 생겼어요." },
+};
+
+/** K23: the order of a Task in Kiro-native, shown as steps; not a learning progress measure. */
+const STEPS = [
+  "Kiro 채팅에 연결하기",
+  `채팅에 ‘${CHAT_START_TEXT}’ 보내기`,
+  "번호로 묻는 선택에 답하기",
+  "결과 보고 다음 한 걸음 고르기",
+] as const;
+
+/** K23: a Project title cut at a word boundary, for a quote's source label. */
+function shortTitle(title: string, limit = 20): string {
+  if (title.length <= limit) return title;
+  let out = "";
+  for (const word of title.split(/\s+/)) {
+    const next = out ? `${out} ${word}` : word;
+    if (next.length > limit) break;
+    out = next;
+  }
+  return `${out || title.slice(0, limit)}…`;
+}
+
+function stepOf(state: NowState): number {
+  switch (state) {
+    case "SEND_START":
+      return 1;
+    case "WAITING":
+    case "BUILDING":
+      return 2;
+    case "DONE":
+      return 3;
+    default:
+      return 0;
+  }
+}
+
+/** K23: how a concept reads in the learning record. Only learner Evidence supports a claim. */
+const CONCEPT_STATE_LABELS: Readonly<Record<EvidenceTraceView["concepts"][number]["displayState"], string>> = {
+  NO_STATE: "아직 기록 없음",
+  OBSERVED_ONLY: "코드에 쓰였어요",
+  USER_EVIDENCE_EXPLAINED: "설명할 수 있어요",
+  USER_EVIDENCE_DEMONSTRATED: "직접 적용했어요",
+  USER_EVIDENCE_TRANSFERRED: "다른 곳에도 써 봤어요",
+};
+
+/** K23: what kind of learner words a quote was; unknown signals show no label. */
+const EVIDENCE_SIGNAL_LABELS: Readonly<Record<string, string>> = {
+  JUSTIFIED_DECISION: "고른 이유",
+  REPHRASE: "내 말로 설명",
+  PREDICTION: "결과 예상",
+  APPLICATION: "직접 적용",
+  TRANSFER: "다른 곳에 적용",
+  QUESTION: "질문",
+};
 
 /** Short local date/time for display; the raw value is kept when unparsable. */
 /** How a learner's accepted Evidence reads in the Kiro-native Builder tab (K17). */
@@ -261,9 +367,8 @@ export class AgentSurfaceView {
   private toolsExpanded = false;
   private lastToolRows: readonly ToolRowViewModel[] = [];
   private readonly builderTranscriptLabel: HTMLElement;
-  private readonly builderComposerLabel: HTMLElement;
   private readonly builderComposerInput: HTMLTextAreaElement;
-  private readonly kiroOpenButton: HTMLButtonElement;
+  private readonly builderComposer: HTMLElement;
   private readonly builderSendButton: HTMLButtonElement;
   private readonly builderStopButton: HTMLButtonElement;
   private readonly builderResumeButton: HTMLButtonElement;
@@ -310,10 +415,35 @@ export class AgentSurfaceView {
   private readonly nextMoveRetryButton: HTMLButtonElement;
   private nextMoveRenderKey: string | undefined;
 
+  // --- Kiro-native "지금 할 일" card, steps and chat hint (K23) ---------------
+  private readonly nowCard: HTMLElement;
+  private readonly nowTask: HTMLElement;
+  private readonly nowTaskTitle: HTMLElement;
+  private readonly nowLead: HTMLElement;
+  private readonly nowQuestion: HTMLElement;
+  private readonly nowSend: HTMLElement;
+  private readonly nowDetail: HTMLElement;
+  private readonly nowAction: HTMLButtonElement;
+  private readonly nowNote: HTMLElement;
+  private readonly stepsSection: HTMLDetailsElement;
+  private readonly stepsNow: HTMLElement;
+  private readonly stepItems: HTMLElement[] = [];
+  /** The learner's own open/closed choice for the steps, per Task; absent follows the default. */
+  private stepsChoice: { readonly taskId: string | null; readonly open: boolean } | null = null;
+  private stepsTaskId: string | null = null;
+  /** The open state this view last set itself. */
+  private stepsExpected: boolean | null = null;
+  private readonly chatHint: HTMLElement;
+
+  // --- Learning record (K23) ----------------------------------------------
+  private readonly evidenceStatus: HTMLElement;
+  private evidenceRefreshKey: string | undefined;
+
   // --- Tabs: one surface visible at a time keeps the panel short ------------
   private readonly surface: HTMLElement;
   private readonly tabButtons: Record<AgentTab, HTMLButtonElement>;
   private readonly tabBadges = {} as Record<AgentTab, HTMLElement>;
+  private readonly tabLabels = {} as Record<AgentTab, HTMLElement>;
   private readonly finalUpgradeInputs: {
     readonly sourceTaskId: HTMLInputElement;
     readonly expectedSourceTaskRevision: HTMLInputElement;
@@ -340,6 +470,7 @@ export class AgentSurfaceView {
       button.setAttribute("role", "tab");
       const text = this.el("span", "agent-tab-label");
       text.textContent = label;
+      this.tabLabels[tab] = text;
       const badge = this.el("span", "agent-tab-badge");
       badge.hidden = true;
       this.tabBadges[tab] = badge;
@@ -363,6 +494,47 @@ export class AgentSurfaceView {
     const builderHeading = this.el("h1", "agent-builder-heading");
     builderHeading.textContent = "빌더";
     builder.appendChild(builderHeading);
+
+    // Kiro-native "지금 할 일" (K23): one sentence and at most one action for the
+    // current state. Words to send are shown with a copy button; nothing is sent
+    // for the learner, and a choice's reason is never offered as a copy.
+    this.nowCard = this.el("div", "agent-now");
+    this.nowCard.hidden = true;
+    this.nowTask = this.el("div", "agent-now-task");
+    const nowTaskLabel = this.el("span", "agent-now-task-label");
+    nowTaskLabel.textContent = "이번 작업";
+    this.nowTask.appendChild(nowTaskLabel);
+    this.nowTaskTitle = this.el("span", "agent-now-task-title");
+    this.nowTask.appendChild(this.nowTaskTitle);
+    this.nowCard.appendChild(this.nowTask);
+    const nowLabel = this.el("h2", "agent-now-label");
+    nowLabel.textContent = "지금 할 일";
+    this.nowCard.appendChild(nowLabel);
+    this.nowLead = this.el("p", "agent-now-lead");
+    this.nowLead.setAttribute("role", "status");
+    this.nowLead.setAttribute("aria-live", "polite");
+    this.nowCard.appendChild(this.nowLead);
+    this.nowQuestion = this.el("p", "agent-now-question");
+    this.nowQuestion.hidden = true;
+    this.nowCard.appendChild(this.nowQuestion);
+    this.nowSend = this.buildSendRow(CHAT_START_TEXT, "시작 문구 복사", () => this.callbacks.onCopyChatText({ what: "START" }));
+    this.nowSend.hidden = true;
+    this.nowCard.appendChild(this.nowSend);
+    this.nowDetail = this.el("p", "agent-now-detail");
+    this.nowCard.appendChild(this.nowDetail);
+    this.nowAction = this.el("button", "agent-now-action") as HTMLButtonElement;
+    this.nowAction.type = "button";
+    this.nowAction.textContent = "Kiro 채팅에서 열기";
+    this.nowAction.hidden = true;
+    this.nowAction.addEventListener("click", () => {
+      if (!this.nowAction.hidden && !this.nowAction.disabled) this.callbacks.onOpenInKiro();
+    });
+    this.nowCard.appendChild(this.nowAction);
+    this.nowNote = this.el("p", "agent-now-note");
+    this.nowNote.textContent = NEW_WINDOW_WAIT;
+    this.nowNote.hidden = true;
+    this.nowCard.appendChild(this.nowNote);
+    builder.appendChild(this.nowCard);
 
     this.builderPhase = this.el("div", "agent-builder-phase");
     this.builderPhase.setAttribute("role", "status");
@@ -432,7 +604,6 @@ export class AgentSurfaceView {
     const builderComposerLabel = this.el("label", "agent-field-label");
     builderComposerLabel.textContent = "빌더에게 요청하기";
     builderComposer.appendChild(builderComposerLabel);
-    this.builderComposerLabel = builderComposerLabel;
 
     this.builderComposerInput = this.el("textarea", "agent-composer-input") as HTMLTextAreaElement;
     this.builderComposerInput.setAttribute("aria-label", "빌더 요청");
@@ -444,15 +615,6 @@ export class AgentSurfaceView {
     builderComposer.appendChild(this.builderComposerInput);
 
     const builderControls = this.el("div", "agent-composer-actions");
-    // Kiro-native host: the Builder runs in Kiro chat; this connects the Project.
-    this.kiroOpenButton = this.el("button", "agent-kiro-open") as HTMLButtonElement;
-    this.kiroOpenButton.type = "button";
-    this.kiroOpenButton.textContent = "Kiro 채팅에서 열기";
-    this.kiroOpenButton.hidden = true;
-    this.kiroOpenButton.addEventListener("click", () => {
-      if (!this.kiroOpenButton.hidden && !this.kiroOpenButton.disabled) this.callbacks.onOpenInKiro();
-    });
-    builderControls.appendChild(this.kiroOpenButton);
     this.builderSendButton = this.el("button", "agent-builder-send") as HTMLButtonElement;
     this.builderSendButton.type = "button";
     this.builderSendButton.textContent = "보내기";
@@ -498,6 +660,7 @@ export class AgentSurfaceView {
 
     builderComposer.appendChild(builderControls);
     builder.appendChild(builderComposer);
+    this.builderComposer = builderComposer;
     container.appendChild(builder);
 
     // ---- Helper -----------------------------------------------------------
@@ -594,21 +757,26 @@ export class AgentSurfaceView {
     this.notice.hidden = true;
     container.appendChild(this.notice);
 
-    // ---- Evidence (read-style) --------------------------------------------
+    // ---- Learning record (read-style, K23) ---------------------------------
+    // Loads when the tab opens: only the learner's own words, quoted per concept.
     const evidence = this.el("section", "agent-evidence");
-    evidence.setAttribute("aria-label", "근거 기록");
-    const evidenceHeader = this.el("div", "agent-evidence-header");
+    evidence.setAttribute("aria-label", "학습 기록");
     const evidenceLabel = this.el("h1", "agent-section-heading");
-    evidenceLabel.textContent = "근거 기록";
-    evidenceHeader.appendChild(evidenceLabel);
-    const evidenceRead = this.el("button", "agent-evidence-read") as HTMLButtonElement;
-    evidenceRead.type = "button";
-    evidenceRead.textContent = "근거 불러오기";
-    evidenceRead.addEventListener("click", () => this.callbacks.onReadEvidence());
-    evidenceHeader.appendChild(evidenceRead);
-    evidence.appendChild(evidenceHeader);
+    evidenceLabel.textContent = "학습 기록";
+    evidence.appendChild(evidenceLabel);
+    const evidenceIntro = this.el("p", "agent-evidence-intro");
+    evidenceIntro.textContent = "Kiro 채팅에서 내가 직접 한 말만 남아요. 다음 Project를 고를 때 이 기록을 참고해요.";
+    evidence.appendChild(evidenceIntro);
+    this.evidenceStatus = this.el("p", "agent-evidence-status");
+    this.evidenceStatus.setAttribute("role", "status");
+    this.evidenceStatus.setAttribute("aria-live", "polite");
+    this.evidenceStatus.textContent = "기록을 불러오고 있어요…";
+    evidence.appendChild(this.evidenceStatus);
     this.evidenceRegion = this.el("div", "agent-evidence-body");
     evidence.appendChild(this.evidenceRegion);
+    const evidenceFoot = this.el("p", "agent-evidence-foot");
+    evidenceFoot.textContent = "기록은 작업을 마치고 잠시 뒤에 정리돼요.";
+    evidence.appendChild(evidenceFoot);
     container.appendChild(evidence);
 
     // ---- Final upgrade (read-style) ---------------------------------------
@@ -698,6 +866,9 @@ export class AgentSurfaceView {
     const nextMoveLabel = this.el("h1", "agent-section-heading");
     nextMoveLabel.textContent = "다음 한 걸음";
     nextMove.appendChild(nextMoveLabel);
+    const nextMoveLead = this.el("p", "agent-next-move-lead");
+    nextMoveLead.textContent = "하나 골라 Kiro 채팅에 보내 보세요.";
+    nextMove.appendChild(nextMoveLead);
     this.nextMoveStatus = this.el("p", "agent-next-move-status");
     this.nextMoveStatus.setAttribute("role", "status");
     this.nextMoveStatus.setAttribute("aria-live", "polite");
@@ -706,7 +877,7 @@ export class AgentSurfaceView {
     this.nextMoveList.setAttribute("aria-label", "다음 한 걸음 후보");
     nextMove.appendChild(this.nextMoveList);
     this.nextMoveNote = this.el("p", "agent-next-move-note");
-    this.nextMoveNote.textContent = "마음에 드는 게 있으면 Kiro 채팅에 번호나 원하는 방향을 말해 주세요. 지금 안 해도 돼요.";
+    this.nextMoveNote.textContent = "지금 안 해도 돼요. 다른 걸 하고 싶으면 채팅에 그대로 말해도 돼요.";
     nextMove.appendChild(this.nextMoveNote);
     this.nextMoveRetryButton = this.el("button", "agent-next-move-retry") as HTMLButtonElement;
     this.nextMoveRetryButton.type = "button";
@@ -735,6 +906,49 @@ export class AgentSurfaceView {
     container.appendChild(taskEvidence);
     this.taskEvidenceSection = taskEvidence;
 
+    // ---- How a Task goes (Kiro-native, K23) --------------------------------
+    // The order of one Task, not a learning measure. Open until the first Task
+    // is finished; the learner's own open/close choice wins for that Task.
+    this.stepsSection = this.el("details", "agent-steps") as HTMLDetailsElement;
+    this.stepsSection.hidden = true;
+    const stepsSummary = this.el("summary", "agent-steps-summary");
+    const stepsLabel = this.el("span", "agent-steps-label");
+    stepsLabel.textContent = "이렇게 진행돼요";
+    stepsSummary.appendChild(stepsLabel);
+    this.stepsNow = this.el("span", "agent-steps-now");
+    stepsSummary.appendChild(this.stepsNow);
+    this.stepsSection.appendChild(stepsSummary);
+    const stepsList = this.el("ol", "agent-steps-list");
+    for (const text of STEPS) {
+      const item = this.el("li", "agent-step");
+      item.textContent = text;
+      stepsList.appendChild(item);
+      this.stepItems.push(item);
+    }
+    this.stepsSection.appendChild(stepsList);
+    // A browser fires `toggle` after a scripted change too; only a change away
+    // from the value this view last set is the learner's own choice.
+    this.stepsSection.addEventListener("toggle", () => {
+      if (this.stepsSection.open === this.stepsExpected) return;
+      this.stepsExpected = this.stepsSection.open;
+      this.stepsChoice = { taskId: this.stepsTaskId, open: this.stepsSection.open };
+    });
+    container.appendChild(this.stepsSection);
+
+    // Questions go to the Helper in Kiro chat; the panel has no Helper tab there.
+    this.chatHint = this.el("p", "agent-chat-hint");
+    const hintLead = this.el("span", "agent-chat-hint-text");
+    hintLead.textContent = "궁금한 게 있으면 Kiro 채팅에 ";
+    const hintCommand = this.el("span", "agent-chat-hint-command");
+    hintCommand.textContent = "/vibe-helper";
+    const hintTail = this.el("span", "agent-chat-hint-text");
+    hintTail.textContent = "와 질문을 함께 보내세요.";
+    this.chatHint.appendChild(hintLead);
+    this.chatHint.appendChild(hintCommand);
+    this.chatHint.appendChild(hintTail);
+    this.chatHint.hidden = true;
+    container.appendChild(this.chatHint);
+
     this.selectTab("builder");
     root.appendChild(container);
   }
@@ -750,32 +964,51 @@ export class AgentSurfaceView {
    * decisions, native questions, helper conversations) from the model each call.
    */
   render(vm: AgentViewModel): void {
-    // Kiro-native: building and choosing happen in Kiro chat; this tab shows
-    // the state, this Task's learning records, Next Move and a compact list of
-    // choices (K17). Section order follows data-host in the panel CSS.
-    this.surface.dataset.host = vm.hostChat ? "kiro" : "panel";
+    // Kiro-native: building and choosing happen in Kiro chat; the 진행 tab shows
+    // what to do now, how a Task goes, Next Move, this Task's choices and
+    // learning records (K17, K23). Section order follows data-host in the panel CSS.
+    const kiro = !!vm.hostChat;
+    this.surface.dataset.host = kiro ? "kiro" : "panel";
+    // K23: questions go to the Helper in Kiro chat, so a Kiro-native panel has no Helper tab.
+    this.tabButtons.helper.hidden = kiro;
+    this.tabLabels.builder.textContent = kiro ? "진행" : "빌더";
+    if (kiro && this.surface.dataset.tab === "helper") this.selectTab("builder");
     const waiting = vm.hostChat
       ? vm.decisions.find(d => d.taskId === vm.builder.taskId && !d.resolved && !d.replaced)
       : undefined;
-    this.renderBuilder(vm.builder, vm.hostChat, waiting?.question);
+    this.renderBuilder(vm.builder, vm.hostChat);
+    this.renderNow(vm, waiting?.question);
     this.renderNextMove(vm.hostChat ? vm.nextMove : undefined);
-    this.renderTaskEvidence(vm.hostChat ? vm.taskEvidence ?? [] : undefined);
+    // Before the first message there is nothing to record yet (K23).
+    this.renderTaskEvidence(vm.hostChat && vm.builder.taskId && !vm.builder.readyToStart ? vm.taskEvidence ?? [] : undefined);
     this.renderHelper(vm.helper);
     this.renderDecisions(vm.decisions, vm.hostChat ? vm.builder.taskId : undefined);
     this.renderNativeQuestions(vm.nativeQuestions);
     this.renderWorker(vm.worker);
-    this.renderNotice(vm.notice);
+    this.renderNotice(vm.notice, kiro);
     this.renderTabBadges(vm);
+    this.refreshOpenRecord(vm);
   }
 
   /** Show one surface. Pending decisions/questions stay visible on Builder and Helper. */
   selectTab(tab: AgentTab): void {
+    const previous = this.surface.dataset.tab;
     this.surface.dataset.tab = tab;
     for (const [name, button] of Object.entries(this.tabButtons)) {
       const active = name === tab;
       button.setAttribute("aria-selected", String(active));
       button.tabIndex = active ? 0 : -1;
     }
+    // K23: the learning record loads when its tab opens; there is no load button.
+    if (tab === "record" && previous !== undefined && previous !== "record") this.callbacks.onReadEvidence();
+  }
+
+  /** K23: while the record tab is open, reload it when this Task's records or state change. */
+  private refreshOpenRecord(vm: AgentViewModel): void {
+    const key = JSON.stringify([vm.builder.taskId, vm.builder.phase, (vm.taskEvidence ?? []).map(item => item.evidenceId)]);
+    const changed = this.evidenceRefreshKey !== undefined && key !== this.evidenceRefreshKey;
+    this.evidenceRefreshKey = key;
+    if (changed && this.surface.dataset.tab === "record") this.callbacks.onReadEvidence();
   }
 
   /** Small counts so work waiting on another tab is noticed without scrolling. */
@@ -803,6 +1036,11 @@ export class AgentSurfaceView {
     this.taskEvidenceRenderKey = undefined;
     this.taskEvidenceList.textContent = "";
     this.taskEvidenceSection.hidden = true;
+    this.stepsChoice = null;
+    this.stepsExpected = null;
+    this.evidenceRefreshKey = undefined;
+    this.evidenceStatus.hidden = false;
+    this.evidenceStatus.textContent = "기록을 불러오고 있어요…";
     this.renderedTaskId = null;
     this.workspaceOpenButton.hidden = true;
     this.resultLaunchButton.hidden = true;
@@ -827,35 +1065,64 @@ export class AgentSurfaceView {
    * - An `ANALYSIS_FAILED` analysis gets a retry affordance calling
    *   {@link AgentRenderCallbacks.onRetryAnalysis} (Req 10.5).
    */
-  renderEvidence(view: EvidenceTraceView): void {
+  renderEvidence(view: LearningRecordView): void {
     this.evidenceRegion.textContent = "";
 
-    const summary = this.el("p", "agent-evidence-summary");
-    // userUnderstandingTotal is a safe scalar; a total of 0 must not read as a
-    // "learned" claim (Req 10.3).
-    summary.textContent =
-      view.userUnderstandingTotal > 0
-        ? `사용자 이해 근거 ${view.userUnderstandingTotal}건이 기록되어 있어요.`
-        : "아직 사용자 이해로 인정된 근거가 없어요.";
-    this.evidenceRegion.appendChild(summary);
+    // K23: no counts and no scores. Concepts the learner spoke about come first,
+    // each with their own quoted words; Core's empty reason and the Analyst's
+    // memo can carry internal terms, so neither is shown.
+    type Concept = EvidenceTraceView["concepts"][number];
+    const spokenOf = (concept: Concept): boolean =>
+      concept.displayState.startsWith("USER_EVIDENCE_") && concept.userUnderstandingCount > 0;
+    // Cards: what the learner said, plus anything to look at again. Code-only
+    // concepts fold into one line of names, so the record stays short (K23).
+    const cards = view.concepts.filter(concept => spokenOf(concept) || concept.openIssueCount > 0)
+      .map((concept, index) => ({ concept, index }))
+      .sort((left, right) => Number(spokenOf(right.concept)) - Number(spokenOf(left.concept)) || left.index - right.index)
+      .map(({ concept }) => concept);
+    const codeOnly = view.concepts.filter(concept => !cards.includes(concept) && concept.displayState === "OBSERVED_ONLY");
+    const spoken = cards.some(spokenOf);
 
-    if (view.emptyReason) {
+    const pending = view.analysis.some(job => job.displayState === "WAITING" || job.displayState === "ANALYZING");
+    this.evidenceStatus.hidden = !pending;
+    this.evidenceStatus.textContent = pending ? "방금 대화를 정리하고 있어요. 조금 뒤에 기록이 늘 수 있어요." : "";
+
+    if (!spoken) {
       const empty = this.el("p", "agent-evidence-empty");
-      empty.textContent = view.emptyReason;
+      empty.textContent = view.concepts.length === 0
+        ? "아직 기록이 없어요. 작업을 마치면 개념별로 여기에 정리돼요."
+        : "아직 내 말로 남긴 기록이 없어요. 선택에 답할 때 고른 이유를 내 말로 적으면 여기에 남아요.";
       this.evidenceRegion.appendChild(empty);
     }
 
-    // Concepts.
     const conceptsList = this.el("div", "agent-evidence-concepts");
-    for (const concept of view.concepts) {
-      conceptsList.appendChild(this.buildEvidenceConcept(concept));
+    for (const concept of cards) {
+      conceptsList.appendChild(this.buildEvidenceConcept(concept, true, view.sources ?? {}));
     }
     this.evidenceRegion.appendChild(conceptsList);
 
-    // Analysis jobs.
+    if (codeOnly.length > 0) {
+      const code = this.el("div", "agent-evidence-code");
+      const label = this.el("p", "agent-evidence-code-label");
+      label.textContent = "코드에 쓰인 개념";
+      code.appendChild(label);
+      const note = this.el("p", "agent-evidence-code-note");
+      note.textContent = "만들면서 쓰였지만 아직 내 말로 남긴 기록은 없어요.";
+      code.appendChild(note);
+      const chips = this.el("ul", "agent-evidence-chips");
+      for (const concept of codeOnly) {
+        const chip = this.el("li", "agent-evidence-chip");
+        chip.textContent = concept.name;
+        chips.appendChild(chip);
+      }
+      code.appendChild(chips);
+      this.evidenceRegion.appendChild(code);
+    }
+
+    // Only failed analyses need the learner; each gets one retry.
     const analysisList = this.el("div", "agent-evidence-analysis");
     for (const job of view.analysis) {
-      analysisList.appendChild(this.buildEvidenceAnalysis(job));
+      if (job.displayState === "ANALYSIS_FAILED") analysisList.appendChild(this.buildEvidenceAnalysis(job));
     }
     this.evidenceRegion.appendChild(analysisList);
   }
@@ -913,7 +1180,7 @@ export class AgentSurfaceView {
   // Builder rendering
   // ==========================================================================
 
-  private renderBuilder(builder: BuilderTurnViewModel, hostChat?: HostChatViewModel, waitingQuestion?: string): void {
+  private renderBuilder(builder: BuilderTurnViewModel, hostChat?: HostChatViewModel): void {
     this.readyToStart = !!builder.readyToStart && !!builder.taskId;
     this.renderedTaskId = builder.taskId;
     // Final upgrade is a suggestion after completion, never shown up front.
@@ -934,9 +1201,11 @@ export class AgentSurfaceView {
     }
     this.builderPhase.textContent = this.readyToStart && builder.phase === "IDLE"
       ? "시작 대기" : BUILDER_PHASE_LABELS[builder.phase];
+    // Kiro-native: the "지금 할 일" card (renderNow) says all of this in one place.
+    this.builderPhase.hidden = !!hostChat;
 
     // Task title.
-    if (builder.taskTitle) {
+    if (builder.taskTitle && !hostChat) {
       this.builderTaskTitle.hidden = false;
       this.builderTaskTitle.textContent = builder.taskTitle;
     } else {
@@ -945,9 +1214,9 @@ export class AgentSurfaceView {
     }
 
     // Completion indicator (only in TASK_COMPLETED).
-    if (builder.phase === "TASK_COMPLETED") {
+    if (builder.phase === "TASK_COMPLETED" && !hostChat) {
       this.builderCompletion.hidden = false;
-      this.builderCompletion.textContent = builder.completionReportId && !hostChat
+      this.builderCompletion.textContent = builder.completionReportId
         ? `완료 보고서: ${builder.completionReportId}`
         : "이번 작업을 완료했어요.";
     } else {
@@ -955,16 +1224,9 @@ export class AgentSurfaceView {
       this.builderCompletion.textContent = "";
     }
 
-    this.builderNextHint.dataset.waiting = String(!!hostChat && !!waitingQuestion && !this.readyToStart);
-    if (hostChat && builder.taskId) {
-      this.builderNextHint.hidden = false;
-      this.builderNextHint.textContent = this.readyToStart
-        ? "계획과 작업이 준비됐어요. ‘Kiro 채팅에서 열기’를 누르면 이 Project를 Kiro 채팅에 연결해요. 만들기와 결정은 Kiro 채팅에서 하고, 쌓인 기록은 ‘학습 기록’에서 볼 수 있어요."
-        : waitingQuestion
-          ? `Kiro 채팅이 답을 기다려요: ${waitingQuestion}`
-          : builder.phase === "TASK_COMPLETED"
-            ? "이번 작업을 마쳤어요. 아래 ‘다음 한 걸음’을 보거나, 하고 싶은 것을 Kiro 채팅에 말해 주세요."
-            : "만들기는 Kiro 채팅에서 진행돼요. 채팅 창을 닫았거나 다른 폴더를 열었다면 ‘Kiro 채팅에서 열기’를 다시 눌러 주세요.";
+    if (hostChat) {
+      this.builderNextHint.hidden = true;
+      this.builderNextHint.textContent = "";
     } else if (this.readyToStart && builder.phase === "IDLE") {
       this.builderNextHint.hidden = false;
       this.builderNextHint.textContent = "계획과 작업이 준비됐어요. ‘빌더 시작’을 누르면 확정한 계획으로 만들기를 시작해요. 추가 요청은 선택 입력이에요.";
@@ -1016,18 +1278,122 @@ export class AgentSurfaceView {
     this.builderComposerInput.disabled = inFlight;
     this.builderSendButton.disabled = inFlight;
     this.builderSendButton.textContent = this.readyToStart ? "빌더 시작" : "보내기";
-    // Kiro-native: requests and runs live in Kiro chat, so only the connect
-    // button remains; the transcript shows only if a run ever streamed here.
-    this.kiroOpenButton.hidden = !hostChat || !builder.taskId;
-    this.kiroOpenButton.disabled = !!hostChat?.opening;
-    this.builderComposerLabel.hidden = this.builderComposerInput.hidden =
-      this.builderSendButton.hidden = !!hostChat;
+    // Kiro-native: requests and runs live in Kiro chat, so the composer goes; the
+    // transcript shows only if a run ever streamed here. Core launches only results
+    // with its manifest in a Core-made folder, which Kiro chat never writes (K23),
+    // so the result button stays off there too.
+    this.builderComposer.hidden = !!hostChat;
     this.builderTranscriptLabel.hidden = this.builderTranscript.hidden =
       !!hostChat && builder.transcript.length === 0;
     this.workspaceOpenButton.hidden = !!hostChat || !builder.taskId;
     this.workspaceOpenButton.disabled = inFlight || !builder.taskId;
-    this.resultLaunchButton.hidden = !completed || !builder.taskId;
+    this.resultLaunchButton.hidden = !!hostChat || !completed || !builder.taskId;
     this.resultLaunchButton.disabled = inFlight || !builder.taskId;
+  }
+
+  /** K23, Kiro-native: the state the "지금 할 일" card describes. */
+  private nowStateOf(builder: BuilderTurnViewModel, hostChat: HostChatViewModel, waitingQuestion?: string): NowState {
+    if (!builder.taskId) return "NO_TASK";
+    if (hostChat.opening) return "OPENING";
+    if ((builder.phase === "FAILED" || builder.phase === "START_ERROR") && builder.errorCode) return "FAILED";
+    const window = hostChat.window;
+    if (this.readyToStart) {
+      // Just opened in a new window: that window's panel takes over from here.
+      if (hostChat.openedNewWindow && window !== "READY") return "NEW_WINDOW";
+      if (window === "READY") return "SEND_START";
+      if (window === "UNTRUSTED") return "UNTRUSTED";
+      if (window === "RELOAD") return "RELOAD";
+      return hostChat.openedNewWindow ? "NEW_WINDOW" : "CONNECT";
+    }
+    if (waitingQuestion) return "WAITING";
+    if (builder.phase === "TASK_COMPLETED") return "DONE";
+    if (window === "UNTRUSTED") return "UNTRUSTED";
+    if (window === "RELOAD") return "RELOAD";
+    if (window === "NOT_BOUND") return hostChat.openedNewWindow ? "NEW_WINDOW" : "ELSEWHERE";
+    return "BUILDING";
+  }
+
+  /**
+   * K23, Kiro-native "지금 할 일": this Task, one sentence for now, words to send
+   * with a copy button when there are any, and at most one action. Rebinding a
+   * folder Kiro chat already uses would cut that chat off from Core, so "Kiro 채팅에서
+   * 열기" shows only when this window is not the Project's connected folder.
+   */
+  private renderNow(vm: AgentViewModel, waitingQuestion?: string): void {
+    const hostChat = vm.hostChat;
+    this.nowCard.hidden = !hostChat;
+    this.chatHint.hidden = !hostChat;
+    this.stepsSection.hidden = !hostChat || !vm.builder.taskId;
+    if (!hostChat) return;
+    const builder = vm.builder;
+    const state = this.nowStateOf(builder, hostChat, waitingQuestion);
+    this.nowCard.dataset.state = state;
+    // The first Task is the Project the header already names; a follow-up gets its own line.
+    this.nowTask.hidden = !builder.taskTitle || (builder.taskSequence ?? 1) <= 1;
+    this.nowTaskTitle.textContent = builder.taskTitle ?? "";
+    this.nowTaskTitle.title = builder.taskTitle ?? "";
+    const text = NOW_TEXT[state];
+    this.nowLead.textContent = state === "FAILED" && builder.errorCode ? this.errorText(builder.errorCode) : text.lead;
+    this.nowQuestion.hidden = state !== "WAITING";
+    this.nowQuestion.textContent = state === "WAITING" ? waitingQuestion ?? "" : "";
+    this.nowSend.hidden = state !== "SEND_START";
+    // A connected but not fresh session has no Vibe Helper hooks yet: open a new one first.
+    const detail = state === "SEND_START" && vm.notice?.code === "KIRO_CHAT_REGISTERED"
+      ? `채팅 위쪽의 + 로 새 세션을 연 뒤 보내 주세요. ${text.detail ?? ""}`
+      : text.detail ?? "";
+    this.nowDetail.hidden = detail === "";
+    this.nowDetail.textContent = detail;
+    const connect = state === "CONNECT" || state === "ELSEWHERE" || state === "OPENING";
+    this.nowAction.hidden = !connect;
+    this.nowAction.disabled = state === "OPENING";
+    this.nowAction.textContent = state === "OPENING" ? "연결하는 중…" : "Kiro 채팅에서 열기";
+    this.nowNote.hidden = !(state === "CONNECT" || state === "ELSEWHERE");
+    this.renderSteps(builder, state);
+  }
+
+  /** K23: the current step of this Task, open until the first Task is finished. */
+  private renderSteps(builder: BuilderTurnViewModel, state: NowState): void {
+    const current = stepOf(state);
+    this.stepItems.forEach((item, index) => {
+      item.dataset.step = index < current ? "done" : index === current ? "now" : "next";
+      if (index === current) item.setAttribute("aria-current", "step");
+      else item.setAttribute("aria-current", "false");
+    });
+    this.stepsNow.textContent = `지금: ${STEPS[current]}`;
+    this.stepsTaskId = builder.taskId;
+    const firstTaskDone = (builder.taskSequence ?? 1) > 1 || builder.phase === "TASK_COMPLETED";
+    const choice = this.stepsChoice !== null && this.stepsChoice.taskId === builder.taskId ? this.stepsChoice.open : undefined;
+    const open = choice ?? !firstTaskDone;
+    if (this.stepsSection.open !== open) {
+      this.stepsExpected = open;
+      this.stepsSection.open = open;
+    }
+  }
+
+  /**
+   * K23: words the learner may send in Kiro chat, with a copy button. The host
+   * builds the copied text; this view only says which one.
+   */
+  private buildSendRow(text: string, label: string, copy: () => void): HTMLElement {
+    const row = this.el("div", "agent-send");
+    const value = this.el("span", "agent-send-text");
+    value.textContent = text;
+    row.appendChild(value);
+    const button = this.el("button", "agent-copy") as HTMLButtonElement;
+    button.type = "button";
+    button.textContent = "복사";
+    button.setAttribute("aria-label", label);
+    button.addEventListener("click", () => {
+      copy();
+      button.textContent = "복사했어요";
+      button.dataset.copied = "true";
+      setTimeout(() => {
+        button.textContent = "복사";
+        button.dataset.copied = "false";
+      }, 1600);
+    });
+    row.appendChild(button);
+    return row;
   }
 
   /**
@@ -1073,6 +1439,10 @@ export class AgentSurfaceView {
       const benefit = this.el("p", "agent-next-move-benefit");
       benefit.textContent = `좋아지는 점: ${move.benefit}`;
       item.appendChild(benefit);
+      // K23: what to send in Kiro chat to pick this one. Copy only; the learner sends it.
+      const moveNumber = move.number;
+      item.appendChild(this.buildSendRow(nextMoveChatText(move), `${moveNumber}번을 고르는 문구 복사`,
+        () => this.callbacks.onCopyChatText({ what: "NEXT_MOVE", number: moveNumber })));
       this.nextMoveList.appendChild(item);
     }
   }
@@ -1325,16 +1695,17 @@ export class AgentSurfaceView {
    */
   private renderDecisions(decisions: readonly DecisionViewModel[], hostTaskId?: string | null): void {
     const compact = hostTaskId !== undefined;
+    // K23: the "지금 할 일" card shows the question Kiro chat waits on, so this list
+    // holds only what the learner already chose in this Task.
     const shown = compact
-      ? decisions.filter(d => d.taskId === hostTaskId && !d.replaced)
-        .sort((left, right) => Number(left.resolved) - Number(right.resolved))
+      ? decisions.filter(d => d.taskId === hostTaskId && !d.replaced && d.resolved)
       : decisions;
     // Streaming Builder/Helper updates must not replace the focused inputs.
     // Context revisions are host-validated and do not change this form's content.
     const key = JSON.stringify([compact, shown.map(({ contextVersion: _version, ...form }) => form)]);
     if (key === this.decisionsRenderKey) return;
     this.decisionsRenderKey = key;
-    this.decisionsLabel.textContent = compact ? "이번 작업의 결정" : "함께 정할 결정";
+    this.decisionsLabel.textContent = compact ? "이번 작업에서 고른 것" : "함께 정할 결정";
     this.decisionsRegion.textContent = "";
     for (const decision of shown) {
       this.decisionsRegion.appendChild(compact ? this.buildCompactDecision(decision) : this.buildDecision(decision));
@@ -1352,7 +1723,7 @@ export class AgentSurfaceView {
     summary.appendChild(question);
     const state = this.el("span", "agent-decision-compact-state");
     state.textContent = !decision.resolved
-      ? "Kiro 채팅에서 답을 기다려요"
+      ? "답을 기다려요"
       : `${decision.chosenLabel ?? "골랐어요"}${decision.applied ? " · 반영함" : ""}`;
     summary.appendChild(state);
     block.appendChild(summary);
@@ -1405,7 +1776,7 @@ export class AgentSurfaceView {
     block.dataset.decisionId = decision.decisionId;
 
     const category = this.el("div", "agent-decision-category");
-    category.textContent = DECISION_CATEGORY_LABELS[decision.category] ?? decision.category;
+    category.textContent = decisionCategoryLabel(decision.category);
     block.appendChild(category);
 
     const question = this.el("p", "agent-decision-question");
@@ -1704,9 +2075,13 @@ export class AgentSurfaceView {
     this.workerStatus.title = worker.code;
   }
 
-  /** Renders the surface notice (code + message via `textContent`, Req 2.7). */
-  private renderNotice(notice: NoticeViewModel | null): void {
-    if (!notice) {
+  /**
+   * Renders the surface notice (code + message via `textContent`, Req 2.7). On a
+   * Kiro-native host the "지금 할 일" card already says what connecting to Kiro chat
+   * means next, so those informational notices stay off (K23).
+   */
+  private renderNotice(notice: NoticeViewModel | null, kiro = false): void {
+    if (!notice || (kiro && notice.kind === "info" && notice.code.startsWith("KIRO_CHAT_"))) {
       this.notice.hidden = true;
       this.notice.textContent = "";
       return;
@@ -1728,40 +2103,59 @@ export class AgentSurfaceView {
    */
   private buildEvidenceConcept(
     concept: EvidenceTraceView["concepts"][number],
+    sayNone = true,
+    sources: Readonly<Record<string, string>> = {},
   ): HTMLElement {
     const block = this.el("div", "agent-evidence-concept");
     block.dataset.displayState = concept.displayState;
 
-    const name = this.el("div", "agent-evidence-concept-name");
+    const head = this.el("div", "agent-evidence-concept-head");
+    const name = this.el("span", "agent-evidence-concept-name");
     name.textContent = concept.name;
-    block.appendChild(name);
-
-    const state = this.el("div", "agent-evidence-concept-state");
+    head.appendChild(name);
+    const state = this.el("span", "agent-evidence-concept-state");
     // Honest labelling: only accepted user-understanding evidence supports an
-    // understanding claim. OBSERVED_ONLY / zero understanding never do.
-    if (
-      concept.displayState === "OBSERVED_ONLY" ||
-      concept.userUnderstandingCount === 0
-    ) {
-      state.textContent = "관찰만 되었어요 (이해했다고 표시하지 않음)";
-    } else {
-      state.textContent = `사용자 이해 근거 ${concept.userUnderstandingCount}건`;
+    // understanding claim. OBSERVED_ONLY / zero understanding never do; code the
+    // Agent wrote that uses the concept reads as "코드에 쓰였어요" (K23).
+    const understood = concept.displayState.startsWith("USER_EVIDENCE_") && concept.userUnderstandingCount > 0;
+    state.textContent = understood ? CONCEPT_STATE_LABELS[concept.displayState]
+      : concept.displayState === "OBSERVED_ONLY" ? CONCEPT_STATE_LABELS.OBSERVED_ONLY : CONCEPT_STATE_LABELS.NO_STATE;
+    head.appendChild(state);
+    block.appendChild(head);
+
+    // Only the learner's own words, quoted (agent/Core text → textContent only).
+    // Observations quote code or Agent output, so they never appear here.
+    const quotes = concept.accepted.filter(item => item.kind === "USER_UNDERSTANDING" && item.excerpt);
+    for (const accepted of quotes.slice(-3)) {
+      const quote = this.el("blockquote", "agent-evidence-quote");
+      const words = this.el("q", "agent-evidence-quote-text");
+      words.textContent = accepted.excerpt ?? "";
+      quote.appendChild(words);
+      // What kind of words, and which other Project they came from.
+      const kind = accepted.signal ? EVIDENCE_SIGNAL_LABELS[accepted.signal] : undefined;
+      // Older Projects are titled by their whole learning goal: keep the label short.
+      const from = sources[accepted.id];
+      const shortFrom = from ? shortTitle(from) : undefined;
+      const label = [shortFrom, kind].filter(Boolean).join(" · ");
+      if (label) {
+        const source = this.el("span", "agent-evidence-quote-kind");
+        source.textContent = label;
+        if (from) source.title = from;
+        quote.appendChild(source);
+      }
+      block.appendChild(quote);
     }
-    block.appendChild(state);
+    // When nothing is quoted anywhere, the record says so once instead.
+    if (quotes.length === 0 && sayNone) {
+      const none = this.el("p", "agent-evidence-concept-none");
+      none.textContent = "아직 내 말로 남긴 기록은 없어요.";
+      block.appendChild(none);
+    }
 
     if (concept.openIssueCount > 0) {
-      const issues = this.el("div", "agent-evidence-concept-issues");
-      issues.textContent = `확인이 필요한 항목 ${concept.openIssueCount}건`;
+      const issues = this.el("p", "agent-evidence-concept-issues");
+      issues.textContent = "다시 짚어 볼 부분이 있어요. Kiro 채팅에 물어보면 같이 볼 수 있어요.";
       block.appendChild(issues);
-    }
-
-    // Accepted evidence excerpts (agent/Core text → textContent only).
-    for (const accepted of concept.accepted) {
-      if (accepted.excerpt) {
-        const excerpt = this.el("p", "agent-evidence-accepted-excerpt");
-        excerpt.textContent = accepted.excerpt;
-        block.appendChild(excerpt);
-      }
     }
 
     return block;
@@ -1782,32 +2176,17 @@ export class AgentSurfaceView {
     const status = this.el("div", "agent-evidence-analysis-status");
 
     if (job.displayState === "ANALYZED" && job.acceptedCount === 0) {
-      // No success indication (Req 10.4). The reason is the Analyst's own memo
-      // and quotes internal terms (Episode, USER_DECISION, BUILDER_CHAT_TURN),
-      // so the learner reads a plain sentence and the memo stays one click away
-      // (Windows 0.2.12 check, 2026-10-17).
+      // No success indication (Req 10.4). The Analyst's memo quotes internal
+      // terms (Episode, USER_DECISION, BUILDER_CHAT_TURN), so the learner reads a
+      // plain sentence only; the memo is never shown (K23).
       status.textContent = "이번 대화에서는 이해 근거로 인정된 내용이 없어요. 고른 이유나 내 생각을 내 말로 적으면 근거로 남아요.";
       block.appendChild(status);
-      if (job.noEvidenceReason) {
-        const memo = this.el("details", "agent-evidence-analysis-memo");
-        const summary = this.el("summary", "agent-evidence-analysis-memo-summary");
-        summary.textContent = "자세한 분석 메모";
-        const reason = this.el("p", "agent-evidence-analysis-memo-text");
-        reason.textContent = job.noEvidenceReason;
-        memo.appendChild(summary);
-        memo.appendChild(reason);
-        block.appendChild(memo);
-      }
     } else if (job.displayState === "ANALYZED") {
-      status.textContent =
-        job.acceptedCount !== null
-          ? `근거 ${job.acceptedCount}건이 인정되었어요.`
-          : "분석을 마쳤어요.";
+      status.textContent = "대화를 정리했어요.";
       block.appendChild(status);
     } else if (job.displayState === "ANALYSIS_FAILED") {
-      status.textContent = job.failureCode
-        ? `분석 실패: ${job.failureCode}`
-        : "분석에 실패했어요.";
+      status.textContent = "정리하지 못한 대화가 있어요.";
+      if (job.failureCode) status.title = job.failureCode;
       block.appendChild(status);
 
       // Retry affordance (Req 10.5). The projection omits job revisions, so 0
@@ -1815,7 +2194,7 @@ export class AgentSurfaceView {
       // durable revision is sent to Core's optimistic concurrency check.
       const retry = this.el("button", "agent-evidence-retry") as HTMLButtonElement;
       retry.type = "button";
-      retry.textContent = "분석 다시 시도";
+      retry.textContent = "다시 정리하기";
       retry.dataset.jobId = job.jobId;
       retry.addEventListener("click", () => {
         this.callbacks.onRetryAnalysis(job.jobId, 0);
@@ -1823,7 +2202,7 @@ export class AgentSurfaceView {
       block.appendChild(retry);
     } else {
       // WAITING / ANALYZING.
-      status.textContent = job.displayState === "WAITING" ? "분석 대기 중…" : "분석 중…";
+      status.textContent = job.displayState === "WAITING" ? "정리를 기다리고 있어요…" : "정리하고 있어요…";
       block.appendChild(status);
     }
 

@@ -29,10 +29,10 @@ import type {
   AgentViewModel,
   BuilderTurnViewModel,
   HelperViewModel,
+  LearningRecordView,
   NoticeViewModel,
 } from "../../core/agent/agent-view-model";
 import type {
-  EvidenceTraceView,
   FinalUpgradeCandidate,
   NativeWorkerStatusView,
 } from "../../../vendor/frontend-client";
@@ -88,6 +88,9 @@ export type NativeAnswerInput =
  * - `finalUpgrade/prepare`: prepare a final-upgrade task (Req 11.2).
  * - `nextMove/retry`: Kiro-native host only; generate the Next Move
  *   suggestions again after both automatic attempts failed.
+ * - `chat/copy`: Kiro-native host only (K23); copy the suggested first chat
+ *   message (`START`) or the line that picks Next Move `number`. The host builds
+ *   the text from its own view model; the webview never supplies it.
  */
 export type AgentAction =
   | { readonly kind: "builder/start"; readonly message: string }
@@ -129,7 +132,9 @@ export type AgentAction =
       readonly personalizationTraceId: string;
       readonly userGoal: string;
     }
-  | { readonly kind: "nextMove/retry" };
+  | { readonly kind: "nextMove/retry" }
+  | { readonly kind: "chat/copy"; readonly what: "START" }
+  | { readonly kind: "chat/copy"; readonly what: "NEXT_MOVE"; readonly number: number };
 
 /**
  * Host -> Webview: full hydrate or targeted patch + notices. Safe DTOs only.
@@ -148,7 +153,7 @@ export type AgentHostMessage =
   | { readonly kind: "agent/patch/builder"; readonly builder: BuilderTurnViewModel }
   | { readonly kind: "agent/patch/helper"; readonly helper: HelperViewModel }
   | { readonly kind: "agent/patch/worker"; readonly worker: NativeWorkerStatusView | null }
-  | { readonly kind: "agent/evidence"; readonly view: EvidenceTraceView }
+  | { readonly kind: "agent/evidence"; readonly view: LearningRecordView }
   | { readonly kind: "agent/finalUpgrade"; readonly candidates: readonly FinalUpgradeCandidate[] }
   | { readonly kind: "agent/notice"; readonly notice: NoticeViewModel };
 
@@ -328,6 +333,13 @@ export function parseAgentAction(raw: unknown): AgentAction | null {
     case "finalUpgrade/list":
     case "nextMove/retry":
       return { kind };
+
+    case "chat/copy":
+      if (raw.what === "START") return { kind, what: "START" };
+      return raw.what === "NEXT_MOVE" && typeof raw.number === "number" && Number.isSafeInteger(raw.number) &&
+        raw.number >= 1 && raw.number <= 9
+        ? { kind, what: "NEXT_MOVE", number: raw.number }
+        : null;
 
     case "finalUpgrade/prepare":
       return isString(raw.sourceTaskId) &&
