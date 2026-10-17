@@ -238,6 +238,18 @@ const STEPS = [
   "결과 보고 다음 한 걸음 고르기",
 ] as const;
 
+/** K23: a Project title cut at a word boundary, for a quote's source label. */
+function shortTitle(title: string, limit = 20): string {
+  if (title.length <= limit) return title;
+  let out = "";
+  for (const word of title.split(/\s+/)) {
+    const next = out ? `${out} ${word}` : word;
+    if (next.length > limit) break;
+    out = next;
+  }
+  return `${out || title.slice(0, limit)}…`;
+}
+
 function stepOf(state: NowState): number {
   switch (state) {
     case "SEND_START":
@@ -2119,11 +2131,14 @@ export class AgentSurfaceView {
       quote.appendChild(words);
       // What kind of words, and which other Project they came from.
       const kind = accepted.signal ? EVIDENCE_SIGNAL_LABELS[accepted.signal] : undefined;
+      // Older Projects are titled by their whole learning goal: keep the label short.
       const from = sources[accepted.id];
-      const label = [from, kind].filter(Boolean).join(" · ");
+      const shortFrom = from ? shortTitle(from) : undefined;
+      const label = [shortFrom, kind].filter(Boolean).join(" · ");
       if (label) {
         const source = this.el("span", "agent-evidence-quote-kind");
         source.textContent = label;
+        if (from) source.title = from;
         quote.appendChild(source);
       }
       block.appendChild(quote);
