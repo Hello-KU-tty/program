@@ -221,7 +221,8 @@ describe("SpecReview (task 12.3)", () => {
   it("renders each expected decision's category, description, and why (Req 9.5)", () => {
     view.render(snapshot());
     expect(byClass(root, "flow-decision")).toHaveLength(1);
-    expect(byClass(root, "flow-decision-category")[0].textContent).toBe("DATA_MODEL");
+    // K23: a learner-facing name, never the raw Core code.
+    expect(byClass(root, "flow-decision-category")[0].textContent).toBe("데이터 구조");
     expect(byClass(root, "flow-decision-description")[0].textContent).toBe("데이터 구조를 정합니다.");
     expect(byClass(root, "flow-decision-why")[0].textContent).toBe("당신의 선택이 중요해요.");
     restore();

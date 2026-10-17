@@ -61,6 +61,7 @@ import type {
 } from "../../../vendor/frontend-client";
 import { errorGuidance, workerStatusGuidance, isPermissionDenial } from "../../core/runtime-errors";
 import { renderChatMessage } from "./chat-message";
+import { decisionCategoryLabel } from "../../core/decision-categories";
 
 /**
  * Callbacks the agent render layer invokes when the learner interacts with a
@@ -147,19 +148,6 @@ const HELPER_PHASE_LABELS: Readonly<Record<HelperViewModel["phase"], string>> = 
 };
 
 /** Korean labels for a tool row status. */
-/** Learner-facing names for Core decision categories; unknown values pass through. */
-const DECISION_CATEGORY_LABELS: Readonly<Record<string, string>> = {
-  PRODUCT_BEHAVIOR: "제품 동작",
-  DATA_MODEL: "데이터 구조",
-  API_CONTRACT: "API 설계",
-  AUTHENTICATION: "로그인·인증",
-  AUTHORIZATION: "권한",
-  SECURITY_PRIVACY: "보안·개인정보",
-  RETENTION_DELETION: "보관·삭제",
-  COST_DEPLOYMENT: "비용·배포",
-  ARCHITECTURE: "구조 설계",
-  LEARNING_CONCEPT: "학습 개념",
-};
 
 /** Plain-language worker stages; the raw code stays in the tooltip for support. */
 const WORKER_STAGE_LABELS: Readonly<Record<string, string>> = {
@@ -1670,9 +1658,10 @@ export class AgentSurfaceView {
    */
   private renderDecisions(decisions: readonly DecisionViewModel[], hostTaskId?: string | null): void {
     const compact = hostTaskId !== undefined;
+    // K23: the "지금 할 일" card shows the question Kiro chat waits on, so this list
+    // holds only what the learner already chose in this Task.
     const shown = compact
-      ? decisions.filter(d => d.taskId === hostTaskId && !d.replaced)
-        .sort((left, right) => Number(left.resolved) - Number(right.resolved))
+      ? decisions.filter(d => d.taskId === hostTaskId && !d.replaced && d.resolved)
       : decisions;
     // Streaming Builder/Helper updates must not replace the focused inputs.
     // Context revisions are host-validated and do not change this form's content.
@@ -1750,7 +1739,7 @@ export class AgentSurfaceView {
     block.dataset.decisionId = decision.decisionId;
 
     const category = this.el("div", "agent-decision-category");
-    category.textContent = DECISION_CATEGORY_LABELS[decision.category] ?? decision.category;
+    category.textContent = decisionCategoryLabel(decision.category);
     block.appendChild(category);
 
     const question = this.el("p", "agent-decision-question");

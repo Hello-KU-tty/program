@@ -914,10 +914,11 @@ describe("Kiro-native Builder tab (K17)", () => {
       const otherTask = { ...pendingDecision(), decisionId: "decision_other", taskId: "task_other", question: "다른 작업" };
       view.render(kiroVm({ decisions: [chosen, waiting, replaced, otherTask] }));
       const rows = byClass(root, "agent-decision agent-decision-compact");
-      expect(rows.map((row) => row.dataset.decisionId)).toEqual(["decision_waiting", "decision_chosen"]);
-      expect(rows.map((row) => row.dataset.state)).toEqual(["waiting", "chosen"]);
+      // K23: only what was already chosen; the card names the open question.
+      expect(rows.map((row) => row.dataset.decisionId)).toEqual(["decision_chosen"]);
+      expect(rows.map((row) => row.dataset.state)).toEqual(["chosen"]);
       expect(byClass(root, "agent-decision-compact-state").map((el) => el.textContent))
-        .toEqual(["답을 기다려요", "하이브리드"]);
+        .toEqual(["하이브리드"]);
       expect(byClass(root, "agent-decision-choose")).toHaveLength(0);
       // K23: the card names the question Kiro chat waits on.
       expect(byClass(root, "agent-now")[0].dataset.state).toBe("WAITING");

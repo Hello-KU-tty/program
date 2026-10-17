@@ -26,6 +26,7 @@
 import { Countdown } from "./countdown";
 import type { FlowSnapshot } from "../../core/flow/flow-snapshot";
 import { runtimeErrorMessage } from "../../core/runtime-errors";
+import { decisionCategoryLabel } from "../../core/decision-categories";
 import type {
   CandidatePreview,
   CandidateRevisionReference,
@@ -1568,7 +1569,8 @@ export class SpecReview {
     const block = this.el("div", "flow-decision");
 
     const category = this.el("div", "flow-decision-category");
-    category.textContent = decision.category;
+    category.textContent = decisionCategoryLabel(decision.category);
+    category.title = decision.category;
     block.appendChild(category);
 
     const description = this.el("p", "flow-decision-description");
