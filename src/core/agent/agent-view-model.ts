@@ -23,13 +23,26 @@ import type { EvidenceTraceView, NativeWorkerStatusView, ProjectSessionSnapshot 
  */
 export type LearningRecordView = EvidenceTraceView & { readonly sources?: Readonly<Record<string, string>> };
 
-/** Use the selected product name when the initial task only repeats the goal. */
+/** Core names a follow-up "<Project title> 후속 작업" (domain `planFollowUpTask`). */
+const FOLLOW_UP_SUFFIX = " 후속 작업";
+
+/**
+ * Use the selected product name when a task only repeats the goal. K23: a follow-up started
+ * from a Next Move is named by that suggestion, and any other follow-up by the product name,
+ * since Projects made before 0.2.13 are titled by their whole learning goal.
+ */
 export function builderTaskLabel(snapshot: ProjectSessionSnapshot): string | null {
   const task = snapshot.currentTask;
   if (!task) return null;
-  const goalTitle = task.title === snapshot.project.title || task.title === snapshot.project.learningGoal;
-  return task.sequence === 1 && goalTitle && snapshot.selectedCandidate
-    ? snapshot.selectedCandidate.title : task.title;
+  const moveTitle = task.nextMove?.title.trim();
+  if (moveTitle) return moveTitle;
+  const isGoal = (title: string) => title === snapshot.project.title || title === snapshot.project.learningGoal;
+  const product = snapshot.selectedCandidate?.title;
+  if (!product) return task.title;
+  if (task.sequence === 1 && isGoal(task.title)) return product;
+  if (task.sequence > 1 && task.title.endsWith(FOLLOW_UP_SUFFIX) && isGoal(task.title.slice(0, -FOLLOW_UP_SUFFIX.length)))
+    return `${product}${FOLLOW_UP_SUFFIX}`;
+  return task.title;
 }
 
 /** Top-level agent surface projection posted to the webview. */
