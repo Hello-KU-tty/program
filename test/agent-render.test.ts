@@ -482,16 +482,18 @@ describe("honest learning record (task 9.2, Req 10.2/10.4, K23)", () => {
         // An observation quotes code the Agent wrote, never the learner.
         accepted: [accepted({ id: "o1", kind: "OBSERVED", signal: null, supportsState: "OBSERVED", excerpt: "db.transaction(() => ...)" })],
       })] }));
-      const states = byClass(root, "agent-evidence-concept-state");
-      expect(states.map(e => e.textContent)).toEqual(["코드에 쓰였어요"]);
-      // Nothing quoted anywhere: the record says so once, not per concept.
-      expect(byClass(root, "agent-evidence-concept-none")).toHaveLength(0);
+      // Code-only concepts fold into one line of names; no understanding label at all.
+      expect(byClass(root, "agent-evidence-concept-state")).toHaveLength(0);
+      expect(byClass(root, "agent-evidence-code-label")[0].textContent).toBe("코드에 쓰인 개념");
+      expect(byClass(root, "agent-evidence-chip").map(e => e.textContent)).toEqual(["상태 관리"]);
       expect(byClass(root, "agent-evidence-quote")).toHaveLength(0);
       expect(text(root)).not.toContain("db.transaction");
+      expect(text(root)).not.toMatch(/설명할 수 있어요|직접 적용했어요/);
       expect(byClass(root, "agent-evidence-empty")[0].textContent).toContain("고른 이유를 내 말로");
       // A user state without accepted understanding still makes no claim.
       view.renderEvidence(evidenceView({ concepts: [concept({ displayState: "USER_EVIDENCE_EXPLAINED", userUnderstandingCount: 0 })] }));
-      expect(byClass(root, "agent-evidence-concept-state")[0].textContent).toBe("아직 기록 없음");
+      expect(byClass(root, "agent-evidence-concept-state")).toHaveLength(0);
+      expect(text(root)).not.toContain("설명할 수 있어요");
     } finally { restore(); }
   });
 
@@ -507,14 +509,14 @@ describe("honest learning record (task 9.2, Req 10.2/10.4, K23)", () => {
         ],
       }));
       const names = byClass(root, "agent-evidence-concept-name").map(e => e.textContent);
-      expect(names).toEqual(["관계형 데이터베이스 설계", "트랜잭션과 동시성"]);
+      expect(names).toEqual(["관계형 데이터베이스 설계"]);
+      expect(byClass(root, "agent-evidence-chip").map(e => e.textContent)).toEqual(["트랜잭션과 동시성"]);
       expect(byClass(root, "agent-evidence-concept-state")[0].textContent).toBe("설명할 수 있어요");
       expect(byClass(root, "agent-evidence-quote-text").map(e => e.textContent))
         .toEqual(["지금 몇 개 남았는지 바로 보는 게 편할 것 같아", "<b>이력은</b> 쌓기만 해"]);
       expect(byClass(root, "agent-evidence-quote-kind").map(e => e.textContent)).toEqual(["고른 이유", "내 말로 설명"]);
       expect(root.queryAll(e => e.tagName === "B")).toHaveLength(0);
       expect(byClass(root, "agent-evidence-concept-issues")[0].textContent).toContain("다시 짚어 볼 부분");
-      expect(byClass(root, "agent-evidence-concept-none").map(e => e.textContent)).toEqual(["아직 내 말로 남긴 기록은 없어요."]);
       expect(byClass(root, "agent-evidence-empty")).toHaveLength(0);
       expect(text(root)).not.toMatch(/\d+건|근거 \d/);
       // A quote from another Project names it; this Project's quotes need no name.

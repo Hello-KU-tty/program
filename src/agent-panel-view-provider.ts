@@ -2641,6 +2641,34 @@ export function buildWebviewHtml(
       line-height: 1.45;
       overflow-wrap: anywhere;
     }
+    .agent-evidence-code {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-1);
+      padding-top: var(--sp-3);
+      border-top: 1px solid color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
+    }
+    .agent-evidence-code-label {
+      margin: 0;
+      font-weight: 600;
+    }
+    .agent-evidence-code-note { margin: 0; font-size: 0.8em; color: var(--vscode-descriptionForeground); }
+    .agent-evidence-chips {
+      list-style: none;
+      margin: var(--sp-1) 0 0;
+      padding: 0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--sp-1);
+    }
+    .agent-evidence-chip {
+      font-size: 0.82em;
+      border-radius: var(--radius-pill);
+      padding: 1px var(--sp-2);
+      color: var(--vscode-foreground);
+      background: color-mix(in srgb, var(--vscode-foreground) 8%, transparent);
+      overflow-wrap: anywhere;
+    }
     .agent-evidence-quote-kind,
     .agent-evidence-concept-none,
     .agent-evidence-concept-issues {

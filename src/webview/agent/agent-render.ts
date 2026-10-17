@@ -1059,13 +1059,17 @@ export class AgentSurfaceView {
     // K23: no counts and no scores. Concepts the learner spoke about come first,
     // each with their own quoted words; Core's empty reason and the Analyst's
     // memo can carry internal terms, so neither is shown.
-    const rank = (concept: EvidenceTraceView["concepts"][number]): number =>
-      concept.displayState.startsWith("USER_EVIDENCE_") && concept.userUnderstandingCount > 0 ? 0
-        : concept.displayState === "OBSERVED_ONLY" ? 1 : 2;
-    const concepts = view.concepts.map((concept, index) => ({ concept, index }))
-      .sort((left, right) => rank(left.concept) - rank(right.concept) || left.index - right.index)
+    type Concept = EvidenceTraceView["concepts"][number];
+    const spokenOf = (concept: Concept): boolean =>
+      concept.displayState.startsWith("USER_EVIDENCE_") && concept.userUnderstandingCount > 0;
+    // Cards: what the learner said, plus anything to look at again. Code-only
+    // concepts fold into one line of names, so the record stays short (K23).
+    const cards = view.concepts.filter(concept => spokenOf(concept) || concept.openIssueCount > 0)
+      .map((concept, index) => ({ concept, index }))
+      .sort((left, right) => Number(spokenOf(right.concept)) - Number(spokenOf(left.concept)) || left.index - right.index)
       .map(({ concept }) => concept);
-    const spoken = concepts.some(concept => rank(concept) === 0);
+    const codeOnly = view.concepts.filter(concept => !cards.includes(concept) && concept.displayState === "OBSERVED_ONLY");
+    const spoken = cards.some(spokenOf);
 
     const pending = view.analysis.some(job => job.displayState === "WAITING" || job.displayState === "ANALYZING");
     this.evidenceStatus.hidden = !pending;
@@ -1073,17 +1077,35 @@ export class AgentSurfaceView {
 
     if (!spoken) {
       const empty = this.el("p", "agent-evidence-empty");
-      empty.textContent = concepts.length === 0
-        ? "아직 기록이 없어요. 작업을 마치면 이번 Project의 개념별로 여기에 정리돼요."
+      empty.textContent = view.concepts.length === 0
+        ? "아직 기록이 없어요. 작업을 마치면 개념별로 여기에 정리돼요."
         : "아직 내 말로 남긴 기록이 없어요. 선택에 답할 때 고른 이유를 내 말로 적으면 여기에 남아요.";
       this.evidenceRegion.appendChild(empty);
     }
 
     const conceptsList = this.el("div", "agent-evidence-concepts");
-    for (const concept of concepts) {
-      conceptsList.appendChild(this.buildEvidenceConcept(concept, spoken, view.sources ?? {}));
+    for (const concept of cards) {
+      conceptsList.appendChild(this.buildEvidenceConcept(concept, true, view.sources ?? {}));
     }
     this.evidenceRegion.appendChild(conceptsList);
+
+    if (codeOnly.length > 0) {
+      const code = this.el("div", "agent-evidence-code");
+      const label = this.el("p", "agent-evidence-code-label");
+      label.textContent = "코드에 쓰인 개념";
+      code.appendChild(label);
+      const note = this.el("p", "agent-evidence-code-note");
+      note.textContent = "만들면서 쓰였지만 아직 내 말로 남긴 기록은 없어요.";
+      code.appendChild(note);
+      const chips = this.el("ul", "agent-evidence-chips");
+      for (const concept of codeOnly) {
+        const chip = this.el("li", "agent-evidence-chip");
+        chip.textContent = concept.name;
+        chips.appendChild(chip);
+      }
+      code.appendChild(chips);
+      this.evidenceRegion.appendChild(code);
+    }
 
     // Only failed analyses need the learner; each gets one retry.
     const analysisList = this.el("div", "agent-evidence-analysis");
