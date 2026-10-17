@@ -1298,6 +1298,8 @@ export class AgentSurfaceView {
     if ((builder.phase === "FAILED" || builder.phase === "START_ERROR") && builder.errorCode) return "FAILED";
     const window = hostChat.window;
     if (this.readyToStart) {
+      // Just opened in a new window: that window's panel takes over from here.
+      if (hostChat.openedNewWindow && window !== "READY") return "NEW_WINDOW";
       if (window === "READY") return "SEND_START";
       if (window === "UNTRUSTED") return "UNTRUSTED";
       if (window === "RELOAD") return "RELOAD";

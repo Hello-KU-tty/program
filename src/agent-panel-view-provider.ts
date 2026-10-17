@@ -320,7 +320,7 @@ export function wireWebviewMessaging(
         ...(typeof host.openProjectInKiro === "function"
           ? { openInKiro: (projectId: string) => host.openProjectInKiro(projectId) } : {}),
         // K23: an older host cannot tell; the panel then keeps its generic guidance.
-        ...(typeof host.kiroWindow === "function" ? { kiroWindow: () => host.kiroWindow!() } : {}),
+        ...(typeof host.kiroWindow === "function" ? { kiroWindow: (projectId: string) => host.kiroWindow!(projectId) } : {}),
         writeClipboard: async (text) => {
           await vscode.env.clipboard.writeText(text);
         },

@@ -101,8 +101,8 @@ export interface AgentControllerDeps {
    * the panel never starts a Builder run and offers this instead.
    */
   readonly openInKiro?: (projectId: string) => ReturnType<FrontendHost["openProjectInKiro"]>;
-  /** K23, Kiro-native host only: what Kiro chat in this window reaches (`host.kiroWindow`). */
-  readonly kiroWindow?: () => Promise<KiroWindowState>;
+  /** K23, Kiro-native host only: what Kiro chat in this window reaches for a Project (`host.kiroWindow`). */
+  readonly kiroWindow?: (projectId: string) => Promise<KiroWindowState>;
   /** K23: host-side clipboard write for the panel's copy buttons. Injected spy in tests. */
   readonly writeClipboard?: (text: string) => Promise<void> | Thenable<void>;
   /** Timer source for the Kiro-native Next Move refresh. Defaults to {@link SystemClock}. */
@@ -1340,11 +1340,12 @@ export class AgentSurfaceController {
    */
   private async refreshKiroWindow(): Promise<void> {
     const read = this.deps.kiroWindow;
-    if (!read || this.disposed || !this.vm.hostChat) return;
+    const projectId = this.lastProjectId;
+    if (!read || this.disposed || !this.vm.hostChat || !projectId) return;
     const binding = this.bindingVersion;
     let window: unknown;
     try {
-      window = await read();
+      window = await read(projectId);
     } catch {
       return;
     }

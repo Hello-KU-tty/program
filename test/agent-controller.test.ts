@@ -1013,12 +1013,15 @@ describe("AgentSurfaceController — Kiro-native host runs the Builder in Kiro c
 
   it("reads whether Kiro chat in this window reaches the Project, quietly and only on Kiro hosts (K23)", async () => {
     const states: unknown[] = ["NOT_BOUND"];
+    const asked: string[] = [];
     const h = buildHarness({
       openInKiro: async () => opened("REGISTERED"),
-      kiroWindow: async () => states.shift() as never,
+      kiroWindow: async projectId => { asked.push(projectId); return states.shift() as never; },
     });
     await h.controller.openInKiro();
     await vi.waitFor(() => expect(h.controller.getViewModel().hostChat?.window).toBe("NOT_BOUND"));
+    // Asked for this panel's Project: a window connected to another Project is not its folder.
+    expect(asked).toEqual([PROJECT_ID]);
     // An unknown value or a failing host keeps the last state.
     states.push("SOMETHING_ELSE");
     await h.controller.openInKiro();
