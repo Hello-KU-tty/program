@@ -2554,6 +2554,9 @@ export function buildWebviewHtml(
       color: var(--vscode-descriptionForeground);
     }
     .agent-evidence-retry { align-self: flex-start; }
+    .agent-evidence-analysis-memo { font-size: 0.8em; color: var(--vscode-descriptionForeground); }
+    .agent-evidence-analysis-memo-summary { cursor: pointer; }
+    .agent-evidence-analysis-memo-text { margin: var(--sp-1) 0 0; overflow-wrap: anywhere; }
     .agent-final-upgrade-list {
       display: flex;
       flex-direction: column;

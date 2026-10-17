@@ -485,7 +485,7 @@ describe("honest evidence display (task 9.2, Req 10.2/10.4)", () => {
     restore();
   });
 
-  it("ANALYZED with acceptedCount 0 surfaces noEvidenceReason, not success (Req 10.4)", () => {
+  it("ANALYZED with acceptedCount 0 says so plainly and keeps the Analyst memo folded (Req 10.4)", () => {
     const { root, view, restore } = mount();
     view.renderEvidence(
       evidenceView({
@@ -496,7 +496,7 @@ describe("honest evidence display (task 9.2, Req 10.2/10.4)", () => {
             status: "SUCCEEDED",
             displayState: "ANALYZED",
             acceptedCount: 0,
-            noEvidenceReason: "설명이 근거로 인정될 만큼 구체적이지 않았어요",
+            noEvidenceReason: "인정된 근거 없음: Episode에서 USER_DECISION reference가 없고 BUILDER_CHAT_TURN 요약뿐이다",
             failureCode: null,
           },
         ],
@@ -506,10 +506,38 @@ describe("honest evidence display (task 9.2, Req 10.2/10.4)", () => {
     const statuses = byClass(root, "agent-evidence-analysis-status");
     expect(statuses).toHaveLength(1);
     expect(statuses[0].textContent).toBe(
-      "인정된 근거 없음: 설명이 근거로 인정될 만큼 구체적이지 않았어요",
+      "이번 대화에서는 이해 근거로 인정된 내용이 없어요. 고른 이유나 내 생각을 내 말로 적으면 근거로 남아요.",
     );
-    // Must not present a "근거 N건이 인정되었어요" success claim.
+    // Must not present a "근거 N건이 인정되었어요" success claim, nor internal terms.
     expect(statuses[0].textContent).not.toContain("인정되었어요");
+    expect(statuses[0].textContent).not.toMatch(/Episode|USER_DECISION|BUILDER_CHAT_TURN/);
+    // The Analyst memo is still reachable, folded.
+    const memo = byClass(root, "agent-evidence-analysis-memo");
+    expect(memo).toHaveLength(1);
+    expect(byClass(root, "agent-evidence-analysis-memo-summary")[0].textContent).toBe("자세한 분석 메모");
+    expect(byClass(root, "agent-evidence-analysis-memo-text")[0].textContent).toContain("USER_DECISION");
+    restore();
+  });
+
+  it("ANALYZED with acceptedCount 0 and no memo shows only the plain sentence", () => {
+    const { root, view, restore } = mount();
+    view.renderEvidence(
+      evidenceView({
+        analysis: [
+          {
+            jobId: "job-1",
+            episodeId: "ep-1",
+            status: "SUCCEEDED",
+            displayState: "ANALYZED",
+            acceptedCount: 0,
+            noEvidenceReason: null,
+            failureCode: null,
+          },
+        ],
+      }),
+    );
+    expect(byClass(root, "agent-evidence-analysis-status")[0].textContent).toContain("이해 근거로 인정된 내용이 없어요");
+    expect(byClass(root, "agent-evidence-analysis-memo")).toHaveLength(0);
     restore();
   });
 });
