@@ -1112,3 +1112,46 @@ describe("Kiro-native '지금 할 일', steps and tabs (K23)", () => {
     } finally { restore(); }
   });
 });
+
+describe("Kiro chat's progress note on the card (K23)", () => {
+  const progress = { stage: "테스트 실행", goal: "<b>네 기능</b>과 예외 상황 테스트를 작성했고 vitest로 실행해 확인합니다.",
+    steps: ["물품 등록 구현", "대여 기록 구현"], updatedAt: "2026-10-17T17:43:49.150Z" };
+  const kiro = (builder: Partial<BuilderTurnViewModel>, extra: Partial<AgentViewModel> = {}): AgentViewModel => ({
+    ...vmWithBuilder({ phase: "IDLE", taskId: "task_synthetic", taskTitle: "물품 대여 API", ...builder }),
+    hostChat: { opening: false, window: "READY" }, ...extra,
+  });
+
+  it("shows the Builder's latest note while it builds, as its own note and as text only", () => {
+    const { root, view, restore } = mount();
+    try {
+      view.render(kiro({ progress }));
+      const block = byClass(root, "agent-now-progress")[0];
+      expect(block.hidden).toBe(false);
+      expect(byClass(root, "agent-now-progress-label")[0].textContent).toBe("Kiro 채팅이 남긴 진행 메모");
+      expect(byClass(root, "agent-now-progress-stage")[0].textContent).toBe("지금 단계: 테스트 실행");
+      expect(byClass(root, "agent-now-progress-goal")[0].textContent).toBe(progress.goal);
+      expect(root.queryAll((e) => e.tagName === "B")).toHaveLength(0);
+      expect(byClass(root, "agent-now-progress-time")[0].textContent).toMatch(/기준$/);
+      expect(byClass(root, "agent-now-progress-plan-summary")[0].textContent).toBe("계획 2단계 보기");
+      expect(byClass(root, "agent-now-progress-step").map((e) => e.textContent)).toEqual(progress.steps);
+      // No planned steps: no plan line.
+      view.render(kiro({ progress: { ...progress, steps: [] } }));
+      expect(byClass(root, "agent-now-progress-plan")[0].hidden).toBe(true);
+    } finally { restore(); }
+  });
+
+  it("stays off while a choice waits, after the Task is done, before it starts and without a note", () => {
+    const { root, view, restore } = mount();
+    try {
+      const block = () => byClass(root, "agent-now-progress")[0];
+      view.render(kiro({ phase: "DECISION_REQUIRED", progress }, { decisions: [{ ...pendingDecision(), taskId: "task_synthetic" }] }));
+      expect(block().hidden).toBe(true);
+      view.render(kiro({ phase: "TASK_COMPLETED", progress }));
+      expect(block().hidden).toBe(true);
+      view.render(kiro({ readyToStart: true, progress }));
+      expect(block().hidden).toBe(true);
+      view.render(kiro({ progress: null }));
+      expect(block().hidden).toBe(true);
+    } finally { restore(); }
+  });
+});

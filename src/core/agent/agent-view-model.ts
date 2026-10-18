@@ -116,6 +116,20 @@ export interface NextMoveViewModel {
   readonly retrying: boolean;
 }
 
+/**
+ * K23: what Kiro chat last said it is doing in this Task, from Core's Live Context. The Builder
+ * writes it (`save_progress`) and Core adds checkpoints (choices, tests, completion), so it is
+ * Agent-authored and shown only as the Builder's note, never as learner Evidence. It changes
+ * only at those points, not with every file the Builder writes.
+ */
+export interface TaskProgressViewModel {
+  readonly stage: string;
+  readonly goal: string;
+  /** The Builder's planned steps (`nextActions`), possibly empty. */
+  readonly steps: readonly string[];
+  readonly updatedAt: string;
+}
+
 /** Builder turn projection. `phase` is the display-only turn state. */
 export interface BuilderTurnViewModel {
   readonly phase:
@@ -135,6 +149,8 @@ export interface BuilderTurnViewModel {
   readonly taskTitle: string | null;
   /** K23: the current Task's 1-based order in its Project (follow-ups are 2, 3, …). */
   readonly taskSequence?: number | null;
+  /** K23: the Builder's latest progress note for this Task (Core Live Context), if any. */
+  readonly progress?: TaskProgressViewModel | null;
   /** A durable PENDING task exists; an explicit empty-message start is allowed. */
   readonly readyToStart?: boolean;
   /** Durable revision used to fill the existing upgrade form (never a path). */

@@ -2741,6 +2741,47 @@ export function buildWebviewHtml(
       border-left: 2px solid color-mix(in srgb, var(--vscode-descriptionForeground) 55%, transparent);
       padding-left: var(--sp-2);
     }
+    .agent-now-progress {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      border-radius: var(--radius-md);
+      padding: var(--sp-2) var(--sp-3);
+      background: color-mix(in srgb, var(--vscode-foreground) 6%, transparent);
+    }
+    .agent-now-progress-head {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 2px var(--sp-2);
+      font-size: 0.75em;
+      color: var(--vscode-descriptionForeground);
+    }
+    .agent-now-progress-stage { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+    .agent-now-progress-goal {
+      margin: 0;
+      font-size: 0.85em;
+      line-height: 1.45;
+      color: var(--vscode-descriptionForeground);
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow-wrap: anywhere;
+    }
+    .agent-now-progress-plan-summary {
+      cursor: pointer;
+      font-size: 0.82em;
+      color: var(--vscode-descriptionForeground);
+      padding-top: 2px;
+    }
+    .agent-now-progress-steps {
+      margin: var(--sp-1) 0 0;
+      padding-left: 1.3rem;
+      font-size: 0.85em;
+      line-height: 1.5;
+      overflow-wrap: anywhere;
+    }
     .agent-surface .agent-now-action {
       align-self: flex-start;
       border: none;

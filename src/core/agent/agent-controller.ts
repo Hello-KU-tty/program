@@ -1845,8 +1845,13 @@ export class AgentSurfaceController {
     const taskTitle = builderTaskLabel(s) ?? this.vm.builder.taskTitle;
     const previousBuilder = taskId !== this.vm.builder.taskId && !this.activeRunId
       ? initialAgentViewModel().builder : this.vm.builder;
+    // K23: the Builder's latest progress note for this Task, for the "지금 할 일" card.
+    const live = s.liveContext;
+    const progress = live && currentTask && live.taskId === currentTask.id
+      ? { stage: live.stage, goal: live.currentGoal, steps: [...live.nextActions].slice(0, 10), updatedAt: live.updatedAt }
+      : null;
     let builder = { ...previousBuilder, taskId, taskTitle, taskRevision: currentTask?.revision ?? null,
-      taskSequence: currentTask?.sequence ?? null, readyToStart: currentTask?.status === "PENDING" };
+      taskSequence: currentTask?.sequence ?? null, progress, readyToStart: currentTask?.status === "PENDING" };
     if (restoreIdleBuilder && !this.activeRunId && !this.builderFlight) {
       // A replaced choice (changed or undone in Kiro chat, K17) is history, never applied.
       const unapplied = decisions.some(d => d.taskId === taskId && !d.applied && !d.replaced) ||

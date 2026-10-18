@@ -44,6 +44,7 @@ import {
   type HostChatViewModel,
   type DecisionViewModel,
   type LearningRecordView,
+  type TaskProgressViewModel,
   type HelperConversationViewModel,
   type HelperViewModel,
   type NativeQuestionViewModel,
@@ -238,6 +239,13 @@ const STEPS = [
   "결과 보고 다음 한 걸음 고르기",
 ] as const;
 
+/** K23: when a progress note was written, as a local clock time ("오후 2:43 기준"). */
+function clockTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return `${date.toLocaleTimeString("ko-KR", { hour: "numeric", minute: "2-digit" })} 기준`;
+}
+
 /** K23: a Project title cut at a word boundary, for a quote's source label. */
 function shortTitle(title: string, limit = 20): string {
   if (title.length <= limit) return title;
@@ -423,6 +431,14 @@ export class AgentSurfaceView {
   private readonly nowQuestion: HTMLElement;
   private readonly nowSend: HTMLElement;
   private readonly nowDetail: HTMLElement;
+  private readonly nowProgress: HTMLElement;
+  private readonly nowProgressTime: HTMLElement;
+  private readonly nowProgressStage: HTMLElement;
+  private readonly nowProgressGoal: HTMLElement;
+  private readonly nowProgressPlan: HTMLDetailsElement;
+  private readonly nowProgressPlanLabel: HTMLElement;
+  private readonly nowProgressSteps: HTMLElement;
+  private progressKey: string | undefined;
   private readonly nowAction: HTMLButtonElement;
   private readonly nowNote: HTMLElement;
   private readonly stepsSection: HTMLDetailsElement;
@@ -520,6 +536,28 @@ export class AgentSurfaceView {
     this.nowSend = this.buildSendRow(CHAT_START_TEXT, "시작 문구 복사", () => this.callbacks.onCopyChatText({ what: "START" }));
     this.nowSend.hidden = true;
     this.nowCard.appendChild(this.nowSend);
+    // What Kiro chat last said it is doing (Core Live Context). The Builder's own
+    // note, labelled as such; it changes at its progress notes, not per file.
+    this.nowProgress = this.el("div", "agent-now-progress");
+    this.nowProgress.hidden = true;
+    const progressHead = this.el("div", "agent-now-progress-head");
+    const progressLabel = this.el("span", "agent-now-progress-label");
+    progressLabel.textContent = "Kiro 채팅이 남긴 진행 메모";
+    progressHead.appendChild(progressLabel);
+    this.nowProgressTime = this.el("span", "agent-now-progress-time");
+    progressHead.appendChild(this.nowProgressTime);
+    this.nowProgress.appendChild(progressHead);
+    this.nowProgressStage = this.el("p", "agent-now-progress-stage");
+    this.nowProgress.appendChild(this.nowProgressStage);
+    this.nowProgressGoal = this.el("p", "agent-now-progress-goal");
+    this.nowProgress.appendChild(this.nowProgressGoal);
+    this.nowProgressPlan = this.el("details", "agent-now-progress-plan") as HTMLDetailsElement;
+    this.nowProgressPlanLabel = this.el("summary", "agent-now-progress-plan-summary");
+    this.nowProgressPlan.appendChild(this.nowProgressPlanLabel);
+    this.nowProgressSteps = this.el("ol", "agent-now-progress-steps");
+    this.nowProgressPlan.appendChild(this.nowProgressSteps);
+    this.nowProgress.appendChild(this.nowProgressPlan);
+    this.nowCard.appendChild(this.nowProgress);
     this.nowDetail = this.el("p", "agent-now-detail");
     this.nowCard.appendChild(this.nowDetail);
     this.nowAction = this.el("button", "agent-now-action") as HTMLButtonElement;
@@ -1038,6 +1076,7 @@ export class AgentSurfaceView {
     this.taskEvidenceSection.hidden = true;
     this.stepsChoice = null;
     this.stepsExpected = null;
+    this.progressKey = undefined;
     this.evidenceRefreshKey = undefined;
     this.evidenceStatus.hidden = false;
     this.evidenceStatus.textContent = "기록을 불러오고 있어요…";
@@ -1343,12 +1382,33 @@ export class AgentSurfaceView {
       : text.detail ?? "";
     this.nowDetail.hidden = detail === "";
     this.nowDetail.textContent = detail;
+    this.renderProgress(state === "BUILDING" ? builder.progress ?? null : null);
     const connect = state === "CONNECT" || state === "ELSEWHERE" || state === "OPENING";
     this.nowAction.hidden = !connect;
     this.nowAction.disabled = state === "OPENING";
     this.nowAction.textContent = state === "OPENING" ? "연결하는 중…" : "Kiro 채팅에서 열기";
     this.nowNote.hidden = !(state === "CONNECT" || state === "ELSEWHERE");
     this.renderSteps(builder, state);
+  }
+
+  /** K23: Kiro chat's latest progress note while it builds; hidden in every other state. */
+  private renderProgress(progress: TaskProgressViewModel | null): void {
+    this.nowProgress.hidden = !progress;
+    if (!progress) return;
+    const key = JSON.stringify(progress);
+    if (key === this.progressKey) return;
+    this.progressKey = key;
+    this.nowProgressTime.textContent = clockTime(progress.updatedAt);
+    this.nowProgressStage.textContent = `지금 단계: ${progress.stage}`;
+    this.nowProgressGoal.textContent = progress.goal;
+    this.nowProgressPlan.hidden = progress.steps.length === 0;
+    this.nowProgressPlanLabel.textContent = `계획 ${progress.steps.length}단계 보기`;
+    this.nowProgressSteps.textContent = "";
+    for (const step of progress.steps) {
+      const item = this.el("li", "agent-now-progress-step");
+      item.textContent = step;
+      this.nowProgressSteps.appendChild(item);
+    }
   }
 
   /** K23: the current step of this Task, open until the first Task is finished. */

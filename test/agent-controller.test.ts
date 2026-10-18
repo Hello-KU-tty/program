@@ -1067,6 +1067,22 @@ describe("AgentSurfaceController — Kiro-native host runs the Builder in Kiro c
     expect(view?.concepts[0].accepted.map(item => item.id)).toEqual(["evidence_here", "evidence_old"]);
   });
 
+  it("carries Kiro chat's latest progress note for the current Task only (K23)", async () => {
+    const live = (taskId: string) => ({ schemaVersion: 1, id: "live_1", projectId: PROJECT_ID, taskId, correlationId: "corr",
+      contextVersion: 2, expectedPreviousVersion: 1, checkpoint: "VALIDATION_STARTED", stage: "테스트 실행", currentGoal: "테스트를 돌려 확인합니다.",
+      recentChanges: [], activeDecisionIds: [], activeConceptNames: [], relatedFiles: [], nextActions: ["물품 등록 구현"],
+      updatedAt: "2026-10-17T17:43:49.150Z", source: { kind: "AGENT", role: "BUILDER" }, redactionStatus: "VERIFIED_REDACTED" });
+    const current = buildHarness({ openInKiro: async () => opened("REGISTERED"),
+      client: { restoreProjectResult: { resolve: fakeSnapshot({ liveContext: live("task_1") }) } } });
+    await current.controller.refreshProject();
+    expect(current.controller.getViewModel().builder.progress).toEqual({
+      stage: "테스트 실행", goal: "테스트를 돌려 확인합니다.", steps: ["물품 등록 구현"], updatedAt: "2026-10-17T17:43:49.150Z" });
+    const stale = buildHarness({ openInKiro: async () => opened("REGISTERED"),
+      client: { restoreProjectResult: { resolve: fakeSnapshot({ liveContext: live("task_old") }) } } });
+    await stale.controller.refreshProject();
+    expect(stale.controller.getViewModel().builder.progress).toBeNull();
+  });
+
   it("requires a bound Project and is inert on other hosts", async () => {
     const calls: string[] = [];
     const unbound = buildHarness({ seedProjectId: false, openInKiro: async projectId => { calls.push(projectId); return opened("REGISTERED"); } });
