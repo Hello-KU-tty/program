@@ -2869,8 +2869,7 @@ export function buildWebviewHtml(
     }
     .agent-next-move .agent-send-text { font-weight: 500; }
     /* Kiro's theme draws no panel borders; keep each suggestion visibly apart. */
-    .agent-surface[data-host="kiro"] .agent-next-move-item,
-    .agent-surface[data-host="kiro"] .agent-decision-compact:not([data-state="waiting"]) {
+    .agent-surface[data-host="kiro"] .agent-next-move-item {
       border-color: color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
     }
     .agent-next-move-lead {
@@ -2887,23 +2886,27 @@ export function buildWebviewHtml(
       padding: var(--sp-2) var(--sp-3);
     }
     .agent-steps-summary {
-      display: flex;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      column-gap: var(--sp-2);
+      row-gap: 2px;
       align-items: center;
-      gap: var(--sp-2);
       font-size: 0.9em;
       font-weight: 600;
       padding: var(--sp-1) var(--sp-2);
       margin: calc(-1 * var(--sp-1)) calc(-1 * var(--sp-2));
     }
-    .agent-steps-label { flex: none; }
+    .agent-steps-label { grid-column: 1; }
     .agent-steps-now {
-      flex: 1 1 auto;
+      grid-column: 1;
+      grid-row: 2;
       min-width: 0;
       font-weight: 400;
       font-size: 0.92em;
       color: var(--vscode-descriptionForeground);
       overflow-wrap: anywhere;
     }
+    .agent-steps-summary::after { grid-column: 2; grid-row: 1 / span 2; }
     .agent-steps[open] .agent-steps-now { display: none; }
     .agent-steps-list {
       list-style: none;
@@ -2994,7 +2997,6 @@ export function buildWebviewHtml(
       transition: transform var(--transition);
     }
     .agent-now-progress-plan-summary::after { color: currentColor; }
-    .agent-steps-summary::after { margin-left: auto; }
     .agent-steps[open] > .agent-steps-summary::after,
     .agent-decision-compact[open] > .agent-decision-compact-summary::after,
     .agent-now-progress-plan[open] > .agent-now-progress-plan-summary::after {
@@ -3060,38 +3062,65 @@ export function buildWebviewHtml(
       line-height: 1.45;
       overflow-wrap: anywhere;
     }
-    .agent-decision-compact {
-      border: 1px solid var(--vscode-panel-border, color-mix(in srgb, var(--vscode-foreground) 12%, transparent));
-      border-radius: var(--radius-md);
-      padding: var(--sp-1) var(--sp-2);
+    /* K23: this Task's choices are rows, not boxes: the choice first, the
+       question as a quiet clamped line, hairlines between rows. */
+    .agent-decisions-list:has(.agent-decision-compact) { gap: 0; }
+    .agent-decision-compact { gap: 0; }
+    .agent-decision-compact + .agent-decision-compact {
+      border-top: 1px solid color-mix(in srgb, var(--vscode-foreground) 10%, transparent);
     }
-    .agent-decision-compact[data-state="waiting"] { border-color: var(--accent); }
     .agent-decision-compact-summary {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
       column-gap: var(--sp-2);
       row-gap: 2px;
       align-items: center;
-      padding: var(--sp-1) var(--sp-2);
-      margin: calc(-1 * var(--sp-1)) calc(-1 * var(--sp-2));
+      padding: var(--sp-2);
+      margin: 0 calc(-1 * var(--sp-2));
     }
-    .agent-decision-compact-question { grid-column: 1; min-width: 0; overflow-wrap: anywhere; }
-    .agent-decision-compact-summary > .agent-decision-compact-state { grid-column: 1; }
-    .agent-decision-compact-summary::after { grid-column: 2; grid-row: 1 / span 2; }
-    .agent-decision-compact-state {
-      font-size: 0.85em;
+    .agent-decision-compact-head {
+      grid-column: 1;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 2px var(--sp-2);
+      min-width: 0;
+    }
+    .agent-decision-compact-choice { font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
+    .agent-decision-compact[data-state="waiting"] .agent-decision-compact-choice { color: var(--accent); }
+    .agent-decision-compact-applied {
+      font-size: 0.72em;
+      font-weight: 600;
+      color: var(--vscode-testing-iconPassed, #3fb950);
+      background: color-mix(in srgb, var(--vscode-testing-iconPassed, #3fb950) 14%, transparent);
+      border-radius: var(--radius-pill);
+      padding: 0 6px;
+      white-space: nowrap;
+    }
+    .agent-decision-compact-question {
+      grid-column: 1;
+      min-width: 0;
+      font-size: 0.82em;
+      line-height: 1.45;
       color: var(--vscode-descriptionForeground);
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
       overflow-wrap: anywhere;
     }
-    .agent-decision-compact[data-state="waiting"] .agent-decision-compact-state {
-      color: var(--accent);
-      font-weight: 600;
-    }
+    .agent-decision-compact[open] .agent-decision-compact-question { display: block; overflow: visible; }
+    .agent-decision-compact-summary::after { grid-column: 2; grid-row: 1 / span 2; }
     .agent-decision-compact-options {
-      margin: var(--sp-1) 0 0;
-      padding-left: 1.4rem;
-      font-size: 0.9em;
+      margin: 0 0 var(--sp-2);
+      padding-left: 1.3rem;
+      font-size: 0.82em;
+      line-height: 1.6;
       color: var(--vscode-descriptionForeground);
+    }
+    .agent-decision-compact-option[data-chosen="true"] {
+      color: var(--vscode-foreground);
+      font-weight: 600;
     }
 
     /* ---- Next Move (Kiro-native): suggestions only, no start button ---- */

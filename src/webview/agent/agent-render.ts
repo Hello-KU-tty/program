@@ -1776,23 +1776,31 @@ export class AgentSurfaceView {
 
   /** One Kiro-native choice: the question and what was chosen; options fold away. */
   private buildCompactDecision(decision: DecisionViewModel): HTMLElement {
+    // K23: what the learner chose leads; the Builder's (often long) question is
+    // the quiet second line, in full with the options once opened.
     const block = this.el("details", "agent-decision agent-decision-compact");
     block.dataset.decisionId = decision.decisionId;
     block.dataset.state = !decision.resolved ? "waiting" : decision.applied ? "applied" : "chosen";
     const summary = this.el("summary", "agent-decision-compact-summary");
+    const head = this.el("span", "agent-decision-compact-head");
+    const choice = this.el("span", "agent-decision-compact-choice");
+    choice.textContent = !decision.resolved ? "답을 기다려요" : decision.chosenLabel ?? "골랐어요";
+    head.appendChild(choice);
+    if (decision.resolved && decision.applied) {
+      const applied = this.el("span", "agent-decision-compact-applied");
+      applied.textContent = "반영함";
+      head.appendChild(applied);
+    }
+    summary.appendChild(head);
     const question = this.el("span", "agent-decision-compact-question");
     question.textContent = decision.question;
     summary.appendChild(question);
-    const state = this.el("span", "agent-decision-compact-state");
-    state.textContent = !decision.resolved
-      ? "답을 기다려요"
-      : `${decision.chosenLabel ?? "골랐어요"}${decision.applied ? " · 반영함" : ""}`;
-    summary.appendChild(state);
     block.appendChild(summary);
     const options = this.el("ol", "agent-decision-compact-options");
     for (const option of decision.options) {
       const item = this.el("li", "agent-decision-compact-option");
       item.textContent = option.id === decision.recommendedOptionId ? `${option.label} (추천)` : option.label;
+      if (decision.resolved && option.label === decision.chosenLabel) item.dataset.chosen = "true";
       options.appendChild(item);
     }
     block.appendChild(options);

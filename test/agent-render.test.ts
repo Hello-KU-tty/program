@@ -928,14 +928,22 @@ describe("Kiro-native Builder tab (K17)", () => {
       // K23: only what was already chosen; the card names the open question.
       expect(rows.map((row) => row.dataset.decisionId)).toEqual(["decision_chosen"]);
       expect(rows.map((row) => row.dataset.state)).toEqual(["chosen"]);
-      expect(byClass(root, "agent-decision-compact-state").map((el) => el.textContent))
-        .toEqual(["하이브리드"]);
+      // K23: the choice leads; the question is the second line.
+      expect(byClass(root, "agent-decision-compact-choice").map((el) => el.textContent)).toEqual(["하이브리드"]);
+      expect(byClass(root, "agent-decision-compact-question").map((el) => el.textContent)).toEqual(["저장 방식은?"]);
+      expect(byClass(root, "agent-decision-compact-applied")).toHaveLength(0);
+      expect(byClass(root, "agent-decision-compact-option").filter((el) => el.dataset.chosen === "true")).toHaveLength(0);
       expect(byClass(root, "agent-decision-choose")).toHaveLength(0);
       // K23: the card names the question Kiro chat waits on.
       expect(byClass(root, "agent-now")[0].dataset.state).toBe("WAITING");
       expect(byClass(root, "agent-now-lead")[0].textContent).toBe("Kiro 채팅이 답을 기다려요.");
       expect(byClass(root, "agent-now-question")[0].textContent).toBe("잠금 방식은?");
       expect(root.queryAll((e) => e.textContent === "이번 작업에서 고른 것")).toHaveLength(1);
+      view.render(kiroVm({ decisions: [{ ...chosen, applied: true,
+        options: [{ id: "a", label: "변경 레코드", description: "" }, { id: "b", label: "하이브리드", description: "" }] }] }));
+      expect(byClass(root, "agent-decision-compact-applied").map((el) => el.textContent)).toEqual(["반영함"]);
+      expect(byClass(root, "agent-decision-compact-option").filter((el) => el.dataset.chosen === "true").map((el) => el.textContent))
+        .toEqual(["하이브리드"]);
     } finally {
       restore();
     }
