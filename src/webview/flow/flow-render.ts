@@ -527,8 +527,13 @@ export class DiscoveryStartView {
     const support = snapshot.flowSupport;
     if (support.mode === "unavailable") {
       this.supportBanner.hidden = false;
-      this.supportBanner.textContent = runtimeErrorMessage(support.reason ?? "CORE_PREPARING",
-        "Core에 연결할 수 없어요. 명령 팔레트에서 ‘Vibe Helper: Retry Core Connection’을 실행해 주세요.");
+      const reason = support.reason ?? "CORE_PREPARING";
+      // An unknown code still names itself, so a learner or a helper can tell
+      // one failure from another (Windows 0.2.13: PRIVATE_DIRECTORY_UNSAFE hid
+      // behind this sentence). Only a plain code is shown, never a path.
+      const shown = /^[A-Z][A-Z0-9_]{2,99}$/.test(reason) ? ` (${reason})` : "";
+      this.supportBanner.textContent = runtimeErrorMessage(reason,
+        `Core에 연결할 수 없어요${shown}. 명령 팔레트에서 ‘Vibe Helper: Retry Core Connection’을 실행해 주세요.`);
       return;
     }
     if (support.mode === "live") {
