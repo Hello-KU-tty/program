@@ -102,7 +102,8 @@ export function errorGuidance(code: string): string | undefined {
 export function runtimeErrorMessage(code: string, fallback: string): string {
   const known = runtimeFailure(code);
   if (known) return known.message;
-  if (code === "CORE_PREPARING" || code === "STARTING" || code === "IDLE") return "Core 연결을 준비하고 있어요.";
+  if (["CORE_PREPARING", "STARTING", "IDLE", "PREPARING_RUNTIME", "CONNECTING_CORE", "RECOVERING_CORE"].includes(code))
+    return "Core 연결을 준비하고 있어요.";
   if (code === "DISCOVERY_RUN_ACTIVE_STOP_OR_WAIT") return "이미 후보 생성 작업이 진행 중이에요. 완료를 기다리거나 작업을 중지한 뒤 다시 시도해 주세요.";
   if (code === "RUN_NOT_FOUND_RESTORE_PROJECT" || code === "PREVIEW_ATTEMPT_UNKNOWN_RESTORE_PROJECT") return "이전 요청의 상태를 확인할 수 없어요. 저장된 프로젝트를 확인한 뒤 다시 시도해 주세요.";
   if (code === "CANCELLED") return "후보 생성을 중지했어요. 같은 입력으로 다시 시도할 수 있어요.";
