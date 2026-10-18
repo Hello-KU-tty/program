@@ -2786,6 +2786,12 @@ export function buildWebviewHtml(
       -webkit-box-orient: vertical;
       overflow-wrap: anywhere;
     }
+    .agent-now-progress:has(> .agent-now-progress-plan[open]) .agent-now-progress-goal {
+      display: block;
+      overflow: visible;
+    }
+    .agent-now-progress-plan:not([open]) .agent-now-progress-less,
+    .agent-now-progress-plan[open] .agent-now-progress-more { display: none; }
     .agent-now-progress-plan-summary {
       display: inline-flex;
       align-items: center;
@@ -3065,19 +3071,35 @@ export function buildWebviewHtml(
     /* K23: this Task's choices are rows, not boxes: the choice first, the
        question as a quiet clamped line, hairlines between rows. */
     .agent-decisions-list:has(.agent-decision-compact) { gap: 0; }
-    .agent-decision-compact { gap: 0; }
+    /* The whole row is one unit: the hover tint and the open state cover the
+       choice, the question and the options together. */
+    .agent-decision-compact {
+      gap: 0;
+      margin: 0 calc(-1 * var(--sp-2));
+      padding: 0 var(--sp-2);
+      border-radius: var(--radius-md);
+      transition: background var(--transition);
+    }
+    .agent-decision-compact:has(> .agent-decision-compact-summary:hover),
+    .agent-decision-compact[open] {
+      background: color-mix(in srgb, var(--vscode-foreground) 6%, transparent);
+    }
     .agent-decision-compact + .agent-decision-compact {
       border-top: 1px solid color-mix(in srgb, var(--vscode-foreground) 10%, transparent);
     }
-    .agent-decision-compact-summary {
+    .agent-decision-compact[open] + .agent-decision-compact,
+    .agent-decision-compact + .agent-decision-compact[open] { border-top-color: transparent; }
+    .agent-decisions .agent-decision-compact-summary {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
       column-gap: var(--sp-2);
       row-gap: 2px;
       align-items: center;
-      padding: var(--sp-2);
-      margin: 0 calc(-1 * var(--sp-2));
+      padding: var(--sp-2) 0;
+      margin: 0;
+      border-radius: 0;
     }
+    .agent-decisions .agent-decision-compact-summary:hover { background: transparent; }
     .agent-decision-compact-head {
       grid-column: 1;
       display: flex;

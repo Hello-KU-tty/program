@@ -239,6 +239,9 @@ const STEPS = [
   "결과 보고 다음 한 걸음 고르기",
 ] as const;
 
+/** K23: a progress goal this short fits its three-line clamp at 300px, so it needs no fold. */
+const PROGRESS_GOAL_SHORT = 60;
+
 /** K23: when a progress note was written, as a local clock time ("오후 2:43에 남김"). */
 function clockTime(value: string): string {
   const date = new Date(value);
@@ -553,6 +556,13 @@ export class AgentSurfaceView {
     this.nowProgress.appendChild(this.nowProgressGoal);
     this.nowProgressPlan = this.el("details", "agent-now-progress-plan") as HTMLDetailsElement;
     this.nowProgressPlanLabel = this.el("summary", "agent-now-progress-plan-summary");
+    // "자세히" while folded, "접기" once open (CSS picks one by the details state).
+    const more = this.el("span", "agent-now-progress-more");
+    more.textContent = "자세히";
+    const less = this.el("span", "agent-now-progress-less");
+    less.textContent = "접기";
+    this.nowProgressPlanLabel.appendChild(more);
+    this.nowProgressPlanLabel.appendChild(less);
     this.nowProgressPlan.appendChild(this.nowProgressPlanLabel);
     this.nowProgressSteps = this.el("ol", "agent-now-progress-steps");
     this.nowProgressPlan.appendChild(this.nowProgressSteps);
@@ -1402,8 +1412,11 @@ export class AgentSurfaceView {
     // The note is not live: Kiro chat writes it at plan, test and choice points only.
     this.nowProgressStage.textContent = progress.stage;
     this.nowProgressGoal.textContent = progress.goal;
-    this.nowProgressPlan.hidden = progress.steps.length === 0;
-    this.nowProgressPlanLabel.textContent = `계획 ${progress.steps.length}단계`;
+    // One fold opens the whole note: the full goal (clamped to three lines until
+    // then) and the planned steps. A short note with no plan needs no fold.
+    const steps = progress.steps.length;
+    this.nowProgressPlan.hidden = steps === 0 && progress.goal.length <= PROGRESS_GOAL_SHORT;
+    this.nowProgressSteps.hidden = steps === 0;
     this.nowProgressSteps.textContent = "";
     for (const step of progress.steps) {
       const item = this.el("li", "agent-now-progress-step");

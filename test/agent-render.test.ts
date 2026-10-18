@@ -1141,10 +1141,16 @@ describe("Kiro chat's progress note on the card (K23)", () => {
       expect(byClass(root, "agent-now-progress-goal")[0].textContent).toBe(progress.goal);
       expect(root.queryAll((e) => e.tagName === "B")).toHaveLength(0);
       expect(byClass(root, "agent-now-progress-time")[0].textContent).toMatch(/에 남김$/);
-      expect(byClass(root, "agent-now-progress-plan-summary")[0].textContent).toBe("계획 2단계");
+      // One fold opens the full note and its plan.
+      expect(byClass(root, "agent-now-progress-more")[0].textContent).toBe("자세히");
+      expect(byClass(root, "agent-now-progress-less")[0].textContent).toBe("접기");
       expect(byClass(root, "agent-now-progress-step").map((e) => e.textContent)).toEqual(progress.steps);
-      // No planned steps: no plan line.
-      view.render(kiro({ progress: { ...progress, steps: [] } }));
+      // No plan: a long note still folds open; a short one needs no fold.
+      const longGoal = "네 기능(입고, 출고, 현황 조회, 이력 조회)과 예외 상황(재고 없음, 없는 상품) 테스트를 작성했고 vitest로 실행해 확인합니다.";
+      view.render(kiro({ progress: { ...progress, steps: [], goal: longGoal } }));
+      expect(byClass(root, "agent-now-progress-plan")[0].hidden).toBe(false);
+      expect(byClass(root, "agent-now-progress-steps")[0].hidden).toBe(true);
+      view.render(kiro({ progress: { ...progress, steps: [], goal: "테스트를 돌려요." } }));
       expect(byClass(root, "agent-now-progress-plan")[0].hidden).toBe(true);
     } finally { restore(); }
   });
