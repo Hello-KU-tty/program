@@ -2020,6 +2020,7 @@ export function buildWebviewHtml(
     .agent-surface:not([data-tab="builder"]) .agent-next-move,
     .agent-surface:not([data-tab="builder"]) .agent-task-evidence,
     .agent-surface:not([data-tab="builder"]) .agent-steps,
+    .agent-surface:not([data-tab="builder"]) .agent-elsewhere,
     .agent-surface:not([data-tab="builder"]) .agent-chat-hint,
     .agent-surface:not([data-tab="helper"]) .agent-helper,
     .agent-surface:not([data-tab="record"]) .agent-evidence,
@@ -2753,8 +2754,9 @@ export function buildWebviewHtml(
       border-left: 2px solid color-mix(in srgb, var(--vscode-descriptionForeground) 55%, transparent);
       padding-left: var(--sp-2);
     }
-    /* Not this window's Project: said first, with the way to its own window. */
-    .agent-now-elsewhere {
+    /* Not this window's Project: a strip above the card, with the way to its own window. */
+    .agent-surface[data-host="kiro"] .agent-elsewhere { order: 1; }
+    .agent-elsewhere {
       display: flex;
       flex-direction: column;
       gap: var(--sp-2);
@@ -2763,8 +2765,8 @@ export function buildWebviewHtml(
       background: color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 12%, transparent);
       border: 1px solid color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 40%, transparent);
     }
-    .agent-now-elsewhere-text { margin: 0; font-size: 0.88em; line-height: 1.5; overflow-wrap: anywhere; }
-    .agent-surface .agent-now-elsewhere-action {
+    .agent-elsewhere-text { margin: 0; font-size: 0.88em; line-height: 1.5; overflow-wrap: anywhere; }
+    .agent-surface .agent-elsewhere-action {
       align-self: flex-start;
       border: 1px solid color-mix(in srgb, var(--vscode-foreground) 30%, transparent);
       border-radius: var(--radius-sm);
@@ -2777,10 +2779,10 @@ export function buildWebviewHtml(
       cursor: pointer;
       transition: background var(--transition);
     }
-    .agent-surface .agent-now-elsewhere-action:hover {
+    .agent-surface .agent-elsewhere-action:hover {
       background: color-mix(in srgb, var(--vscode-foreground) 8%, transparent);
     }
-    .agent-surface .agent-now-elsewhere-action:focus-visible {
+    .agent-surface .agent-elsewhere-action:focus-visible {
       outline: 2px solid var(--vscode-focusBorder, var(--accent));
       outline-offset: 1px;
     }

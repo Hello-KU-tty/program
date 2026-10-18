@@ -518,21 +518,22 @@ export class AgentSurfaceView {
     // for the learner, and a choice's reason is never offered as a copy.
     this.nowCard = this.el("div", "agent-now");
     this.nowCard.hidden = true;
-    // Shown when this window is not the Project's folder (another Project's, or none).
-    this.nowElsewhere = this.el("div", "agent-now-elsewhere");
+    // Its own strip above the card, shown when this window is not the Project's
+    // folder (another Project's, or none): the Project's Kiro chat is elsewhere.
+    this.nowElsewhere = this.el("div", "agent-elsewhere");
     this.nowElsewhere.setAttribute("role", "note");
     this.nowElsewhere.hidden = true;
-    const elsewhereText = this.el("p", "agent-now-elsewhere-text");
-    elsewhereText.textContent = "이 창은 이 Project의 폴더가 아니에요. 이 Project의 Kiro 채팅은 그 Project 창에서 이어져요.";
+    const elsewhereText = this.el("p", "agent-elsewhere-text");
+    elsewhereText.textContent = "다른 프로젝트의 작업 내역이에요. 이 프로젝트를 새 창에서 열까요?";
     this.nowElsewhere.appendChild(elsewhereText);
-    const elsewhereAction = this.el("button", "agent-now-elsewhere-action") as HTMLButtonElement;
+    const elsewhereAction = this.el("button", "agent-elsewhere-action") as HTMLButtonElement;
     elsewhereAction.type = "button";
-    elsewhereAction.textContent = "이 Project 창 열기";
+    elsewhereAction.textContent = "새 창에서 열기";
     elsewhereAction.addEventListener("click", () => {
       if (!this.nowElsewhere.hidden) this.callbacks.onOpenInKiro();
     });
     this.nowElsewhere.appendChild(elsewhereAction);
-    this.nowCard.appendChild(this.nowElsewhere);
+    container.appendChild(this.nowElsewhere);
     this.nowTask = this.el("div", "agent-now-task");
     const nowTaskLabel = this.el("span", "agent-now-task-label");
     nowTaskLabel.textContent = "이번 작업";
@@ -1388,7 +1389,10 @@ export class AgentSurfaceView {
     this.nowCard.hidden = !hostChat;
     this.chatHint.hidden = !hostChat;
     this.stepsSection.hidden = !hostChat || !vm.builder.taskId;
-    if (!hostChat) return;
+    if (!hostChat) {
+      this.nowElsewhere.hidden = true;
+      return;
+    }
     const builder = vm.builder;
     const state = this.nowStateOf(builder, hostChat, waitingQuestion);
     this.nowCard.dataset.state = state;

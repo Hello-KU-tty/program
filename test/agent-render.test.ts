@@ -1035,13 +1035,14 @@ describe("Kiro-native '지금 할 일', steps and tabs (K23)", () => {
       view.render(kiro({}, { window: "READY" }));
       expect(card(root)).toMatchObject({ state: "BUILDING", action: null, send: null });
       // Another folder's window: the real state stays, and a note above it leads to the Project's own window.
-      const elsewhere = () => byClass(root, "agent-now-elsewhere")[0];
+      const elsewhere = () => byClass(root, "agent-elsewhere")[0];
       expect(elsewhere().hidden).toBe(true);
       view.render(kiro({}, { window: "NOT_BOUND" }));
       expect(card(root)).toMatchObject({ state: "BUILDING", action: null, note: false });
       expect(elsewhere().hidden).toBe(false);
-      expect(byClass(root, "agent-now-elsewhere-text")[0].textContent).toContain("이 창은 이 Project의 폴더가 아니에요");
-      byClass(root, "agent-now-elsewhere-action")[0].click();
+      expect(byClass(root, "agent-elsewhere-text")[0].textContent).toBe("다른 프로젝트의 작업 내역이에요. 이 프로젝트를 새 창에서 열까요?");
+      expect(byClass(root, "agent-elsewhere-action")[0].textContent).toBe("새 창에서 열기");
+      byClass(root, "agent-elsewhere-action")[0].click();
       expect(opens).toBe(1);
       view.render(kiro({ phase: "TASK_COMPLETED" }, { window: "NOT_BOUND" }));
       expect(card(root).state).toBe("DONE");
