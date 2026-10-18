@@ -342,8 +342,14 @@ export function wireWebviewMessaging(
   }
   const ready = refreshPorts().then(async () => {
     if (!options.managedHost || disposed) return;
-    const projectId = options.globalState?.get("bhlr.lastProjectId");
-    if (projectId && !flowController.getProject()) await flowController.restoreSavedProject(projectId);
+    // K23: a Project folder window opens its own Project; any other window opens
+    // the last Project seen in any window (§3.1), as before.
+    const host = await options.managedHost.catch(() => undefined);
+    const windowProject = host && typeof host.windowProject === "function"
+      ? await host.windowProject().catch(() => null) : null;
+    const lastProject = options.globalState?.get("bhlr.lastProjectId");
+    if (!disposed && windowProject && !flowController.getProject()) await flowController.restoreSavedProject(windowProject);
+    if (!disposed && lastProject && !flowController.getProject()) await flowController.restoreSavedProject(lastProject);
     const agent = await agentReady;
     if (disposed || !agent) return;
     syncProject();
