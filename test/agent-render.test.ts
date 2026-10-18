@@ -1029,12 +1029,28 @@ describe("Kiro-native '지금 할 일', steps and tabs (K23)", () => {
   });
 
   it("never offers to reconnect a window whose chat already reaches the Project", () => {
-    const { root, view, restore } = mount();
+    let opens = 0;
+    const { root, view, restore } = mount({ ...noopCallbacks(), onOpenInKiro: () => opens++ });
     try {
       view.render(kiro({}, { window: "READY" }));
       expect(card(root)).toMatchObject({ state: "BUILDING", action: null, send: null });
+      // Another folder's window: the real state stays, and a note above it leads to the Project's own window.
+      const elsewhere = () => byClass(root, "agent-now-elsewhere")[0];
+      expect(elsewhere().hidden).toBe(true);
       view.render(kiro({}, { window: "NOT_BOUND" }));
-      expect(card(root)).toMatchObject({ state: "ELSEWHERE", action: "Kiro 채팅에서 열기", note: true });
+      expect(card(root)).toMatchObject({ state: "BUILDING", action: null, note: false });
+      expect(elsewhere().hidden).toBe(false);
+      expect(byClass(root, "agent-now-elsewhere-text")[0].textContent).toContain("이 창은 이 Project의 폴더가 아니에요");
+      byClass(root, "agent-now-elsewhere-action")[0].click();
+      expect(opens).toBe(1);
+      view.render(kiro({ phase: "TASK_COMPLETED" }, { window: "NOT_BOUND" }));
+      expect(card(root).state).toBe("DONE");
+      expect(elsewhere().hidden).toBe(false);
+      // Not before the first message (the card already connects), and not in its own window.
+      view.render(kiro({ readyToStart: true }, { window: "NOT_BOUND" }));
+      expect(elsewhere().hidden).toBe(true);
+      view.render(kiro({ phase: "TASK_COMPLETED" }, { window: "READY" }));
+      expect(elsewhere().hidden).toBe(true);
     } finally { restore(); }
   });
 

@@ -185,7 +185,6 @@ type NowState =
   | "NEW_WINDOW"
   | "UNTRUSTED"
   | "RELOAD"
-  | "ELSEWHERE"
   | "SEND_START"
   | "WAITING"
   | "BUILDING"
@@ -210,10 +209,6 @@ const NOW_TEXT: Readonly<Record<NowState, { readonly lead: string; readonly deta
   RELOAD: {
     lead: "창을 한 번 다시 로드하면 연결돼요.",
     detail: "오른쪽 아래 알림의 ‘다시 로드’를 눌러 주세요. 다시 로드하면 Kiro 채팅에 새 세션이 열려요.",
-  },
-  ELSEWHERE: {
-    lead: "이 창은 이 Project의 폴더가 아니에요.",
-    detail: "‘Kiro 채팅에서 열기’를 누르면 Project 폴더에서 이어서 만들 수 있어요.",
   },
   SEND_START: { lead: "오른쪽 Kiro 채팅에 이렇게 보내 보세요.", detail: "짧게 ‘ㄱㄱ’만 보내도 시작해요." },
   WAITING: {
@@ -428,6 +423,7 @@ export class AgentSurfaceView {
 
   // --- Kiro-native "지금 할 일" card, steps and chat hint (K23) ---------------
   private readonly nowCard: HTMLElement;
+  private readonly nowElsewhere: HTMLElement;
   private readonly nowTask: HTMLElement;
   private readonly nowTaskTitle: HTMLElement;
   private readonly nowLead: HTMLElement;
@@ -522,6 +518,21 @@ export class AgentSurfaceView {
     // for the learner, and a choice's reason is never offered as a copy.
     this.nowCard = this.el("div", "agent-now");
     this.nowCard.hidden = true;
+    // Shown when this window is not the Project's folder (another Project's, or none).
+    this.nowElsewhere = this.el("div", "agent-now-elsewhere");
+    this.nowElsewhere.setAttribute("role", "note");
+    this.nowElsewhere.hidden = true;
+    const elsewhereText = this.el("p", "agent-now-elsewhere-text");
+    elsewhereText.textContent = "이 창은 이 Project의 폴더가 아니에요. 이 Project의 Kiro 채팅은 그 Project 창에서 이어져요.";
+    this.nowElsewhere.appendChild(elsewhereText);
+    const elsewhereAction = this.el("button", "agent-now-elsewhere-action") as HTMLButtonElement;
+    elsewhereAction.type = "button";
+    elsewhereAction.textContent = "이 Project 창 열기";
+    elsewhereAction.addEventListener("click", () => {
+      if (!this.nowElsewhere.hidden) this.callbacks.onOpenInKiro();
+    });
+    this.nowElsewhere.appendChild(elsewhereAction);
+    this.nowCard.appendChild(this.nowElsewhere);
     this.nowTask = this.el("div", "agent-now-task");
     const nowTaskLabel = this.el("span", "agent-now-task-label");
     nowTaskLabel.textContent = "이번 작업";
@@ -1362,7 +1373,7 @@ export class AgentSurfaceView {
     if (builder.phase === "TASK_COMPLETED") return "DONE";
     if (window === "UNTRUSTED") return "UNTRUSTED";
     if (window === "RELOAD") return "RELOAD";
-    if (window === "NOT_BOUND") return hostChat.openedNewWindow ? "NEW_WINDOW" : "ELSEWHERE";
+    if (window === "NOT_BOUND" && hostChat.openedNewWindow) return "NEW_WINDOW";
     return "BUILDING";
   }
 
@@ -1397,11 +1408,16 @@ export class AgentSurfaceView {
     this.nowDetail.hidden = detail === "";
     this.nowDetail.textContent = detail;
     this.renderProgress(state === "BUILDING" ? builder.progress ?? null : null);
-    const connect = state === "CONNECT" || state === "ELSEWHERE" || state === "OPENING";
+    const connect = state === "CONNECT" || state === "OPENING";
     this.nowAction.hidden = !connect;
     this.nowAction.disabled = state === "OPENING";
     this.nowAction.textContent = state === "OPENING" ? "연결하는 중…" : "Kiro 채팅에서 열기";
-    this.nowNote.hidden = !(state === "CONNECT" || state === "ELSEWHERE");
+    this.nowNote.hidden = state !== "CONNECT";
+    // K23: viewing a Project whose folder is not this window's, in any state: say so
+    // first, with the way to its own window. Its Kiro chat is there, not here.
+    const elsewhere = hostChat.window === "NOT_BOUND" && !hostChat.openedNewWindow && !hostChat.opening &&
+      !this.readyToStart && !!builder.taskId && state !== "FAILED";
+    this.nowElsewhere.hidden = !elsewhere;
     this.renderSteps(builder, state);
   }
 

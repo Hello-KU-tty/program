@@ -2753,6 +2753,38 @@ export function buildWebviewHtml(
       border-left: 2px solid color-mix(in srgb, var(--vscode-descriptionForeground) 55%, transparent);
       padding-left: var(--sp-2);
     }
+    /* Not this window's Project: said first, with the way to its own window. */
+    .agent-now-elsewhere {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-2);
+      border-radius: var(--radius-md);
+      padding: var(--sp-2) var(--sp-3);
+      background: color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 12%, transparent);
+      border: 1px solid color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 40%, transparent);
+    }
+    .agent-now-elsewhere-text { margin: 0; font-size: 0.88em; line-height: 1.5; overflow-wrap: anywhere; }
+    .agent-surface .agent-now-elsewhere-action {
+      align-self: flex-start;
+      border: 1px solid color-mix(in srgb, var(--vscode-foreground) 30%, transparent);
+      border-radius: var(--radius-sm);
+      padding: 3px var(--sp-3);
+      font: inherit;
+      font-size: 0.85em;
+      font-weight: 600;
+      color: var(--vscode-foreground);
+      background: transparent;
+      cursor: pointer;
+      transition: background var(--transition);
+    }
+    .agent-surface .agent-now-elsewhere-action:hover {
+      background: color-mix(in srgb, var(--vscode-foreground) 8%, transparent);
+    }
+    .agent-surface .agent-now-elsewhere-action:focus-visible {
+      outline: 2px solid var(--vscode-focusBorder, var(--accent));
+      outline-offset: 1px;
+    }
+
     /* Kiro chat's latest note: a quiet footer of the card, set off by a hairline. */
     .agent-now-progress {
       display: flex;
