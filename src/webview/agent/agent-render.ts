@@ -239,11 +239,11 @@ const STEPS = [
   "결과 보고 다음 한 걸음 고르기",
 ] as const;
 
-/** K23: when a progress note was written, as a local clock time ("오후 2:43 기준"). */
+/** K23: when a progress note was written, as a local clock time ("오후 2:43에 남김"). */
 function clockTime(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
-  return `${date.toLocaleTimeString("ko-KR", { hour: "numeric", minute: "2-digit" })} 기준`;
+  return `${date.toLocaleTimeString("ko-KR", { hour: "numeric", minute: "2-digit" })}에 남김`;
 }
 
 /** K23: a Project title cut at a word boundary, for a quote's source label. */
@@ -542,7 +542,7 @@ export class AgentSurfaceView {
     this.nowProgress.hidden = true;
     const progressHead = this.el("div", "agent-now-progress-head");
     const progressLabel = this.el("span", "agent-now-progress-label");
-    progressLabel.textContent = "Kiro 채팅이 남긴 진행 메모";
+    progressLabel.textContent = "Kiro 채팅의 최근 진행 메모";
     progressHead.appendChild(progressLabel);
     this.nowProgressTime = this.el("span", "agent-now-progress-time");
     progressHead.appendChild(this.nowProgressTime);
@@ -557,7 +557,6 @@ export class AgentSurfaceView {
     this.nowProgressSteps = this.el("ol", "agent-now-progress-steps");
     this.nowProgressPlan.appendChild(this.nowProgressSteps);
     this.nowProgress.appendChild(this.nowProgressPlan);
-    this.nowCard.appendChild(this.nowProgress);
     this.nowDetail = this.el("p", "agent-now-detail");
     this.nowCard.appendChild(this.nowDetail);
     this.nowAction = this.el("button", "agent-now-action") as HTMLButtonElement;
@@ -572,6 +571,7 @@ export class AgentSurfaceView {
     this.nowNote.textContent = NEW_WINDOW_WAIT;
     this.nowNote.hidden = true;
     this.nowCard.appendChild(this.nowNote);
+    this.nowCard.appendChild(this.nowProgress);
     builder.appendChild(this.nowCard);
 
     this.builderPhase = this.el("div", "agent-builder-phase");
@@ -1399,10 +1399,11 @@ export class AgentSurfaceView {
     if (key === this.progressKey) return;
     this.progressKey = key;
     this.nowProgressTime.textContent = clockTime(progress.updatedAt);
-    this.nowProgressStage.textContent = `지금 단계: ${progress.stage}`;
+    // The note is not live: Kiro chat writes it at plan, test and choice points only.
+    this.nowProgressStage.textContent = progress.stage;
     this.nowProgressGoal.textContent = progress.goal;
     this.nowProgressPlan.hidden = progress.steps.length === 0;
-    this.nowProgressPlanLabel.textContent = `계획 ${progress.steps.length}단계 보기`;
+    this.nowProgressPlanLabel.textContent = `계획 ${progress.steps.length}단계`;
     this.nowProgressSteps.textContent = "";
     for (const step of progress.steps) {
       const item = this.el("li", "agent-now-progress-step");
@@ -1443,6 +1444,7 @@ export class AgentSurfaceView {
     button.type = "button";
     button.textContent = "복사";
     button.setAttribute("aria-label", label);
+    button.title = "클립보드에 복사해요. 붙여 넣고 보내는 건 직접 해 주세요.";
     button.addEventListener("click", () => {
       copy();
       button.textContent = "복사했어요";

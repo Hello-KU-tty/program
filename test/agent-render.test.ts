@@ -1127,12 +1127,13 @@ describe("Kiro chat's progress note on the card (K23)", () => {
       view.render(kiro({ progress }));
       const block = byClass(root, "agent-now-progress")[0];
       expect(block.hidden).toBe(false);
-      expect(byClass(root, "agent-now-progress-label")[0].textContent).toBe("Kiro 채팅이 남긴 진행 메모");
-      expect(byClass(root, "agent-now-progress-stage")[0].textContent).toBe("지금 단계: 테스트 실행");
+      expect(byClass(root, "agent-now-progress-label")[0].textContent).toBe("Kiro 채팅의 최근 진행 메모");
+      // Not live: the note says when it was written and never claims "지금".
+      expect(byClass(root, "agent-now-progress-stage")[0].textContent).toBe("테스트 실행");
       expect(byClass(root, "agent-now-progress-goal")[0].textContent).toBe(progress.goal);
       expect(root.queryAll((e) => e.tagName === "B")).toHaveLength(0);
-      expect(byClass(root, "agent-now-progress-time")[0].textContent).toMatch(/기준$/);
-      expect(byClass(root, "agent-now-progress-plan-summary")[0].textContent).toBe("계획 2단계 보기");
+      expect(byClass(root, "agent-now-progress-time")[0].textContent).toMatch(/에 남김$/);
+      expect(byClass(root, "agent-now-progress-plan-summary")[0].textContent).toBe("계획 2단계");
       expect(byClass(root, "agent-now-progress-step").map((e) => e.textContent)).toEqual(progress.steps);
       // No planned steps: no plan line.
       view.render(kiro({ progress: { ...progress, steps: [] } }));

@@ -1969,6 +1969,11 @@ export function buildWebviewHtml(
       color: var(--vscode-descriptionForeground);
       background: transparent;
     }
+    .agent-surface .agent-tab { cursor: pointer; transition: background var(--transition), color var(--transition); }
+    .agent-surface .agent-tab:hover:not([aria-selected="true"]) {
+      color: var(--vscode-foreground);
+      background: color-mix(in srgb, var(--vscode-foreground) 6%, transparent);
+    }
     .agent-surface .agent-tab[aria-selected="true"] {
       color: var(--vscode-foreground);
       background: color-mix(in srgb, var(--vscode-foreground) 10%, transparent);
@@ -2741,23 +2746,35 @@ export function buildWebviewHtml(
       border-left: 2px solid color-mix(in srgb, var(--vscode-descriptionForeground) 55%, transparent);
       padding-left: var(--sp-2);
     }
+    /* Kiro chat's latest note: a quiet footer of the card, set off by a hairline. */
     .agent-now-progress {
       display: flex;
       flex-direction: column;
-      gap: 2px;
-      border-radius: var(--radius-md);
-      padding: var(--sp-2) var(--sp-3);
-      background: color-mix(in srgb, var(--vscode-foreground) 6%, transparent);
+      gap: var(--sp-1);
+      padding-top: var(--sp-2);
+      border-top: 1px solid color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
     }
     .agent-now-progress-head {
       display: flex;
       flex-wrap: wrap;
       justify-content: space-between;
+      align-items: baseline;
       gap: 2px var(--sp-2);
       font-size: 0.75em;
       color: var(--vscode-descriptionForeground);
     }
-    .agent-now-progress-stage { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+    .agent-now-progress-label { font-weight: 600; }
+    .agent-now-progress-stage {
+      align-self: flex-start;
+      margin: 0;
+      font-size: 0.82em;
+      font-weight: 600;
+      color: var(--accent);
+      background: color-mix(in srgb, var(--accent) 14%, transparent);
+      border-radius: var(--radius-pill);
+      padding: 1px var(--sp-2);
+      overflow-wrap: anywhere;
+    }
     .agent-now-progress-goal {
       margin: 0;
       font-size: 0.85em;
@@ -2770,10 +2787,14 @@ export function buildWebviewHtml(
       overflow-wrap: anywhere;
     }
     .agent-now-progress-plan-summary {
-      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
       font-size: 0.82em;
-      color: var(--vscode-descriptionForeground);
-      padding-top: 2px;
+      font-weight: 600;
+      color: var(--accent);
+      padding: 2px 6px;
+      margin-left: -6px;
     }
     .agent-now-progress-steps {
       margin: var(--sp-1) 0 0;
@@ -2867,24 +2888,17 @@ export function buildWebviewHtml(
     }
     .agent-steps-summary {
       display: flex;
-      flex-wrap: wrap;
-      align-items: baseline;
-      gap: 2px var(--sp-2);
-      cursor: pointer;
+      align-items: center;
+      gap: var(--sp-2);
       font-size: 0.9em;
       font-weight: 600;
-      list-style: none;
+      padding: var(--sp-1) var(--sp-2);
+      margin: calc(-1 * var(--sp-1)) calc(-1 * var(--sp-2));
     }
-    .agent-steps-summary::-webkit-details-marker { display: none; }
-    .agent-steps-summary::before {
-      content: "▸";
-      display: inline-block;
-      width: 0.9em;
-      color: var(--vscode-descriptionForeground);
-      transition: transform var(--transition);
-    }
-    .agent-steps[open] > .agent-steps-summary::before { transform: rotate(90deg); }
+    .agent-steps-label { flex: none; }
     .agent-steps-now {
+      flex: 1 1 auto;
+      min-width: 0;
       font-weight: 400;
       font-size: 0.92em;
       color: var(--vscode-descriptionForeground);
@@ -2939,6 +2953,57 @@ export function buildWebviewHtml(
       background: color-mix(in srgb, var(--accent) 16%, transparent);
       border-radius: var(--radius-pill);
       padding: 0 6px;
+    }
+
+    /* K23: everything that folds says so. A chevron on the right turns when it
+       opens, the row tints on hover, and keyboard focus shows a ring. */
+    .agent-steps-summary,
+    .agent-decision-compact-summary,
+    .agent-now-progress-plan-summary {
+      cursor: pointer;
+      list-style: none;
+      border-radius: var(--radius-sm);
+      transition: background var(--transition);
+    }
+    .agent-steps-summary::-webkit-details-marker,
+    .agent-decision-compact-summary::-webkit-details-marker,
+    .agent-now-progress-plan-summary::-webkit-details-marker { display: none; }
+    .agent-steps-summary:hover,
+    .agent-decision-compact-summary:hover,
+    .agent-now-progress-plan-summary:hover {
+      background: color-mix(in srgb, var(--vscode-foreground) 7%, transparent);
+    }
+    .agent-steps-summary:focus-visible,
+    .agent-decision-compact-summary:focus-visible,
+    .agent-now-progress-plan-summary:focus-visible {
+      outline: 2px solid var(--vscode-focusBorder, var(--accent));
+      outline-offset: 1px;
+    }
+    .agent-steps-summary::after,
+    .agent-decision-compact-summary::after,
+    .agent-now-progress-plan-summary::after {
+      content: "";
+      flex: none;
+      width: 6px;
+      height: 6px;
+      margin: 0 2px;
+      border-right: 1.5px solid currentColor;
+      border-bottom: 1.5px solid currentColor;
+      color: var(--vscode-descriptionForeground);
+      transform: translateY(-2px) rotate(45deg);
+      transition: transform var(--transition);
+    }
+    .agent-now-progress-plan-summary::after { color: currentColor; }
+    .agent-steps-summary::after { margin-left: auto; }
+    .agent-steps[open] > .agent-steps-summary::after,
+    .agent-decision-compact[open] > .agent-decision-compact-summary::after,
+    .agent-now-progress-plan[open] > .agent-now-progress-plan-summary::after {
+      transform: translateY(1px) rotate(-135deg);
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .agent-steps-summary::after,
+      .agent-decision-compact-summary::after,
+      .agent-now-progress-plan-summary::after { transition: none; }
     }
 
     /* Where questions go in Kiro-native (K23). */
@@ -3002,13 +3067,17 @@ export function buildWebviewHtml(
     }
     .agent-decision-compact[data-state="waiting"] { border-color: var(--accent); }
     .agent-decision-compact-summary {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 2px var(--sp-2);
-      cursor: pointer;
-      list-style-position: inside;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      column-gap: var(--sp-2);
+      row-gap: 2px;
+      align-items: center;
+      padding: var(--sp-1) var(--sp-2);
+      margin: calc(-1 * var(--sp-1)) calc(-1 * var(--sp-2));
     }
-    .agent-decision-compact-question { flex: 1 1 12rem; min-width: 0; overflow-wrap: anywhere; }
+    .agent-decision-compact-question { grid-column: 1; min-width: 0; overflow-wrap: anywhere; }
+    .agent-decision-compact-summary > .agent-decision-compact-state { grid-column: 1; }
+    .agent-decision-compact-summary::after { grid-column: 2; grid-row: 1 / span 2; }
     .agent-decision-compact-state {
       font-size: 0.85em;
       color: var(--vscode-descriptionForeground);
