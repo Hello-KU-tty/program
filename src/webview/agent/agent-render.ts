@@ -37,6 +37,7 @@
  */
 
 import {
+  CHAT_HELPER_EXAMPLE_TEXT,
   CHAT_START_TEXT,
   nextMoveChatText,
   type AgentViewModel,
@@ -119,10 +120,13 @@ export interface AgentRenderCallbacks {
   /** Kiro-native: generate Next Move suggestions again after a failure (`nextMove/retry`). */
   onRetryNextMove(): void;
   /**
-   * Kiro-native (K23): copy the suggested first chat message or the line that picks a Next
-   * Move (`chat/copy`). The host builds the text; nothing is sent to Kiro chat.
+   * Kiro-native (K23): copy the suggested first chat message, the line that picks a Next
+   * Move or the example Helper question while a choice waits (K24) (`chat/copy`). The host
+   * builds the text; nothing is sent to Kiro chat.
    */
-  onCopyChatText(request: { readonly what: "START" } | { readonly what: "NEXT_MOVE"; readonly number: number }): void;
+  onCopyChatText(
+    request: { readonly what: "START" | "HELPER_EXAMPLE" } | { readonly what: "NEXT_MOVE"; readonly number: number },
+  ): void;
 }
 
 /** Korean labels for the Builder turn display phase. */
@@ -211,10 +215,8 @@ const NOW_TEXT: Readonly<Record<NowState, { readonly lead: string; readonly deta
     detail: "오른쪽 아래 알림의 ‘다시 로드’를 눌러 주세요. 다시 로드하면 Kiro 채팅에 새 세션이 열려요.",
   },
   SEND_START: { lead: "오른쪽 Kiro 채팅에 이렇게 보내 보세요.", detail: "짧게 ‘ㄱㄱ’만 보내도 시작해요." },
-  WAITING: {
-    lead: "Kiro 채팅이 답을 기다려요.",
-    detail: "채팅에 번호와 고른 이유를 함께 적어 주세요. 이유를 내 말로 쓰면 학습 기록에 남아요.",
-  },
+  // K24: not knowing yet is fine; the example Helper question and how to answer follow.
+  WAITING: { lead: "Kiro 채팅이 답을 기다려요.", detail: "잘 몰라도 괜찮아요. 고르기 전에 먼저 물어보세요." },
   BUILDING: {
     lead: "Kiro 채팅에서 만들고 있어요.",
     detail: "번호로 묻는 선택이 오면 채팅에 답해 주세요. 막히거나 궁금한 것도 채팅에 그대로 물어보면 돼요.",
@@ -234,6 +236,13 @@ const STEPS = [
   "만드는 동안 묻는 선택에 답하기",
   "결과 보고 다음 한 걸음 고르기",
 ] as const;
+
+/**
+ * K24: under the example Helper question. It is only an example: the Helper works best with
+ * the learner's own words about what they understood or what confuses them.
+ */
+const HELPER_EXAMPLE_NOTE = "예시일 뿐이에요. 내가 이해한 대로, 헷갈리는 부분을 내 말로 물어보면 더 좋아요.";
+const WAITING_CHOOSE = "고를 땐 번호와 고른 이유를 함께 적어 주세요. 이유를 내 말로 쓰면 학습 기록에 남아요.";
 
 /** K23: a progress goal this short fits its three-line clamp at 300px, so it needs no fold. */
 const PROGRESS_GOAL_SHORT = 60;
@@ -434,6 +443,7 @@ export class AgentSurfaceView {
   private readonly nowQuestion: HTMLElement;
   private readonly nowSend: HTMLElement;
   private readonly nowDetail: HTMLElement;
+  private readonly nowAsk: HTMLElement;
   private readonly nowProgress: HTMLElement;
   private readonly nowProgressTime: HTMLElement;
   private readonly nowProgressStage: HTMLElement;
@@ -588,6 +598,22 @@ export class AgentSurfaceView {
     this.nowProgress.appendChild(this.nowProgressToggle);
     this.nowDetail = this.el("p", "agent-now-detail");
     this.nowCard.appendChild(this.nowDetail);
+    // K24: while a choice waits, an example Helper question to copy (the learner's own words
+    // are better), then how to answer the choice.
+    this.nowAsk = this.el("div", "agent-now-ask");
+    this.nowAsk.hidden = true;
+    const askLabel = this.el("p", "agent-now-ask-label");
+    askLabel.textContent = "예를 들면 이렇게요";
+    this.nowAsk.appendChild(askLabel);
+    this.nowAsk.appendChild(this.buildSendRow(CHAT_HELPER_EXAMPLE_TEXT, "예시 질문 복사",
+      () => this.callbacks.onCopyChatText({ what: "HELPER_EXAMPLE" }), "예시 복사"));
+    const askNote = this.el("p", "agent-now-ask-note");
+    askNote.textContent = HELPER_EXAMPLE_NOTE;
+    this.nowAsk.appendChild(askNote);
+    const askChoose = this.el("p", "agent-now-ask-choose");
+    askChoose.textContent = WAITING_CHOOSE;
+    this.nowAsk.appendChild(askChoose);
+    this.nowCard.appendChild(this.nowAsk);
     this.nowAction = this.el("button", "agent-now-action") as HTMLButtonElement;
     this.nowAction.type = "button";
     this.nowAction.textContent = "Kiro 채팅에서 열기";
@@ -1430,6 +1456,7 @@ export class AgentSurfaceView {
     this.viewingElsewhere = elsewhere;
     // This window's chat does not reach that Project, so nothing here says to use it.
     this.chatHint.hidden = elsewhere;
+    this.nowAsk.hidden = state !== "WAITING" || elsewhere;
     this.renderSteps(builder, state);
   }
 
@@ -1489,14 +1516,14 @@ export class AgentSurfaceView {
    * K23: words the learner may send in Kiro chat, with a copy button. The host
    * builds the copied text; this view only says which one.
    */
-  private buildSendRow(text: string, label: string, copy: () => void): HTMLElement {
+  private buildSendRow(text: string, label: string, copy: () => void, buttonText = "복사"): HTMLElement {
     const row = this.el("div", "agent-send");
     const value = this.el("span", "agent-send-text");
     value.textContent = text;
     row.appendChild(value);
     const button = this.el("button", "agent-copy") as HTMLButtonElement;
     button.type = "button";
-    button.textContent = "복사";
+    button.textContent = buttonText;
     button.setAttribute("aria-label", label);
     button.title = "클립보드에 복사해요. 붙여 넣고 보내는 건 직접 해 주세요.";
     button.addEventListener("click", () => {
@@ -1504,7 +1531,7 @@ export class AgentSurfaceView {
       button.textContent = "복사했어요";
       button.dataset.copied = "true";
       setTimeout(() => {
-        button.textContent = "복사";
+        button.textContent = buttonText;
         button.dataset.copied = "false";
       }, 1600);
     });

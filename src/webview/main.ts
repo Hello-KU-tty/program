@@ -343,9 +343,9 @@ export function bootstrap(
       client.postAgent({ kind: "nextMove/retry" });
     },
     onCopyChatText: (request) => {
-      client.postAgent(request.what === "START"
-        ? { kind: "chat/copy", what: "START" }
-        : { kind: "chat/copy", what: "NEXT_MOVE", number: request.number });
+      client.postAgent(request.what === "NEXT_MOVE"
+        ? { kind: "chat/copy", what: "NEXT_MOVE", number: request.number }
+        : { kind: "chat/copy", what: request.what });
     },
   };
 

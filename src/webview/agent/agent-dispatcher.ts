@@ -200,7 +200,7 @@ export class AgentDispatcher {
       }
       case "chat/copy": {
         await this.controller.copyChatText(
-          action.what === "START" ? { what: "START" } : { what: "NEXT_MOVE", number: action.number },
+          action.what === "NEXT_MOVE" ? { what: "NEXT_MOVE", number: action.number } : { what: action.what },
         );
         return;
       }

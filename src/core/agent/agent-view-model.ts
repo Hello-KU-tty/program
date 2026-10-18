@@ -94,6 +94,14 @@ export type KiroWindowState = "READY" | "UNTRUSTED" | "RELOAD" | "NOT_BOUND";
 export const CHAT_START_TEXT = "시작해 줘";
 
 /**
+ * K24: an example Helper question while Kiro chat waits on a choice; only ever copied, never
+ * sent. The panel calls it an example and asks for the learner's own words. A pasted
+ * `/vibe-helper` may reach chat without Kiro's Helper steering; the Builder steering still
+ * answers it as a read-only question (Steering 0.9.6).
+ */
+export const CHAT_HELPER_EXAMPLE_TEXT = "/vibe-helper 이 선택지들이 뭐가 다른지 쉽게 알려줘";
+
+/**
  * K23: the chat message that picks one Next Move suggestion; only ever copied, never sent.
  * "다음 작업후보" says the number is a Next Move suggestion, so the Builder does not read it
  * as a Decision option (Steering "Next moves").

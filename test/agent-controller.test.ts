@@ -1039,6 +1039,8 @@ describe("AgentSurfaceController — Kiro-native host runs the Builder in Kiro c
     await h.controller.copyChatText({ what: "START" });
     // No Next Move is shown yet: nothing to copy for a number.
     await h.controller.copyChatText({ what: "NEXT_MOVE", number: 2 });
+    // No choice waits: no example Helper question (K24).
+    await h.controller.copyChatText({ what: "HELPER_EXAMPLE" });
     expect(copied).toEqual(["시작해 줘"]);
     expect(h.client.executeKinds).toEqual([]);
     expect(h.startBuilderCount()).toBe(0);
@@ -1050,6 +1052,19 @@ describe("AgentSurfaceController — Kiro-native host runs the Builder in Kiro c
     const panel = buildHarness({ writeClipboard: async text => { copied.push(text); } });
     await panel.controller.copyChatText({ what: "START" });
     expect(copied).toEqual(["시작해 줘"]);
+  });
+
+  it("copies the example Helper question only while a choice of this Task waits (K24)", async () => {
+    const copied: string[] = [];
+    // Kiro chat records its choices; the panel reads them from the Task's decisions (K17).
+    const request = snapshotWithPendingDecision().pendingDecisions[0];
+    const h = buildHarness({ openInKiro: async () => opened("REGISTERED"), writeClipboard: async text => { copied.push(text); },
+      client: { restoreProjectResult: { resolve: fakeSnapshot({ decisions: [{ request, resolution: null, application: null }] }) } } });
+    await h.controller.refreshProject();
+    await vi.waitFor(() => expect(h.controller.getViewModel().decisions.some(d => !d.resolved)).toBe(true));
+    await h.controller.copyChatText({ what: "HELPER_EXAMPLE" });
+    expect(copied).toEqual(["/vibe-helper 이 선택지들이 뭐가 다른지 쉽게 알려줘"]);
+    expect(h.startBuilderCount()).toBe(0);
   });
 
   it("names the other Project of a quoted learner word in the record, never this one's (K23)", async () => {

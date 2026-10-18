@@ -2749,6 +2749,26 @@ export function buildWebviewHtml(
       color: var(--vscode-descriptionForeground);
       overflow-wrap: anywhere;
     }
+    /* K24: the example Helper question while a choice waits, and how to answer it. */
+    .agent-now-ask {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-1);
+      min-width: 0;
+    }
+    .agent-now-ask-label,
+    .agent-now-ask-note,
+    .agent-now-ask-choose {
+      margin: 0;
+      font-size: 0.85em;
+      line-height: 1.5;
+      color: var(--vscode-descriptionForeground);
+      overflow-wrap: anywhere;
+    }
+    .agent-now-ask-choose {
+      margin-top: var(--sp-1);
+      color: var(--vscode-foreground);
+    }
     .agent-now-note {
       font-size: 0.82em;
       border-left: 2px solid color-mix(in srgb, var(--vscode-descriptionForeground) 55%, transparent);

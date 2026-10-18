@@ -89,7 +89,8 @@ export type NativeAnswerInput =
  * - `nextMove/retry`: Kiro-native host only; generate the Next Move
  *   suggestions again after both automatic attempts failed.
  * - `chat/copy`: Kiro-native host only (K23); copy the suggested first chat
- *   message (`START`) or the line that picks Next Move `number`. The host builds
+ *   message (`START`), the line that picks Next Move `number`, or the example
+ *   Helper question while a choice waits (`HELPER_EXAMPLE`, K24). The host builds
  *   the text from its own view model; the webview never supplies it.
  */
 export type AgentAction =
@@ -133,7 +134,7 @@ export type AgentAction =
       readonly userGoal: string;
     }
   | { readonly kind: "nextMove/retry" }
-  | { readonly kind: "chat/copy"; readonly what: "START" }
+  | { readonly kind: "chat/copy"; readonly what: "START" | "HELPER_EXAMPLE" }
   | { readonly kind: "chat/copy"; readonly what: "NEXT_MOVE"; readonly number: number };
 
 /**
@@ -335,7 +336,7 @@ export function parseAgentAction(raw: unknown): AgentAction | null {
       return { kind };
 
     case "chat/copy":
-      if (raw.what === "START") return { kind, what: "START" };
+      if (raw.what === "START" || raw.what === "HELPER_EXAMPLE") return { kind, what: raw.what };
       return raw.what === "NEXT_MOVE" && typeof raw.number === "number" && Number.isSafeInteger(raw.number) &&
         raw.number >= 1 && raw.number <= 9
         ? { kind, what: "NEXT_MOVE", number: raw.number }

@@ -587,6 +587,9 @@ describe("parseAgentAction - chat/copy (K23)", () => {
     expect(parseAgentAction({ kind: "chat/copy", what: "START", text: "rm -rf /" })).toEqual<AgentAction>({ kind: "chat/copy", what: "START" });
     expect(parseAgentAction({ kind: "chat/copy", what: "NEXT_MOVE", number: 2, text: "x" }))
       .toEqual<AgentAction>({ kind: "chat/copy", what: "NEXT_MOVE", number: 2 });
+    // K24: the example Helper question while a choice waits.
+    expect(parseAgentAction({ kind: "chat/copy", what: "HELPER_EXAMPLE", text: "/vibe-helper 다른 말" }))
+      .toEqual<AgentAction>({ kind: "chat/copy", what: "HELPER_EXAMPLE" });
   });
 
   it("rejects unknown kinds of copy and bad numbers", () => {

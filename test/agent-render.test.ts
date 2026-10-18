@@ -1078,15 +1078,49 @@ describe("Kiro-native '지금 할 일', steps and tabs (K23)", () => {
   });
 
   it("asks for a number and the learner's own reason, never offering a reason to copy", () => {
-    const { root, view, restore } = mount();
+    const copies: unknown[] = [];
+    const { root, view, restore } = mount({ ...noopCallbacks(), onCopyChatText: (r) => copies.push(r) });
     try {
       const waiting = { ...pendingDecision(), taskId: "task_synthetic", question: "입출고 기록을 어떻게 저장할까요?" };
       view.render(kiro({ phase: "DECISION_REQUIRED" }, { window: "READY" }, { decisions: [waiting] }));
       expect(card(root)).toMatchObject({ state: "WAITING", send: null, action: null });
       expect(byClass(root, "agent-now-question")[0].textContent).toBe("입출고 기록을 어떻게 저장할까요?");
-      expect(card(root).detail).toContain("내 말로");
-      // The only copy in the card is the start line, hidden here.
-      expect(byClass(byClass(root, "agent-now")[0], "agent-copy")).toHaveLength(1);
+      expect(byClass(root, "agent-now-ask-choose")[0].textContent).toContain("번호와 고른 이유");
+      expect(byClass(root, "agent-now-ask-choose")[0].textContent).toContain("내 말로");
+      // The card's copies are the start line (hidden here) and the example Helper question.
+      const now = byClass(root, "agent-now")[0];
+      expect(byClass(now, "agent-send-text").map((el) => el.textContent))
+        .toEqual(["시작해 줘", "/vibe-helper 이 선택지들이 뭐가 다른지 쉽게 알려줘"]);
+    } finally { restore(); }
+  });
+
+  it("says not knowing is fine and offers an example Helper question, only while a choice waits (K24)", () => {
+    const copies: unknown[] = [];
+    const { root, view, restore } = mount({ ...noopCallbacks(), onCopyChatText: (r) => copies.push(r) });
+    try {
+      const waiting = { ...pendingDecision(), taskId: "task_synthetic", question: "입출고 기록을 어떻게 저장할까요?" };
+      view.render(kiro({ phase: "DECISION_REQUIRED" }, { window: "READY" }, { decisions: [waiting] }));
+      const ask = () => byClass(root, "agent-now-ask")[0];
+      expect(card(root).detail).toBe("잘 몰라도 괜찮아요. 고르기 전에 먼저 물어보세요.");
+      expect(ask().hidden).toBe(false);
+      // It is an example: the learner's own words are better.
+      expect(byClass(root, "agent-now-ask-label")[0].textContent).toBe("예를 들면 이렇게요");
+      expect(byClass(ask(), "agent-send-text")[0].textContent).toBe("/vibe-helper 이 선택지들이 뭐가 다른지 쉽게 알려줘");
+      expect(byClass(root, "agent-now-ask-note")[0].textContent).toContain("예시일 뿐이에요");
+      expect(byClass(root, "agent-now-ask-note")[0].textContent).toContain("내 말로 물어보면");
+      const copy = byClass(ask(), "agent-copy")[0];
+      expect(copy.textContent).toBe("예시 복사");
+      expect(copy.attributes["aria-label"]).toBe("예시 질문 복사");
+      copy.click();
+      expect(copies).toEqual([{ what: "HELPER_EXAMPLE" }]);
+      // Nothing waits: no example.
+      view.render(kiro({}, { window: "READY" }));
+      expect(card(root).state).toBe("BUILDING");
+      expect(ask().hidden).toBe(true);
+      // Another Project's window: its chat does not reach this Project, so nothing to copy (K23).
+      view.render(kiro({ phase: "DECISION_REQUIRED" }, { window: "NOT_BOUND" }, { decisions: [waiting] }));
+      expect(card(root).state).toBe("WAITING");
+      expect(ask().hidden).toBe(true);
     } finally { restore(); }
   });
 

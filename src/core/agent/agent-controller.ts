@@ -59,6 +59,7 @@ import {
   type AgentViewModel,
   builderTaskLabel,
   type BuilderTurnViewModel,
+  CHAT_HELPER_EXAMPLE_TEXT,
   CHAT_START_TEXT,
   type DecisionViewModel,
   type HelperConversationViewModel,
@@ -1357,15 +1358,22 @@ export class AgentSurfaceController {
 
   /**
    * K23: put a chat message the learner may send on the clipboard. The text comes from this
-   * host's own view model (the start line, or a Next Move it shows), never from the webview,
-   * and the panel never sends it: the learner pastes and sends it in Kiro chat.
+   * host's own view model (the start line, a Next Move it shows, or the example Helper question
+   * while a choice of this Task waits, K24), never from the webview, and the panel never sends
+   * it: the learner pastes and sends it in Kiro chat.
    */
-  async copyChatText(request: { readonly what: "START" } | { readonly what: "NEXT_MOVE"; readonly number: number }): Promise<void> {
+  async copyChatText(
+    request: { readonly what: "START" | "HELPER_EXAMPLE" } | { readonly what: "NEXT_MOVE"; readonly number: number },
+  ): Promise<void> {
     const write = this.deps.writeClipboard;
     if (!write || this.disposed || !this.vm.hostChat) return;
     const move = request.what === "NEXT_MOVE" && this.vm.nextMove?.status === "READY"
       ? this.vm.nextMove.moves.find(item => item.number === request.number) : undefined;
-    const text = request.what === "START" ? CHAT_START_TEXT : move ? nextMoveChatText(move) : null;
+    const waiting = request.what === "HELPER_EXAMPLE" &&
+      this.vm.decisions.some(d => d.taskId === this.vm.builder.taskId && !d.resolved && !d.replaced);
+    const text = request.what === "START" ? CHAT_START_TEXT
+      : request.what === "HELPER_EXAMPLE" ? (waiting ? CHAT_HELPER_EXAMPLE_TEXT : null)
+      : move ? nextMoveChatText(move) : null;
     if (text === null) return;
     try {
       await write(text);
