@@ -95,11 +95,11 @@ export const CHAT_START_TEXT = "시작해 줘";
 
 /**
  * K23: the chat message that picks one Next Move suggestion; only ever copied, never sent.
- * "다음 한 걸음" names the panel card, so the Builder reads it as a Next Move number, not a
- * Decision option (Steering "Next moves").
+ * "다음 작업후보" says the number is a Next Move suggestion, so the Builder does not read it
+ * as a Decision option (Steering "Next moves").
  */
 export function nextMoveChatText(move: { readonly number: number }): string {
-  return `다음 한 걸음 ${move.number}번 해 보자`;
+  return `다음 작업후보 ${move.number}번 진행해`;
 }
 
 /** Next Move card state. `NONE` hides the card (no finished latest Task). */

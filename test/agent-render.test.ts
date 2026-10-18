@@ -754,6 +754,28 @@ describe("Kiro-native Next Move card", () => {
   const kiro = (nextMove: AgentViewModel["nextMove"], phase: BuilderTurnViewModel["phase"] = "TASK_COMPLETED"): AgentViewModel =>
     ({ ...vmWithBuilder({ phase, taskId: "task_1", taskRevision: 3 }), hostChat: { opening: false }, nextMove });
 
+  it("shows another Project's suggestions with nothing to send, since this window's chat does not reach it", () => {
+    const { root, view, restore } = mount();
+    try {
+      const sendTexts = () => byClass(byClass(root, "agent-next-move-list")[0], "agent-send-text").map((n) => n.textContent);
+      const ready = { status: "READY" as const, moves, retrying: false };
+      view.render({ ...kiro(ready), hostChat: { opening: false, window: "NOT_BOUND" } });
+      expect(byClass(root, "agent-elsewhere")[0].hidden).toBe(false);
+      expect(byClass(root, "agent-next-move-item")).toHaveLength(3);
+      expect(sendTexts()).toEqual([]);
+      expect(byClass(byClass(root, "agent-next-move")[0], "agent-copy")).toHaveLength(0);
+      expect(byClass(root, "agent-next-move-lead")[0].hidden).toBe(true);
+      expect(byClass(root, "agent-next-move-note")[0].hidden).toBe(true);
+      expect(byClass(root, "agent-chat-hint")[0].hidden).toBe(true);
+      // In the Project's own window the lines to send come back.
+      view.render({ ...kiro(ready), hostChat: { opening: false, window: "READY" } });
+      expect(sendTexts()).toHaveLength(3);
+      expect(byClass(root, "agent-next-move-lead")[0].hidden).toBe(false);
+      expect(byClass(root, "agent-next-move-note")[0].hidden).toBe(false);
+      expect(byClass(root, "agent-chat-hint")[0].hidden).toBe(false);
+    } finally { restore(); }
+  });
+
   it("shows generating, then three suggestions without any start button, and replaces the final upgrade", () => {
     let lists = 0;
     const copies: unknown[] = [];
@@ -789,7 +811,7 @@ describe("Kiro-native Next Move card", () => {
       for (const item of items) expect(byClass(item, "agent-next-move-number")).toHaveLength(1);
       // K23: each suggestion shows what to send in Kiro chat with a copy button; nothing starts it here.
       expect(byClass(byClass(root, "agent-next-move-list")[0], "agent-send-text").map((n) => n.textContent))
-        .toEqual(["다음 한 걸음 1번 해 보자", "다음 한 걸음 2번 해 보자", "다음 한 걸음 3번 해 보자"]);
+        .toEqual(["다음 작업후보 1번 진행해", "다음 작업후보 2번 진행해", "다음 작업후보 3번 진행해"]);
       for (const item of items)
         expect(item.queryAll((e) => e.tagName === "BUTTON").map((b) => b.className)).toEqual(["agent-copy"]);
       const copy = byClass(items[1], "agent-copy")[0];

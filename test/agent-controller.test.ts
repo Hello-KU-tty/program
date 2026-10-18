@@ -1172,7 +1172,7 @@ describe("AgentSurfaceController — Kiro-native Next Move card", () => {
     expect(windowReads).toBeGreaterThan(0);
     await h.controller.copyChatText({ what: "NEXT_MOVE", number: 2 });
     await h.controller.copyChatText({ what: "NEXT_MOVE", number: 7 });
-    expect(copied).toEqual(["다음 한 걸음 2번 해 보자"]);
+    expect(copied).toEqual(["다음 작업후보 2번 진행해"]);
   });
 
   it("shows a finished Task as finished even when a replaced choice was never applied (K17)", async () => {

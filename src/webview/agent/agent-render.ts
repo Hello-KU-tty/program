@@ -417,9 +417,12 @@ export class AgentSurfaceView {
   private readonly nextMoveSection: HTMLElement;
   private readonly nextMoveStatus: HTMLElement;
   private readonly nextMoveList: HTMLElement;
+  private readonly nextMoveLead: HTMLElement;
   private readonly nextMoveNote: HTMLElement;
   private readonly nextMoveRetryButton: HTMLButtonElement;
   private nextMoveRenderKey: string | undefined;
+  /** K23: the panel shows a Project whose folder is not this window's; its chat is elsewhere. */
+  private viewingElsewhere = false;
 
   // --- Kiro-native "지금 할 일" card, steps and chat hint (K23) ---------------
   private readonly nowCard: HTMLElement;
@@ -929,9 +932,9 @@ export class AgentSurfaceView {
     const nextMoveLabel = this.el("h1", "agent-section-heading");
     nextMoveLabel.textContent = "다음 한 걸음";
     nextMove.appendChild(nextMoveLabel);
-    const nextMoveLead = this.el("p", "agent-next-move-lead");
-    nextMoveLead.textContent = "하나 골라 Kiro 채팅에 보내 보세요.";
-    nextMove.appendChild(nextMoveLead);
+    this.nextMoveLead = this.el("p", "agent-next-move-lead");
+    this.nextMoveLead.textContent = "하나 골라 Kiro 채팅에 보내 보세요.";
+    nextMove.appendChild(this.nextMoveLead);
     this.nextMoveStatus = this.el("p", "agent-next-move-status");
     this.nextMoveStatus.setAttribute("role", "status");
     this.nextMoveStatus.setAttribute("aria-live", "polite");
@@ -1391,6 +1394,7 @@ export class AgentSurfaceView {
     this.stepsSection.hidden = !hostChat || !vm.builder.taskId;
     if (!hostChat) {
       this.nowElsewhere.hidden = true;
+      this.viewingElsewhere = false;
       return;
     }
     const builder = vm.builder;
@@ -1422,6 +1426,9 @@ export class AgentSurfaceView {
     const elsewhere = hostChat.window === "NOT_BOUND" && !hostChat.openedNewWindow && !hostChat.opening &&
       !this.readyToStart && !!builder.taskId && state !== "FAILED";
     this.nowElsewhere.hidden = !elsewhere;
+    this.viewingElsewhere = elsewhere;
+    // This window's chat does not reach that Project, so nothing here says to use it.
+    this.chatHint.hidden = elsewhere;
     this.renderSteps(builder, state);
   }
 
@@ -1519,11 +1526,14 @@ export class AgentSurfaceView {
       : status === "FAILED"
         ? "다음 한 걸음을 만들지 못했어요. 다시 만들거나, 하고 싶은 것을 Kiro 채팅에 바로 말해도 돼요."
         : "";
-    this.nextMoveNote.hidden = status !== "READY";
+    // In another Project's window, chat does not reach this Project: no "send it" lines.
+    const elsewhere = this.viewingElsewhere;
+    this.nextMoveLead.hidden = elsewhere;
+    this.nextMoveNote.hidden = status !== "READY" || elsewhere;
     this.nextMoveRetryButton.hidden = status !== "FAILED";
     this.nextMoveRetryButton.disabled = !!nextMove?.retrying;
     const moves = status === "READY" && nextMove ? nextMove.moves : [];
-    const key = JSON.stringify(moves);
+    const key = JSON.stringify({ moves, elsewhere });
     if (key === this.nextMoveRenderKey) return;
     this.nextMoveRenderKey = key;
     this.nextMoveList.textContent = "";
@@ -1549,7 +1559,7 @@ export class AgentSurfaceView {
       item.appendChild(benefit);
       // K23: what to send in Kiro chat to pick this one. Copy only; the learner sends it.
       const moveNumber = move.number;
-      item.appendChild(this.buildSendRow(nextMoveChatText(move), `${moveNumber}번을 고르는 문구 복사`,
+      if (!elsewhere) item.appendChild(this.buildSendRow(nextMoveChatText(move), `${moveNumber}번을 고르는 문구 복사`,
         () => this.callbacks.onCopyChatText({ what: "NEXT_MOVE", number: moveNumber })));
       this.nextMoveList.appendChild(item);
     }
