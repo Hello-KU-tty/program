@@ -1141,17 +1141,34 @@ describe("Kiro chat's progress note on the card (K23)", () => {
       expect(byClass(root, "agent-now-progress-goal")[0].textContent).toBe(progress.goal);
       expect(root.queryAll((e) => e.tagName === "B")).toHaveLength(0);
       expect(byClass(root, "agent-now-progress-time")[0].textContent).toMatch(/에 남김$/);
-      // One fold opens the full note and its plan.
-      expect(byClass(root, "agent-now-progress-more")[0].textContent).toBe("자세히");
-      expect(byClass(root, "agent-now-progress-less")[0].textContent).toBe("접기");
+      // One toggle under the note: "자세히" opens the full note and its plan, then reads "접기".
+      const toggle = byClass(root, "agent-now-progress-toggle")[0];
+      const steps = byClass(root, "agent-now-progress-steps")[0];
+      expect(toggle.hidden).toBe(false);
+      expect(toggle.textContent).toBe("자세히");
+      expect(steps.hidden).toBe(true);
+      expect(block.dataset.expanded).toBe("false");
+      toggle.click();
+      expect(toggle.textContent).toBe("접기");
+      expect(toggle.attributes["aria-expanded"]).toBe("true");
+      expect(block.dataset.expanded).toBe("true");
+      expect(steps.hidden).toBe(false);
       expect(byClass(root, "agent-now-progress-step").map((e) => e.textContent)).toEqual(progress.steps);
-      // No plan: a long note still folds open; a short one needs no fold.
+      // A newer note keeps it open; "접기" folds it back.
+      view.render(kiro({ progress: { ...progress, stage: "구현" } }));
+      expect(toggle.textContent).toBe("접기");
+      toggle.click();
+      expect(toggle.textContent).toBe("자세히");
+      expect(steps.hidden).toBe(true);
+      // No plan: a long note still opens; a short one needs no toggle.
       const longGoal = "네 기능(입고, 출고, 현황 조회, 이력 조회)과 예외 상황(재고 없음, 없는 상품) 테스트를 작성했고 vitest로 실행해 확인합니다.";
       view.render(kiro({ progress: { ...progress, steps: [], goal: longGoal } }));
-      expect(byClass(root, "agent-now-progress-plan")[0].hidden).toBe(false);
-      expect(byClass(root, "agent-now-progress-steps")[0].hidden).toBe(true);
+      expect(toggle.hidden).toBe(false);
+      toggle.click();
+      expect(steps.hidden).toBe(true);
+      expect(block.dataset.expanded).toBe("true");
       view.render(kiro({ progress: { ...progress, steps: [], goal: "테스트를 돌려요." } }));
-      expect(byClass(root, "agent-now-progress-plan")[0].hidden).toBe(true);
+      expect(toggle.hidden).toBe(true);
     } finally { restore(); }
   });
 

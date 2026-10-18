@@ -438,8 +438,11 @@ export class AgentSurfaceView {
   private readonly nowProgressTime: HTMLElement;
   private readonly nowProgressStage: HTMLElement;
   private readonly nowProgressGoal: HTMLElement;
-  private readonly nowProgressPlan: HTMLDetailsElement;
-  private readonly nowProgressPlanLabel: HTMLElement;
+  private readonly nowProgressToggle: HTMLButtonElement;
+  /** The learner opened the note ("자세히"); it stays open until "접기". */
+  private progressExpanded = false;
+  private progressHasMore = false;
+  private progressStepCount = 0;
   private readonly nowProgressSteps: HTMLElement;
   private progressKey: string | undefined;
   private readonly nowAction: HTMLButtonElement;
@@ -554,19 +557,19 @@ export class AgentSurfaceView {
     this.nowProgress.appendChild(this.nowProgressStage);
     this.nowProgressGoal = this.el("p", "agent-now-progress-goal");
     this.nowProgress.appendChild(this.nowProgressGoal);
-    this.nowProgressPlan = this.el("details", "agent-now-progress-plan") as HTMLDetailsElement;
-    this.nowProgressPlanLabel = this.el("summary", "agent-now-progress-plan-summary");
-    // "자세히" while folded, "접기" once open (CSS picks one by the details state).
-    const more = this.el("span", "agent-now-progress-more");
-    more.textContent = "자세히";
-    const less = this.el("span", "agent-now-progress-less");
-    less.textContent = "접기";
-    this.nowProgressPlanLabel.appendChild(more);
-    this.nowProgressPlanLabel.appendChild(less);
-    this.nowProgressPlan.appendChild(this.nowProgressPlanLabel);
     this.nowProgressSteps = this.el("ol", "agent-now-progress-steps");
-    this.nowProgressPlan.appendChild(this.nowProgressSteps);
-    this.nowProgress.appendChild(this.nowProgressPlan);
+    this.nowProgressSteps.hidden = true;
+    this.nowProgress.appendChild(this.nowProgressSteps);
+    // One toggle under the note: "자세히" opens the full goal and the plan, then
+    // sits under them as "접기", where folding back reads naturally.
+    this.nowProgressToggle = this.el("button", "agent-now-progress-toggle") as HTMLButtonElement;
+    this.nowProgressToggle.type = "button";
+    this.nowProgressToggle.setAttribute("aria-expanded", "false");
+    this.nowProgressToggle.addEventListener("click", () => {
+      this.progressExpanded = !this.progressExpanded;
+      this.applyProgressExpanded();
+    });
+    this.nowProgress.appendChild(this.nowProgressToggle);
     this.nowDetail = this.el("p", "agent-now-detail");
     this.nowCard.appendChild(this.nowDetail);
     this.nowAction = this.el("button", "agent-now-action") as HTMLButtonElement;
@@ -1087,6 +1090,7 @@ export class AgentSurfaceView {
     this.stepsChoice = null;
     this.stepsExpected = null;
     this.progressKey = undefined;
+    this.progressExpanded = false;
     this.evidenceRefreshKey = undefined;
     this.evidenceStatus.hidden = false;
     this.evidenceStatus.textContent = "기록을 불러오고 있어요…";
@@ -1412,17 +1416,26 @@ export class AgentSurfaceView {
     // The note is not live: Kiro chat writes it at plan, test and choice points only.
     this.nowProgressStage.textContent = progress.stage;
     this.nowProgressGoal.textContent = progress.goal;
-    // One fold opens the whole note: the full goal (clamped to three lines until
-    // then) and the planned steps. A short note with no plan needs no fold.
-    const steps = progress.steps.length;
-    this.nowProgressPlan.hidden = steps === 0 && progress.goal.length <= PROGRESS_GOAL_SHORT;
-    this.nowProgressSteps.hidden = steps === 0;
+    // One toggle opens the whole note: the full goal (clamped to three lines until
+    // then) and the planned steps. A short note with no plan needs no toggle.
+    this.progressStepCount = progress.steps.length;
+    this.progressHasMore = this.progressStepCount > 0 || progress.goal.length > PROGRESS_GOAL_SHORT;
     this.nowProgressSteps.textContent = "";
     for (const step of progress.steps) {
       const item = this.el("li", "agent-now-progress-step");
       item.textContent = step;
       this.nowProgressSteps.appendChild(item);
     }
+    this.applyProgressExpanded();
+  }
+
+  private applyProgressExpanded(): void {
+    const open = this.progressExpanded && this.progressHasMore;
+    this.nowProgress.dataset.expanded = String(open);
+    this.nowProgressSteps.hidden = !open || this.progressStepCount === 0;
+    this.nowProgressToggle.hidden = !this.progressHasMore;
+    this.nowProgressToggle.textContent = open ? "접기" : "자세히";
+    this.nowProgressToggle.setAttribute("aria-expanded", String(open));
   }
 
   /** K23: the current step of this Task, open until the first Task is finished. */

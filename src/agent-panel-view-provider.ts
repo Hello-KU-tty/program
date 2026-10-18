@@ -2606,13 +2606,14 @@ export function buildWebviewHtml(
       padding-top: var(--sp-1);
       border-top: 1px solid var(--vscode-panel-border, color-mix(in srgb, var(--vscode-foreground) 12%, transparent));
     }
+    /* The concept name wraps in its own column; the state tag stays top right. */
     .agent-evidence-concept-head {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: baseline;
-      justify-content: space-between;
-      gap: var(--sp-1) var(--sp-2);
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: start;
+      column-gap: var(--sp-2);
     }
+    .agent-evidence-concept-head .agent-evidence-concept-state { margin-top: 2px; }
     .agent-evidence .agent-evidence-concept {
       gap: var(--sp-1);
       border: none;
@@ -2786,22 +2787,45 @@ export function buildWebviewHtml(
       -webkit-box-orient: vertical;
       overflow-wrap: anywhere;
     }
-    .agent-now-progress:has(> .agent-now-progress-plan[open]) .agent-now-progress-goal {
+    .agent-now-progress[data-expanded="true"] .agent-now-progress-goal {
       display: block;
       overflow: visible;
     }
-    .agent-now-progress-plan:not([open]) .agent-now-progress-less,
-    .agent-now-progress-plan[open] .agent-now-progress-more { display: none; }
-    .agent-now-progress-plan-summary {
+    .agent-surface .agent-now-progress-toggle {
+      align-self: flex-start;
       display: inline-flex;
       align-items: center;
       gap: 6px;
+      border: none;
+      border-radius: var(--radius-sm);
+      background: transparent;
+      font: inherit;
       font-size: 0.82em;
       font-weight: 600;
       color: var(--accent);
       padding: 2px 6px;
       margin-left: -6px;
+      cursor: pointer;
+      transition: background var(--transition);
     }
+    .agent-surface .agent-now-progress-toggle:hover {
+      background: color-mix(in srgb, var(--vscode-foreground) 7%, transparent);
+    }
+    .agent-surface .agent-now-progress-toggle:focus-visible {
+      outline: 2px solid var(--vscode-focusBorder, var(--accent));
+      outline-offset: 1px;
+    }
+    .agent-now-progress-toggle::after {
+      content: "";
+      width: 6px;
+      height: 6px;
+      margin: 0 2px;
+      border-right: 1.5px solid currentColor;
+      border-bottom: 1.5px solid currentColor;
+      transform: translateY(-2px) rotate(45deg);
+      transition: transform var(--transition);
+    }
+    .agent-now-progress-toggle[aria-expanded="true"]::after { transform: translateY(1px) rotate(-135deg); }
     .agent-now-progress-steps {
       margin: var(--sp-1) 0 0;
       padding-left: 1.3rem;
@@ -2967,30 +2991,25 @@ export function buildWebviewHtml(
     /* K23: everything that folds says so. A chevron on the right turns when it
        opens, the row tints on hover, and keyboard focus shows a ring. */
     .agent-steps-summary,
-    .agent-decision-compact-summary,
-    .agent-now-progress-plan-summary {
+    .agent-decision-compact-summary {
       cursor: pointer;
       list-style: none;
       border-radius: var(--radius-sm);
       transition: background var(--transition);
     }
     .agent-steps-summary::-webkit-details-marker,
-    .agent-decision-compact-summary::-webkit-details-marker,
-    .agent-now-progress-plan-summary::-webkit-details-marker { display: none; }
+    .agent-decision-compact-summary::-webkit-details-marker { display: none; }
     .agent-steps-summary:hover,
-    .agent-decision-compact-summary:hover,
-    .agent-now-progress-plan-summary:hover {
+    .agent-decision-compact-summary:hover {
       background: color-mix(in srgb, var(--vscode-foreground) 7%, transparent);
     }
     .agent-steps-summary:focus-visible,
-    .agent-decision-compact-summary:focus-visible,
-    .agent-now-progress-plan-summary:focus-visible {
+    .agent-decision-compact-summary:focus-visible {
       outline: 2px solid var(--vscode-focusBorder, var(--accent));
       outline-offset: 1px;
     }
     .agent-steps-summary::after,
-    .agent-decision-compact-summary::after,
-    .agent-now-progress-plan-summary::after {
+    .agent-decision-compact-summary::after {
       content: "";
       flex: none;
       width: 6px;
@@ -3002,16 +3021,14 @@ export function buildWebviewHtml(
       transform: translateY(-2px) rotate(45deg);
       transition: transform var(--transition);
     }
-    .agent-now-progress-plan-summary::after { color: currentColor; }
     .agent-steps[open] > .agent-steps-summary::after,
-    .agent-decision-compact[open] > .agent-decision-compact-summary::after,
-    .agent-now-progress-plan[open] > .agent-now-progress-plan-summary::after {
+    .agent-decision-compact[open] > .agent-decision-compact-summary::after {
       transform: translateY(1px) rotate(-135deg);
     }
     @media (prefers-reduced-motion: reduce) {
       .agent-steps-summary::after,
       .agent-decision-compact-summary::after,
-      .agent-now-progress-plan-summary::after { transition: none; }
+      .agent-now-progress-toggle::after { transition: none; }
     }
 
     /* Where questions go in Kiro-native (K23). */
@@ -3051,11 +3068,12 @@ export function buildWebviewHtml(
       padding: 2px 0 2px var(--sp-2);
     }
     .agent-task-evidence-head {
-      display: flex;
-      flex-wrap: wrap;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
       align-items: baseline;
-      gap: var(--sp-1) var(--sp-2);
+      column-gap: var(--sp-2);
     }
+    .agent-task-evidence-head .agent-task-evidence-state { text-align: right; white-space: nowrap; }
     .agent-task-evidence-concept { font-weight: 600; overflow-wrap: anywhere; }
     .agent-task-evidence-state,
     .agent-task-evidence-empty {
