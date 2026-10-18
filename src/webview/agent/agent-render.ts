@@ -230,7 +230,8 @@ const NOW_TEXT: Readonly<Record<NowState, { readonly lead: string; readonly deta
 const STEPS = [
   "Kiro 채팅에 연결하기",
   `채팅에 ‘${CHAT_START_TEXT}’ 보내기`,
-  "번호로 묻는 선택에 답하기",
+  // Shown as now while chat builds too: the learner answers each choice as it comes.
+  "만드는 동안 묻는 선택에 답하기",
   "결과 보고 다음 한 걸음 고르기",
 ] as const;
 

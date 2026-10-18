@@ -1112,6 +1112,10 @@ describe("Kiro-native '지금 할 일', steps and tabs (K23)", () => {
       expect(byClass(root, "agent-steps-now")[0].textContent).toBe("지금: 채팅에 ‘시작해 줘’ 보내기");
       view.render(kiro({ phase: "DECISION_REQUIRED" }, { window: "READY" }));
       expect(marks()).toEqual(["done", "done", "now", "next"]);
+      // While chat builds the step stays, and says the choices come during the build.
+      view.render(kiro({}, { window: "READY" }));
+      expect(marks()).toEqual(["done", "done", "now", "next"]);
+      expect(byClass(root, "agent-steps-now")[0].textContent).toBe("지금: 만드는 동안 묻는 선택에 답하기");
       view.render(kiro({ phase: "TASK_COMPLETED" }, { window: "READY" }));
       expect(steps.open).toBe(false);
       expect(marks()).toEqual(["done", "done", "done", "now"]);
