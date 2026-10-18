@@ -524,7 +524,7 @@ export class AgentSurfaceView {
     this.nowElsewhere.setAttribute("role", "note");
     this.nowElsewhere.hidden = true;
     const elsewhereText = this.el("p", "agent-elsewhere-text");
-    elsewhereText.textContent = "다른 프로젝트의 작업 내역이에요. 이 프로젝트를 새 창에서 열까요?";
+    elsewhereText.textContent = "다른 프로젝트의 작업 내역이에요. 이어서 하려면 이 프로젝트를 새 창에서 열어야 해요.";
     this.nowElsewhere.appendChild(elsewhereText);
     const elsewhereAction = this.el("button", "agent-elsewhere-action") as HTMLButtonElement;
     elsewhereAction.type = "button";

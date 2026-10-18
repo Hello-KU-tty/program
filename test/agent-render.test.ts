@@ -1040,7 +1040,7 @@ describe("Kiro-native '지금 할 일', steps and tabs (K23)", () => {
       view.render(kiro({}, { window: "NOT_BOUND" }));
       expect(card(root)).toMatchObject({ state: "BUILDING", action: null, note: false });
       expect(elsewhere().hidden).toBe(false);
-      expect(byClass(root, "agent-elsewhere-text")[0].textContent).toBe("다른 프로젝트의 작업 내역이에요. 이 프로젝트를 새 창에서 열까요?");
+      expect(byClass(root, "agent-elsewhere-text")[0].textContent).toBe("다른 프로젝트의 작업 내역이에요. 이어서 하려면 이 프로젝트를 새 창에서 열어야 해요.");
       expect(byClass(root, "agent-elsewhere-action")[0].textContent).toBe("새 창에서 열기");
       byClass(root, "agent-elsewhere-action")[0].click();
       expect(opens).toBe(1);
